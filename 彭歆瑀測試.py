@@ -1,2 +1,4 @@
 print("Hello, World!")
 print("This is a test for the borrowing system.")
+print("Let's see if it works correctly.")
+print("Testing borrowing functionality...")

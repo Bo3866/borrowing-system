@@ -120,8 +120,9 @@
                         </div>
                         <div class="form-group">
                             <label>活動企劃書：</label>
-                            <input type="file" id="planDocument" accept=".pdf,.doc,.docx">
-                            <small>提示：上傳活動計畫書可提高核准率</small>
+                            <input type="file" id="planDocument" accept=".pdf" onchange="validatePlanDocument()">
+                            <small>✓ 格式：PDF 檔案 | ✓ 大小限制：1MB | 提示：上傳活動計畫書可提高核准率</small>
+                            <div id="planDocumentError" style="color: #e74c3c; margin-top: 0.5rem; display: none;"></div>
                         </div>
                         <div class="form-buttons">
                             <button type="submit" class="btn-primary">提交申請</button>

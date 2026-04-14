@@ -274,6 +274,7 @@ function submitBorrowApplication(event) {
     const startDateTime = document.getElementById('startDateTime').value;
     const endDateTime = document.getElementById('endDateTime').value;
     const purpose = document.getElementById('purpose').value;
+    const planDocument = document.getElementById('planDocument').files[0];
 
     // Scenario 1: 成功提交借用申請 (User Story 1.1)
     // ===== 表單驗證 =====
@@ -300,6 +301,15 @@ function submitBorrowApplication(event) {
     if (!purpose.trim()) {
         alert('錯誤：請填寫用途說明');
         return;
+    }
+
+    // 驗證活動企劃書 (User Story 1.3)
+    if (planDocument) {
+        const validation = validatePlanDocument(true);
+        if (!validation.valid) {
+            alert(`錯誤：${validation.error}`);
+            return;
+        }
     }
 
     // Scenario 3: 未填寫必要欄位 (異常處理)
@@ -332,7 +342,8 @@ function submitBorrowApplication(event) {
         purpose: purpose,
         status: 'pending',
         submitDate: new Date().toISOString().split('T')[0],
-        attachments: [],
+        attachments: planDocument ? [planDocument.name] : [],
+        attachmentSize: planDocument ? planDocument.size : 0,
         draft: false,
         draftSaveTime: null,
         rejectionReason: null,
@@ -359,6 +370,67 @@ function submitBorrowApplication(event) {
 }
 
 // ===== 系統通知 =====
+function validatePlanDocument(isSubmitting = false) {
+    // User Story 1.3: 活動企劃書數位遞交 - 檔案驗證
+    const fileInput = document.getElementById('planDocument');
+    const file = fileInput.files[0];
+    const errorDiv = document.getElementById('planDocumentError');
+    
+    // 定義限制
+    const MAX_FILE_SIZE = 1 * 1024 * 1024; // 1MB = 1048576 bytes
+    const ALLOWED_TYPE = 'application/pdf';
+    
+    // 如果沒有選擇檔案
+    if (!file) {
+        if (errorDiv) {
+            errorDiv.style.display = 'none';
+            errorDiv.textContent = '';
+        }
+        return { valid: true }; // 企劃書是可選的
+    }
+    
+    // Scenario 3: 上傳不支援的檔案格式（異常處理）
+    if (file.type !== ALLOWED_TYPE && !file.name.toLowerCase().endsWith('.pdf')) {
+        const errorMsg = `❌ 上傳失敗：不支援的檔案格式。\n必須上傳 PDF 檔案，您選擇的是 ${file.type || '未知格式'}`;
+        if (errorDiv) {
+            errorDiv.textContent = errorMsg;
+            errorDiv.style.display = 'block';
+        }
+        if (isSubmitting) {
+            console.error(errorMsg);
+            return { valid: false, error: '只支援 PDF 格式的檔案' };
+        }
+        return { valid: false, error: errorMsg };
+    }
+    
+    // Scenario 4: 檔案過大（異常處理）
+    if (file.size > MAX_FILE_SIZE) {
+        const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+        const errorMsg = `❌ 上傳失敗：檔案大小超過限制。\n上傳的檔案：${fileSizeMB}MB，限制：1MB`;
+        if (errorDiv) {
+            errorDiv.textContent = errorMsg;
+            errorDiv.style.display = 'block';
+        }
+        if (isSubmitting) {
+            console.error(errorMsg);
+            return { valid: false, error: '檔案大小超過 1MB 限制' };
+        }
+        return { valid: false, error: errorMsg };
+    }
+    
+    // 驗證通過
+    const successMsg = `✓ 檔案已驗證\n格式：PDF | 大小：${(file.size / 1024).toFixed(2)}KB / 最大 1MB`;
+    if (errorDiv) {
+        errorDiv.textContent = successMsg;
+        errorDiv.style.display = 'block';
+        errorDiv.style.color = '#27ae60';
+    }
+    
+    console.log('📄 活動企劃書已驗證：', file.name, `(${(file.size / 1024).toFixed(2)}KB)`);
+    
+    return { valid: true };
+}
+
 function sendNotification(recipient, message, type = 'info') {
     const notification = {
         id: 'notif_' + Date.now(),

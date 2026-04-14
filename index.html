@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>校園空間與器材租借系統</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 導航欄 -->
+        <nav class="navbar">
+            <div class="navbar-brand">
+                <h1>📚 校園資源租借系統</h1>
+            </div>
+            <div class="navbar-menu">
+                <button class="nav-btn" onclick="navigateTo('dashboard')">首頁</button>
+                <button class="nav-btn" onclick="navigateTo('borrow')">我要租借</button>
+                <button class="nav-btn" onclick="navigateTo('manage')">資源管理</button>
+                <button class="nav-btn" onclick="navigateTo('myapplications')">我的申請</button>
+                <button class="nav-btn" onclick="navigateTo('admin')">審核面板</button>
+                <button class="nav-btn" onclick="logout()">登出</button>
+            </div>
+        </nav>
+
+        <!-- 主要內容區域 -->
+        <main class="main-content">
+            <!-- 首頁 Dashboard -->
+            <section id="dashboard" class="page active">
+                <h2>歡迎使用校園資源租借系統</h2>
+                <div class="dashboard-grid">
+                    <div class="card">
+                        <h3>🔍 快速查詢</h3>
+                        <p>查看可用資源和空間</p>
+                        <button onclick="navigateTo('borrow')">開始查詢</button>
+                    </div>
+                    <div class="card">
+                        <h3>📝 我的申請</h3>
+                        <p>檢視和管理您的租借申請</p>
+                        <button onclick="navigateTo('myapplications')">查看申請</button>
+                    </div>
+                    <div class="card">
+                        <h3>📊 統計資訊</h3>
+                        <p>查看資源使用情況統計</p>
+                        <button onclick="showStats()">查看統計</button>
+                    </div>
+                    <div class="card">
+                        <h3>⚙️ 系統状態</h3>
+                        <p>系統運行正常</p>
+                        <span class="status-badge">正常</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 租借申請頁面 -->
+            <section id="borrow" class="page">
+                <h2>租借資源</h2>
+                
+                <!-- 篩選條件 -->
+                <div class="filter-section">
+                    <h3>篩選資源</h3>
+                    <div class="filter-grid">
+                        <div class="filter-group">
+                            <label>資源類型：</label>
+                            <select id="resourceType" onchange="filterResources()">
+                                <option value="">全部</option>
+                                <option value="space">空間</option>
+                                <option value="equipment">器材</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label>租借日期：</label>
+                            <input type="date" id="borrowDate" onchange="filterResources()">
+                        </div>
+                        <div class="filter-group">
+                            <label>搜尋：</label>
+                            <input type="text" id="searchKeyword" placeholder="搜尋資源名稱" onkeyup="filterResources()">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 可用資源列表 -->
+                <div class="resources-section">
+                    <h3>可用資源</h3>
+                    <div id="resourcesList" class="resources-grid">
+                        <!-- 資源卡片將由JavaScript填充 -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- 對話框：申請表單 -->
+            <div id="borrowModal" class="modal">
+                <div class="modal-content">
+                    <span class="close" onclick="closeBorrowModal()">&times;</span>
+                    <h3>租借申請表</h3>
+                    <form id="borrowForm" onsubmit="submitBorrowApplication(event)">
+                        <div class="form-group">
+                            <label>資源名稱：</label>
+                            <input type="text" id="modalResourceName" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>申請人：<span style="color: red;">*必填</span></label>
+                            <input type="text" id="applicantName" placeholder="請輸入您的名字" required>
+                        </div>
+                        <div class="form-group">
+                            <label>申請人聯絡電話：<span style="color: red;">*必填</span></label>
+                            <input type="tel" id="applicantPhone" placeholder="例：09XXXXXXXXX" pattern="^09\d{8}$|^\d{10}$" required>
+                        </div>
+                        <div class="form-group">
+                            <label>租借開始日期：<span style="color: red;">*必填</span></label>
+                            <input type="datetime-local" id="startDateTime" required>
+                        </div>
+                        <div class="form-group">
+                            <label>租借結束日期：<span style="color: red;">*必填</span></label>
+                            <input type="datetime-local" id="endDateTime" required>
+                        </div>
+                        <div class="form-group">
+                            <label>用途說明：<span style="color: red;">*必填</span></label>
+                            <textarea id="purpose" required rows="4" placeholder="請詳細說明使用目的"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>活動企劃書：</label>
+                            <input type="file" id="planDocument" accept=".pdf,.doc,.docx">
+                            <small>提示：上傳活動計畫書可提高核准率</small>
+                        </div>
+                        <div class="form-buttons">
+                            <button type="submit" class="btn-primary">提交申請</button>
+                            <button type="button" class="btn-secondary" onclick="saveBorrowDraft()" style="background: #9b59b6;">暫存草稿</button>
+                            <button type="button" class="btn-secondary" onclick="closeBorrowModal()">取消</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- 對話框：故障報告 -->
+            <div id="maintenanceModal" class="modal">
+                <div class="modal-content">
+                    <span class="close" onclick="closeMaintenanceModal()">&times;</span>
+                    <h3>器材/場地故障報告</h3>
+                    <form id="maintenanceForm" onsubmit="submitMaintenanceReport(event)">
+                        <div class="form-group">
+                            <label>資源名稱：</label>
+                            <input type="text" id="maintenanceResourceName" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>損壞描述：<span style="color: red;">*必填</span></label>
+                            <textarea id="maintenanceDescription" required rows="4" placeholder="請詳細描述故障情況"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>上傳照片（可選）：</label>
+                            <input type="file" id="maintenancePhoto" accept="image/*">
+                        </div>
+                        <div class="form-buttons">
+                            <button type="submit" class="btn-primary">提交報修</button>
+                            <button type="button" class="btn-secondary" onclick="closeMaintenanceModal()">取消</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- 我的申請頁面 -->
+            <section id="myapplications" class="page">
+                <h2>我的申請</h2>
+                <div class="filter-section">
+                    <label>篩選狀態：</label>
+                    <select id="statusFilter" onchange="filterApplications()">
+                        <option value="">全部</option>
+                        <option value="pending">審核中</option>
+                        <option value="approved">已核准</option>
+                        <option value="rejected">已拒絕</option>
+                        <option value="completed">已完成</option>
+                    </select>
+                </div>
+                <div id="applicationsList" class="applications-list">
+                    <!-- 申請列表將由JavaScript填充 -->
+                </div>
+            </section>
+
+            <!-- 資源管理頁面 (課指組) -->
+            <section id="manage" class="page">
+                <h2>資源管理</h2>
+                <button class="btn-primary" onclick="addNewResource()">新增資源</button>
+                
+                <div class="management-tabs">
+                    <button class="tab-btn active" onclick="switchManagementTab('resources')">資源列表</button>
+                    <button class="tab-btn" onclick="switchManagementTab('statistics')">統計分析</button>
+                </div>
+
+                <!-- 資源管理標籤 -->
+                <div id="resourcesTab" class="tab-content active">
+                    <table class="management-table">
+                        <thead>
+                            <tr>
+                                <th>資源ID</th>
+                                <th>名稱</th>
+                                <th>類型</th>
+                                <th>可用性</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resourcesTableBody">
+                            <!-- 資源表格將由JavaScript填充 -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 統計標籤 -->
+                <div id="statisticsTab" class="tab-content">
+                    <div class="statistics-grid">
+                        <div class="stat-card">
+                            <h4>總租借次數</h4>
+                            <p id="totalBorrowCount" class="stat-number">0</p>
+                        </div>
+                        <div class="stat-card">
+                            <h4>本月租借</h4>
+                            <p id="monthlyBorrowCount" class="stat-number">0</p>
+                        </div>
+                        <div class="stat-card">
+                            <h4>平均滿意度</h4>
+                            <p id="averageSatisfaction" class="stat-number">0%</p>
+                        </div>
+                        <div class="stat-card">
+                            <h4>設備故障率</h4>
+                            <p id="equipmentFailureRate" class="stat-number">0%</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 審核面板 -->
+            <section id="admin" class="page">
+                <h2>審核面板</h2>
+                <div class="admin-tabs">
+                    <button class="tab-btn active" onclick="switchAdminTab('pending')">待審核</button>
+                    <button class="tab-btn" onclick="switchAdminTab('history')">審核紀錄</button>
+                </div>
+
+                <!-- 待審核申請 -->
+                <div id="pendingTab" class="tab-content active">
+                    <div style="margin-bottom: 1rem; padding: 1rem; background: #ecf0f1; border-radius: 8px;">
+                        <strong>💡 提示：</strong> 點擊下方的「核准」或「拒絕」按鈕即可快速審核申請。系統會自動產生數位審核紀錄並通知申請人。
+                    </div>
+                    <div id="pendingApplicationsList" class="admin-applications-list">
+                        <!-- 待審核申請將由JavaScript填充 -->
+                    </div>
+                </div>
+
+                <!-- 審核紀錄 -->
+                <div id="historyTab" class="tab-content">
+                    <table class="review-table">
+                        <thead>
+                            <tr>
+                                <th>申請ID</th>
+                                <th>申請人</th>
+                                <th>資源</th>
+                                <th>審核狀態</th>
+                                <th>審核時間</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reviewHistoryBody">
+                            <!-- 審核紀錄將由JavaScript填充 -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+
+        <!-- 頁腳 -->
+        <footer class="footer">
+            <p>&copy; 2024 校園資源租借系統。所有權利保留。</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

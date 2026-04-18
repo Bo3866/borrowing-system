@@ -27,27 +27,62 @@
         <main class="main-content">
             <!-- 首頁 Dashboard -->
             <section id="dashboard" class="page active">
-                <h2>歡迎使用校園資源租借系統</h2>
+                <div class="dashboard-hero">
+                    <div class="dashboard-hero-copy">
+                        <span class="hero-pill">CAMPUS RESOURCE HUB</span>
+                        <h2>今天也來把活動辦得更順一點</h2>
+                        <p class="hero-subtitle">即時查看器材、空間與申請進度。從查詢到送審，在同一個頁面就能完成。</p>
+                        <div class="hero-actions">
+                            <button class="btn-primary" onclick="navigateTo('borrow')">立即查詢資源</button>
+                            <button class="btn-secondary" onclick="navigateTo('myapplications')">查看我的申請</button>
+                        </div>
+                    </div>
+                    <div class="hero-live-board">
+                        <h3>即時運作狀態</h3>
+                        <div class="live-item">
+                            <span>系統服務</span>
+                            <strong class="live-ok">正常</strong>
+                        </div>
+                        <div class="live-item">
+                            <span>本日可借器材</span>
+                            <strong>98 項</strong>
+                        </div>
+                        <div class="live-item">
+                            <span>可用空間</span>
+                            <strong>12 間</strong>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="dashboard-grid">
-                    <div class="card">
+                    <div class="card dashboard-card">
                         <h3>🔍 快速查詢</h3>
-                        <p>查看可用資源和空間</p>
-                        <button onclick="navigateTo('borrow')">開始查詢</button>
+                        <p>依日期與資源類型，快速找到能借的器材與空間。</p>
+                        <button class="btn-primary" onclick="navigateTo('borrow')">開始查詢</button>
                     </div>
-                    <div class="card">
+                    <div class="card dashboard-card">
                         <h3>📝 我的申請</h3>
-                        <p>檢視和管理您的租借申請</p>
-                        <button onclick="navigateTo('myapplications')">查看申請</button>
+                        <p>追蹤審核進度，掌握每一筆申請目前在哪個階段。</p>
+                        <button class="btn-primary" onclick="navigateTo('myapplications')">查看申請</button>
                     </div>
-                    <div class="card">
-                        <h3>📊 統計資訊</h3>
-                        <p>查看資源使用情況統計</p>
-                        <button onclick="showStats()">查看統計</button>
+                    <div class="card dashboard-card">
+                        <h3>📊 資源趨勢</h3>
+                        <p>看本月借用熱點與使用趨勢，安排活動時更有底。</p>
+                        <button class="btn-primary" onclick="showStats()">查看統計</button>
                     </div>
-                    <div class="card">
-                        <h3>⚙️ 系統状態</h3>
-                        <p>系統運行正常</p>
-                        <span class="status-badge">正常</span>
+                    <div class="card dashboard-card">
+                        <h3>⚙️ 系統狀態</h3>
+                        <p>目前系統運作順暢，審核與通知服務皆在線。</p>
+                        <span class="status-badge">穩定運行</span>
+                    </div>
+                </div>
+
+                <div class="dashboard-ticker" aria-hidden="true">
+                    <div class="ticker-track">
+                        <span>場地借用提醒：提前 3 天送審，核准成功率更高。</span>
+                        <span>器材借用提醒：高峰時段請提早預約。</span>
+                        <span>系統公告：每晚 23:30 進行資料備份，服務不中斷。</span>
+                        <span>場地借用提醒：提前 3 天送審，核准成功率更高。</span>
                     </div>
                 </div>
             </section>

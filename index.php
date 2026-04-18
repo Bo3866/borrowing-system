@@ -8,7 +8,7 @@ $dbStatusText = '連線失敗';
 $isLoggedIn = isset($_SESSION['user_id']);
 $displayName = (string)($_SESSION['full_name'] ?? '訪客');
 
-$link = mysqli_connect('localhost', 'root', '', 'borrowing_system', 3307);
+$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
 
 if ($link) {
     $dbConnected = true;

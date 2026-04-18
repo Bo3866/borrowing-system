@@ -1,17 +1,17 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/config/database.php';
-
 $dbConnected = false;
 $dbStatusText = '連線失敗';
 
-try {
-    $pdo = getDatabaseConnection();
+$link = mysqli_connect('localhost', 'root', '', 'borrowing_system', 3307);
+
+if ($link) {
     $dbConnected = true;
     $dbStatusText = '已連線';
-} catch (Throwable $exception) {
-    error_log('Database connection failed: ' . $exception->getMessage());
+    mysqli_set_charset($link, 'utf8mb4');
+} else {
+    error_log('Database connection failed: ' . mysqli_connect_error());
 }
 ?>
 <!DOCTYPE html>

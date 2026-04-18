@@ -39,7 +39,7 @@ if ($link) {
                 <button class="nav-btn" onclick="navigateTo('dashboard')">首頁</button>
                 <button class="nav-btn" onclick="handleBorrowClick(event)">我要租借</button>
                 <button class="nav-btn" onclick="navigateTo('manage')">資源管理</button>
-                <button class="nav-btn" onclick="navigateTo('myapplications')">我的申請</button>
+                <button class="nav-btn" onclick="location.href='return_management.php'">我的申請</button>
                 <button class="nav-btn" onclick="location.href='approve.php'">審核面板</button>
                 <?php if ($isManager) { ?>
                     <button class="nav-btn" onclick="location.href='return_management.php'">借還管理</button>
@@ -64,7 +64,7 @@ if ($link) {
                         <p class="hero-subtitle">即時查看器材、空間與申請進度。從查詢到送審，在同一個頁面就能完成。</p>
                         <div class="hero-actions">
                             <button class="btn-primary" onclick="handleBorrowClick(event)">立即查詢資源</button>
-                            <button class="btn-secondary" onclick="navigateTo('myapplications')">查看我的申請</button>
+                            <button class="btn-secondary" onclick="location.href='return_management.php'">查看我的申請</button>
                         </div>
                     </div>
                     <div class="hero-live-board">
@@ -97,7 +97,7 @@ if ($link) {
                     <div class="card dashboard-card">
                         <h3>📝 我的申請</h3>
                         <p>追蹤審核進度，掌握每一筆申請目前在哪個階段。</p>
-                        <button class="btn-primary" onclick="navigateTo('myapplications')">查看申請</button>
+                        <button class="btn-primary" onclick="location.href='return_management.php'">查看申請</button>
                     </div>
                     <div class="card dashboard-card">
                         <h3>📊 資源趨勢</h3>

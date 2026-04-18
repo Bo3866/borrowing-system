@@ -10,12 +10,7 @@ if (!isset($_SESSION['user_id'])) {
 
 $currentUserId = (string)$_SESSION['user_id'];
 $currentRole = (string)($_SESSION['role_name'] ?? '');
-
-if (!in_array($currentRole, ['2', '3'], true)) {
-    http_response_code(403);
-    echo '<p style="padding:1rem;background:#ffecec;border-radius:6px;">存取被拒：此功能僅限管理人員。</p>';
-    exit;
-}
+$isManager = in_array($currentRole, ['2', '3'], true);
 
 $link = mysqli_connect('localhost', 'root', '', 'borrowing_system', 3307);
 $dbError = '';
@@ -34,84 +29,6 @@ function pickExistingColumn(array $columns, array $candidates): ?string
     }
 
     return null;
-}
-
-function sendOverdueNotifications(
-    mysqli $link,
-    string $applicantColumn,
-    string $borrowEndColumn,
-    string $returnedSqlExpr,
-    ?string $notifyFlagColumn
-): array {
-    $notifyFilter = '';
-    if ($notifyFlagColumn !== null) {
-        $notifyFilter = " AND COALESCE(r.`{$notifyFlagColumn}`, 0) = 0";
-    }
-
-    $sql = "
-        SELECT
-            r.reservation_id,
-                        r.`{$borrowEndColumn}` AS borrow_end_at,
-            u.user_id,
-            u.full_name,
-            u.email
-        FROM reservations r
-        JOIN users u ON u.user_id = r.`{$applicantColumn}`
-        WHERE r.approval_status = 'approved'
-                    AND r.`{$borrowEndColumn}` < NOW()
-          AND NOT ({$returnedSqlExpr})
-          {$notifyFilter}
-                ORDER BY r.`{$borrowEndColumn}` ASC
-        LIMIT 300
-    ";
-
-    $result = mysqli_query($link, $sql);
-    if (!$result) {
-        throw new RuntimeException('查詢逾期資料失敗：' . mysqli_error($link));
-    }
-
-    $sent = 0;
-    $failed = 0;
-
-    while ($row = mysqli_fetch_assoc($result)) {
-        $reservationId = (int)$row['reservation_id'];
-        $email = (string)$row['email'];
-        $fullName = (string)$row['full_name'];
-        $borrowEndAt = (string)$row['borrow_end_at'];
-
-        if ($email === '') {
-            $failed++;
-            continue;
-        }
-
-        $subject = '【校園資源租借系統】逾期未歸還提醒';
-        $message = "{$fullName} 您好，\n\n" .
-            "您的借用申請（編號：{$reservationId}）已超過歸還時間（{$borrowEndAt}）。\n" .
-            "請盡速完成歸還，若已歸還請聯繫管理人員確認。\n\n" .
-            "校園資源租借系統";
-        $headers = "Content-Type: text/plain; charset=UTF-8\r\n" .
-            "From: noreply@campus.local\r\n";
-
-        $ok = @mail($email, $subject, $message, $headers);
-        if ($ok) {
-            if ($notifyFlagColumn !== null) {
-                $updateNotifyStmt = mysqli_prepare(
-                    $link,
-                    "UPDATE reservations SET `{$notifyFlagColumn}` = 1 WHERE reservation_id = ?"
-                );
-                if ($updateNotifyStmt) {
-                    mysqli_stmt_bind_param($updateNotifyStmt, 'i', $reservationId);
-                    mysqli_stmt_execute($updateNotifyStmt);
-                    mysqli_stmt_close($updateNotifyStmt);
-                }
-            }
-            $sent++;
-        } else {
-            $failed++;
-        }
-    }
-
-    return ['sent' => $sent, 'failed' => $failed];
 }
 
 $actionMsg = '';
@@ -141,10 +58,6 @@ if ($dbError === '') {
     $pickupAtColumn = pickExistingColumn($reservationColumns, ['pickup_confirmed_at', 'picked_up_at', 'pickup_at']);
     $returnFlagColumn = pickExistingColumn($reservationColumns, ['return_confirmed', 'is_returned', 'returned', 'return_status']);
     $returnAtColumn = pickExistingColumn($reservationColumns, ['return_confirmed_at', 'returned_at', 'return_at']);
-    $notifyFlagColumn = pickExistingColumn($reservationColumns, ['return_notified']);
-    if ($dbError === '' && $notifyFlagColumn === null) {
-        $dbError = 'reservations 缺少 return_notified 欄位，無法標記是否已發送通知。';
-    }
 
     $pickupSqlExpr = '0';
     if ($pickupFlagColumn !== null) {
@@ -164,10 +77,11 @@ if ($dbError === '') {
         $action = (string)($_POST['action'] ?? '');
 
         try {
-            if ($action === 'send_overdue_notifications') {
-                $notifyResult = sendOverdueNotifications($link, (string)$applicantColumn, (string)$borrowEndColumn, $returnedSqlExpr, $notifyFlagColumn);
-                $actionMsg = '逾期通知寄送完成：成功 ' . $notifyResult['sent'] . ' 筆，失敗 ' . $notifyResult['failed'] . ' 筆。';
-            } elseif (in_array($action, ['confirm_pickup', 'confirm_return'], true)) {
+            if (in_array($action, ['confirm_pickup', 'confirm_return'], true)) {
+                if (!$isManager) {
+                    throw new RuntimeException('僅管理人員可操作報到與歸還確認。');
+                }
+
                 $reservationId = (int)($_POST['reservation_id'] ?? 0);
                 if ($reservationId <= 0) {
                     throw new RuntimeException('無效的申請編號。');
@@ -250,7 +164,12 @@ if ($dbError === '') {
     if ($dbError === '') {
         $pickupAtSelect = $pickupAtColumn !== null ? "r.`{$pickupAtColumn}`" : 'NULL';
         $returnAtSelect = $returnAtColumn !== null ? "r.`{$returnAtColumn}`" : 'NULL';
-        $notifyFlagSelect = $notifyFlagColumn !== null ? "COALESCE(r.`{$notifyFlagColumn}`, 0)" : '0';
+
+        $listWhere = "r.approval_status = 'approved'";
+        if (!$isManager) {
+            $safeUserId = mysqli_real_escape_string($link, $currentUserId);
+            $listWhere .= " AND r.`{$applicantColumn}` = '{$safeUserId}'";
+        }
 
         $listSql = "
             SELECT
@@ -265,7 +184,6 @@ if ($dbError === '') {
                 {$pickupAtSelect} AS pickup_confirmed_at,
                 ({$returnedSqlExpr}) AS return_confirmed,
                 {$returnAtSelect} AS return_confirmed_at,
-                {$notifyFlagSelect} AS return_notified,
                 (
                     SELECT GROUP_CONCAT(DISTINCT ec.equipment_code ORDER BY ec.equipment_code SEPARATOR ', ')
                     FROM equipment_reservation_items eri
@@ -280,7 +198,7 @@ if ($dbError === '') {
                 ) AS space_ids
             FROM reservations r
             JOIN users u ON u.user_id = r.`{$applicantColumn}`
-            WHERE r.approval_status = 'approved'
+            WHERE {$listWhere}
             ORDER BY r.`{$borrowEndColumn}` DESC
             LIMIT 300
         ";
@@ -310,7 +228,9 @@ if ($dbError === '') {
             <div class="navbar-brand"><h1>📚 校園資源租借系統</h1></div>
             <div class="navbar-menu">
                 <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
-                <button class="nav-btn" onclick="location.href='approve.php'">審核面板</button>
+                <?php if ($isManager) { ?>
+                    <button class="nav-btn" onclick="location.href='approve.php'">審核面板</button>
+                <?php } ?>
                 <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['user_id'], ENT_QUOTES, 'UTF-8'); ?></button>
                 <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
             </div>
@@ -318,7 +238,7 @@ if ($dbError === '') {
 
         <main class="main-content">
             <section class="card">
-                <h2>借還確認與逾期通知</h2>
+                <h2><?php echo $isManager ? '借還確認管理' : '我的申請紀錄'; ?></h2>
 
                 <?php if ($actionMsg !== '') { ?>
                     <div class="borrow-success"><?php echo htmlspecialchars($actionMsg, ENT_QUOTES, 'UTF-8'); ?></div>
@@ -327,28 +247,23 @@ if ($dbError === '') {
                 <?php if ($dbError !== '') { ?>
                     <div class="login-alert"><?php echo htmlspecialchars($dbError, ENT_QUOTES, 'UTF-8'); ?></div>
                 <?php } else { ?>
-                    <form method="post" style="margin-bottom:1rem;">
-                        <input type="hidden" name="action" value="send_overdue_notifications">
-                        <button type="submit" class="btn-secondary" onclick="return confirm('確認要寄送逾期未還通知？')">寄送逾期未還通知</button>
-                    </form>
-
                     <div class="borrow-table-wrapper">
                         <table class="management-table return-management-table">
                             <thead>
                                 <tr>
-                                    <th>申請編號</th>
                                     <th>申請人</th>
                                     <th>借用時段</th>
                                     <th>借用項目</th>
-                                    <th>取件</th>
+                                    <th>是否已報到</th>
                                     <th>歸還</th>
-                                    <th>通知</th>
-                                    <th>操作</th>
+                                    <?php if ($isManager) { ?>
+                                        <th>操作</th>
+                                    <?php } ?>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if (count($rows) === 0) { ?>
-                                    <tr><td colspan="8">目前沒有可管理的已核准借用資料。</td></tr>
+                                    <tr><td colspan="<?php echo $isManager ? '6' : '5'; ?>"><?php echo $isManager ? '目前沒有可管理的已核准借用資料。' : '目前沒有可顯示的申請資料。'; ?></td></tr>
                                 <?php } else { ?>
                                     <?php foreach ($rows as $row) { ?>
                                         <?php
@@ -362,11 +277,8 @@ if ($dbError === '') {
                                             $resourceText = count($resourceParts) > 0 ? implode(' | ', $resourceParts) : '-';
                                             $isPickup = (int)$row['pickup_confirmed'] === 1;
                                             $isReturned = (int)$row['return_confirmed'] === 1;
-                                            $isNotified = (int)($row['return_notified'] ?? 0) === 1;
-                                            $isOverdue = !$isReturned && strtotime((string)$row['borrow_end_at']) < time();
                                         ?>
                                         <tr>
-                                            <td><?php echo (int)$row['reservation_id']; ?></td>
                                             <td>
                                                 <?php echo htmlspecialchars($row['full_name'] . ' (' . $row['applicant_user_id'] . ')', ENT_QUOTES, 'UTF-8'); ?><br>
                                                 <small><?php echo htmlspecialchars((string)$row['email'], ENT_QUOTES, 'UTF-8'); ?></small>
@@ -378,7 +290,7 @@ if ($dbError === '') {
                                             <td><?php echo htmlspecialchars($resourceText, ENT_QUOTES, 'UTF-8'); ?></td>
                                             <td>
                                                 <span class="return-status <?php echo $isPickup ? 'return-status-ok' : 'return-status-pending'; ?>">
-                                                    <?php echo $isPickup ? '已取件' : '未取件'; ?>
+                                                    <?php echo $isPickup ? '已報到' : '未報到'; ?>
                                                 </span>
                                             </td>
                                             <td>
@@ -386,34 +298,27 @@ if ($dbError === '') {
                                                     <?php echo $isReturned ? '已歸還' : '未歸還'; ?>
                                                 </span>
                                             </td>
-                                            <td>
-                                                <?php if ($isOverdue) { ?>
-                                                    <span class="return-status return-status-overdue">逾期</span>
-                                                <?php } else { ?>
-                                                    <span class="return-status return-status-normal">正常</span>
-                                                <?php } ?>
-                                                <br>
-                                                <small><?php echo $isNotified ? '已通知' : '未通知'; ?></small>
-                                            </td>
-                                            <td>
-                                                <div class="return-action-buttons">
-                                                    <?php if (!$isPickup) { ?>
-                                                        <form method="post">
-                                                            <input type="hidden" name="action" value="confirm_pickup">
-                                                            <input type="hidden" name="reservation_id" value="<?php echo (int)$row['reservation_id']; ?>">
-                                                            <button type="submit" class="btn-primary">確認取件</button>
-                                                        </form>
-                                                    <?php } ?>
+                                            <?php if ($isManager) { ?>
+                                                <td>
+                                                    <div class="return-action-buttons">
+                                                        <?php if (!$isPickup) { ?>
+                                                            <form method="post">
+                                                                <input type="hidden" name="action" value="confirm_pickup">
+                                                                <input type="hidden" name="reservation_id" value="<?php echo (int)$row['reservation_id']; ?>">
+                                                                <button type="submit" class="btn-primary">確認取件</button>
+                                                            </form>
+                                                        <?php } ?>
 
-                                                    <?php if (!$isReturned) { ?>
-                                                        <form method="post">
-                                                            <input type="hidden" name="action" value="confirm_return">
-                                                            <input type="hidden" name="reservation_id" value="<?php echo (int)$row['reservation_id']; ?>">
-                                                            <button type="submit" class="btn-secondary" onclick="return confirm('確認此申請已歸還？')">確認歸還</button>
-                                                        </form>
-                                                    <?php } ?>
-                                                </div>
-                                            </td>
+                                                        <?php if (!$isReturned) { ?>
+                                                            <form method="post">
+                                                                <input type="hidden" name="action" value="confirm_return">
+                                                                <input type="hidden" name="reservation_id" value="<?php echo (int)$row['reservation_id']; ?>">
+                                                                <button type="submit" class="btn-secondary" onclick="return confirm('確認此申請已歸還？')">確認歸還</button>
+                                                            </form>
+                                                        <?php } ?>
+                                                    </div>
+                                                </td>
+                                            <?php } ?>
                                         </tr>
                                     <?php } ?>
                                 <?php } ?>

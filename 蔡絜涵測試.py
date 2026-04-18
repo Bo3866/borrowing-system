@@ -1,5 +1,0 @@
-print('hello world')
-print('hello')
-print('hello')
-print('hello,泊蓉')
-print('hello,宇芊')

@@ -3,8 +3,20 @@ declare(strict_types=1);
 
 session_start();
 
+function getSafeRedirectTarget(?string $next): string
+{
+    $allowedTargets = ['index.php', 'borrow.php'];
+    if ($next !== null && in_array($next, $allowedTargets, true)) {
+        return $next;
+    }
+
+    return 'index.php';
+}
+
+$redirectTarget = getSafeRedirectTarget(isset($_GET['next']) ? (string)$_GET['next'] : null);
+
 if (isset($_SESSION['user_id'])) {
-    header('Location: index.php');
+    header('Location: ' . $redirectTarget);
     exit;
 }
 
@@ -51,7 +63,7 @@ if (!$link) {
                     $_SESSION['role_name'] = $user['role_name'];
                     $_SESSION['email'] = $user['email'];
 
-                    header('Location: index.php');
+                    header('Location: ' . $redirectTarget);
                     exit;
                 }
 
@@ -94,7 +106,7 @@ if (!$link) {
                 <div class="login-alert"><?php echo htmlspecialchars($loginError, ENT_QUOTES, 'UTF-8'); ?></div>
             <?php } ?>
 
-            <form method="post" class="login-form" action="login.php">
+            <form method="post" class="login-form" action="login.php?next=<?php echo urlencode($redirectTarget); ?>">
                 <div class="form-group">
                     <label for="user_id">帳號 (user_id)</label>
                     <input

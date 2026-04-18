@@ -347,14 +347,12 @@ if ($link) {
             if (!isLoggedIn) {
                 const shouldGoLogin = window.confirm('目前尚未登入，無法借用。是否前往登入頁？');
                 if (shouldGoLogin) {
-                    window.location.href = 'login.php';
+                    window.location.href = 'login.php?next=borrow.php';
                 }
                 return false;
             }
 
-            if (typeof navigateTo === 'function') {
-                navigateTo('borrow');
-            }
+            window.location.href = 'borrow.php';
 
             return false;
         }

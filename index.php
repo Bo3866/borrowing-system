@@ -4,7 +4,7 @@ declare(strict_types=1);
 $dbConnected = false;
 $dbStatusText = '連線失敗';
 
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system', 3307);
+$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
 
 if ($link) {
     $dbConnected = true;

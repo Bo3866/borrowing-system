@@ -1,10 +1,14 @@
 <?php
 declare(strict_types=1);
 
+session_start();
+
 $dbConnected = false;
 $dbStatusText = '連線失敗';
+$isLoggedIn = isset($_SESSION['user_id']);
+$displayName = (string)($_SESSION['full_name'] ?? '訪客');
 
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
+$link = mysqli_connect('localhost', 'root', '', 'borrowing_system', 3307);
 
 if ($link) {
     $dbConnected = true;
@@ -31,11 +35,16 @@ if ($link) {
             </div>
             <div class="navbar-menu">
                 <button class="nav-btn" onclick="navigateTo('dashboard')">首頁</button>
-                <button class="nav-btn" onclick="navigateTo('borrow')">我要租借</button>
+                <button class="nav-btn" onclick="handleBorrowClick(event)">我要租借</button>
                 <button class="nav-btn" onclick="navigateTo('manage')">資源管理</button>
                 <button class="nav-btn" onclick="navigateTo('myapplications')">我的申請</button>
                 <button class="nav-btn" onclick="navigateTo('admin')">審核面板</button>
-                <button class="nav-btn" onclick="logout()">登出</button>
+                <?php if ($isLoggedIn) { ?>
+                    <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8'); ?></button>
+                    <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
+                <?php } else { ?>
+                    <button class="nav-btn" onclick="location.href='login.php'">登入</button>
+                <?php } ?>
             </div>
         </nav>
 
@@ -49,7 +58,7 @@ if ($link) {
                         <h2>今天也來把活動辦得更順一點</h2>
                         <p class="hero-subtitle">即時查看器材、空間與申請進度。從查詢到送審，在同一個頁面就能完成。</p>
                         <div class="hero-actions">
-                            <button class="btn-primary" onclick="navigateTo('borrow')">立即查詢資源</button>
+                            <button class="btn-primary" onclick="handleBorrowClick(event)">立即查詢資源</button>
                             <button class="btn-secondary" onclick="navigateTo('myapplications')">查看我的申請</button>
                         </div>
                     </div>
@@ -78,7 +87,7 @@ if ($link) {
                     <div class="card dashboard-card">
                         <h3>🔍 快速查詢</h3>
                         <p>依日期與資源類型，快速找到能借的器材與空間。</p>
-                        <button class="btn-primary" onclick="navigateTo('borrow')">開始查詢</button>
+                        <button class="btn-primary" onclick="handleBorrowClick(event)">開始查詢</button>
                     </div>
                     <div class="card dashboard-card">
                         <h3>📝 我的申請</h3>
@@ -327,6 +336,27 @@ if ($link) {
         </footer>
     </div>
 
+    <script>
+        function handleBorrowClick(event) {
+            if (event) {
+                event.preventDefault();
+            }
+
+            const isLoggedIn = <?php echo $isLoggedIn ? 'true' : 'false'; ?>;
+
+            if (!isLoggedIn) {
+                const shouldGoLogin = window.confirm('目前尚未登入，無法借用。是否前往登入頁？');
+                if (shouldGoLogin) {
+                    window.location.href = 'login.php?next=borrow.php';
+                }
+                return false;
+            }
+
+            window.location.href = 'borrow.php';
+
+            return false;
+        }
+    </script>
     <script src="app.js"></script>
 </body>
 </html>

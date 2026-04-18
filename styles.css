@@ -508,6 +508,62 @@ h3 {
     line-height: 1.5;
 }
 
+.borrow-page {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.borrow-subtitle {
+    margin-top: -0.8rem;
+    color: #5f7387;
+}
+
+.borrow-layout {
+    display: grid;
+    grid-template-columns: minmax(320px, 1fr) minmax(360px, 1.2fr);
+    gap: 1.2rem;
+    align-items: start;
+}
+
+.borrow-form {
+    display: grid;
+    gap: 0.9rem;
+}
+
+.borrow-hint-box {
+    background: #eef5fb;
+    border: 1px solid #c9dff1;
+    border-radius: 12px;
+    padding: 0.8rem 1rem;
+    display: grid;
+    gap: 0.25rem;
+    color: #1c425f;
+}
+
+.borrow-success {
+    margin-bottom: 0.6rem;
+    padding: 0.9rem 1rem;
+    border-radius: 14px;
+    background: #e7f6ed;
+    color: #137a3f;
+    border: 1px solid #b9e5c9;
+}
+
+.borrow-table-note {
+    color: #678;
+    margin-bottom: 0.8rem;
+}
+
+.borrow-table-wrapper {
+    overflow-x: auto;
+}
+
+.borrow-table th,
+.borrow-table td {
+    white-space: nowrap;
+}
+
 @media (max-width: 860px) {
     .login-shell {
         grid-template-columns: 1fr;
@@ -516,6 +572,10 @@ h3 {
     .login-body {
         padding: 1rem;
         align-items: flex-start;
+    }
+
+    .borrow-layout {
+        grid-template-columns: 1fr;
     }
 }
 

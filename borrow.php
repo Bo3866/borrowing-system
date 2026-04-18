@@ -200,11 +200,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     mysqli_stmt_execute($updatePhoneStmt);
                     mysqli_stmt_close($updatePhoneStmt);
                 }
+                // 檢查 reservations 表格是否存在 applicant_id 或 user_id 欄位，並使用存在的欄位
+                $applicantColumn = null;
+                $colA = mysqli_query($link, "SHOW COLUMNS FROM reservations LIKE 'applicant_id'");
+                if ($colA && mysqli_num_rows($colA) > 0) {
+                    $applicantColumn = 'applicant_id';
+                } else {
+                    $colB = mysqli_query($link, "SHOW COLUMNS FROM reservations LIKE 'user_id'");
+                    if ($colB && mysqli_num_rows($colB) > 0) {
+                        $applicantColumn = 'user_id';
+                    }
+                }
 
-                $reservationStmt = mysqli_prepare(
-                    $link,
-                    'INSERT INTO reservations (user_id, borrow_start_at, borrow_end_at, approval_status) VALUES (?, ?, ?, "pending")'
+                if ($applicantColumn === null) {
+                    throw new RuntimeException('資料表 reservations 欄位缺少 applicant_id 或 user_id，請檢查資料庫結構。');
+                }
+
+                $insertSql = sprintf(
+                    'INSERT INTO reservations (%s, borrow_start_at, borrow_end_at, approval_status) VALUES (?, ?, ?, "pending")',
+                    $applicantColumn
                 );
+
+                $reservationStmt = mysqli_prepare($link, $insertSql);
                 if (!$reservationStmt) {
                     throw new RuntimeException('建立預約主檔失敗：' . mysqli_error($link));
                 }
@@ -293,6 +310,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
                     mysqli_stmt_close($updateEquipmentStatusStmt);
+                    // 嘗試建立器材核簽紀錄（若申請人有有效證照）
+                    $certificateId = null;
+                    $certSelectStmt = mysqli_prepare(
+                        $link,
+                        'SELECT certificate_id FROM equipment_certificates WHERE holder_id = ? AND validity_status = "valid" ORDER BY issue_date DESC LIMIT 1'
+                    );
+                    if ($certSelectStmt) {
+                        mysqli_stmt_bind_param($certSelectStmt, 's', $userId);
+                        mysqli_stmt_execute($certSelectStmt);
+                        $certSelectResult = mysqli_stmt_get_result($certSelectStmt);
+                        $certRow = $certSelectResult ? mysqli_fetch_assoc($certSelectResult) : null;
+                        mysqli_stmt_close($certSelectStmt);
+                        if ($certRow && isset($certRow['certificate_id'])) {
+                            $certificateId = (int)$certRow['certificate_id'];
+                        }
+                    }
+
+                    // 建立器材核簽紀錄（若無證照則以 NULL 儲存 certificate_id）
+                    if ($certificateId !== null) {
+                        $insertSignoffStmt = mysqli_prepare(
+                            $link,
+                            'INSERT INTO equipment_signoffs (reservation_id, certificate_id, reviewer_id, signoff_status) VALUES (?, ?, ?, "pending")'
+                        );
+                        if (!$insertSignoffStmt) {
+                            throw new RuntimeException('建立器材核簽紀錄失敗：' . mysqli_error($link));
+                        }
+                        mysqli_stmt_bind_param($insertSignoffStmt, 'iis', $reservationId, $certificateId, $userId);
+                        mysqli_stmt_execute($insertSignoffStmt);
+                        mysqli_stmt_close($insertSignoffStmt);
+                    } else {
+                        $insertSignoffStmt = mysqli_prepare(
+                            $link,
+                            'INSERT INTO equipment_signoffs (reservation_id, certificate_id, reviewer_id, signoff_status) VALUES (?, NULL, ?, "pending")'
+                        );
+                        if (!$insertSignoffStmt) {
+                            throw new RuntimeException('建立器材核簽紀錄失敗：' . mysqli_error($link));
+                        }
+                        mysqli_stmt_bind_param($insertSignoffStmt, 'is', $reservationId, $userId);
+                        mysqli_stmt_execute($insertSignoffStmt);
+                        mysqli_stmt_close($insertSignoffStmt);
+                    }
                 } else {
                     $spaceConflictStmt = mysqli_prepare(
                         $link,

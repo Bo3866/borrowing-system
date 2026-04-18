@@ -67,6 +67,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_id'], $_P
             mysqli_stmt_execute($logStmt);
             mysqli_stmt_close($logStmt);
 
+            // 若為拒絕，需將相關器材狀態還原為可借 (operation_status = 1)
+            if ($action === 'rejected') {
+                $restoreStmt = mysqli_prepare(
+                    $link,
+                    'UPDATE equipments e JOIN equipment_reservation_items eri ON e.equipment_id = eri.equipment_id SET e.operation_status = 1 WHERE eri.reservation_id = ? AND e.operation_status = 2'
+                );
+                if (!$restoreStmt) {
+                    throw new RuntimeException('還原器材狀態失敗：' . mysqli_error($link));
+                }
+                mysqli_stmt_bind_param($restoreStmt, 'i', $reservationId);
+                mysqli_stmt_execute($restoreStmt);
+                mysqli_stmt_close($restoreStmt);
+            }
+
             mysqli_commit($link);
             $actionMsg = $action === 'approved' ? '已核准此申請。' : '已拒絕此申請。';
         } catch (Throwable $e) {
@@ -76,11 +90,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_id'], $_P
     }
 }
 
-// Fetch pending reservations
+// Fetch pending reservations (support reservations.applicant_id OR reservations.user_id)
 $pending = [];
+
 if (isset($dbError) && $dbError !== '') {
-    // nothing
+    // DB error already set; skip fetching
 } else {
+    // Collect reservation columns and pick applicant column
     $reservationColumns = [];
     $columnResult = mysqli_query($link, 'SHOW COLUMNS FROM reservations');
     if ($columnResult) {
@@ -89,19 +105,29 @@ if (isset($dbError) && $dbError !== '') {
         }
     }
 
-    $applicantColumn = pickExistingColumn($reservationColumns, ['user_id']);
-    if ($applicantColumn === null) {
-        $dbError = 'reservations 缺少 user_id 欄位，無法顯示審核資料。';
+    $applicantColumn = null;
+    if (in_array('applicant_id', $reservationColumns, true)) {
+        $applicantColumn = 'applicant_id';
+    } elseif (in_array('user_id', $reservationColumns, true)) {
+        $applicantColumn = 'user_id';
     }
 
-    if (!isset($dbError) || $dbError === '') {
+    if ($applicantColumn === null) {
+        $dbError = '資料表 reservations 缺少 applicant_id 或 user_id，無法顯示審核資料。';
+    } else {
         $submittedAtExpr = in_array('submitted_at', $reservationColumns, true) ? 'r.submitted_at' : 'r.created_at';
-        $sql = "SELECT r.reservation_id, r.`{$applicantColumn}` AS applicant_user_id, {$submittedAtExpr} AS submitted_at, r.borrow_start_at, r.borrow_end_at, u.full_name, u.email
-                FROM reservations r
-                JOIN users u ON r.`{$applicantColumn}` = u.user_id
-                WHERE r.approval_status = 'pending'
-                ORDER BY {$submittedAtExpr} ASC
-                LIMIT 200";
+        $sql = sprintf(
+            "SELECT r.reservation_id, r.`%s` AS applicant_user_id, %s AS submitted_at, r.borrow_start_at, r.borrow_end_at, u.full_name, u.email
+             FROM reservations r
+             JOIN users u ON r.`%s` = u.user_id
+             WHERE r.approval_status = 'pending'
+             ORDER BY %s ASC
+             LIMIT 200",
+            $applicantColumn,
+            $submittedAtExpr,
+            $applicantColumn,
+            $submittedAtExpr
+        );
 
         $res = mysqli_query($link, $sql);
         if ($res) {

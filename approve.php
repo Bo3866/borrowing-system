@@ -11,18 +11,29 @@ if (!isset($_SESSION['user_id'])) {
 $currentUserId = (string)$_SESSION['user_id'];
 $currentRole = (string)($_SESSION['role_name'] ?? '');
 
-// Only allow role_name == '3' (課指組老師)
-if ($currentRole !== '3') {
+// Allow manager roles
+if (!in_array($currentRole, ['2', '3'], true)) {
     http_response_code(403);
     echo "<p style=\"padding:1rem;background:#ffecec;border-radius:6px;\">存取被拒：此功能僅限課指組老師。</p>";
     exit;
 }
 
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
+$link = mysqli_connect('localhost', 'root', '', 'borrowing_system', 3307);
 if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();
 } else {
     mysqli_set_charset($link, 'utf8mb4');
+}
+
+function pickExistingColumn(array $columns, array $candidates): ?string
+{
+    foreach ($candidates as $candidate) {
+        if (in_array($candidate, $columns, true)) {
+            return $candidate;
+        }
+    }
+
+    return null;
 }
 
 $actionMsg = '';
@@ -70,17 +81,35 @@ $pending = [];
 if (isset($dbError) && $dbError !== '') {
     // nothing
 } else {
-    $sql = "SELECT r.reservation_id, r.applicant_id, r.submitted_at, r.borrow_start_at, r.borrow_end_at, u.full_name, u.email
-            FROM reservations r
-            JOIN users u ON r.applicant_id = u.user_id
-            WHERE r.approval_status = 'pending'
-            ORDER BY r.submitted_at ASC
-            LIMIT 200";
+    $reservationColumns = [];
+    $columnResult = mysqli_query($link, 'SHOW COLUMNS FROM reservations');
+    if ($columnResult) {
+        while ($columnRow = mysqli_fetch_assoc($columnResult)) {
+            $reservationColumns[] = (string)$columnRow['Field'];
+        }
+    }
 
-    $res = mysqli_query($link, $sql);
-    if ($res) {
-        while ($row = mysqli_fetch_assoc($res)) {
-            $pending[] = $row;
+    $applicantColumn = pickExistingColumn($reservationColumns, ['user_id']);
+    if ($applicantColumn === null) {
+        $dbError = 'reservations 缺少 user_id 欄位，無法顯示審核資料。';
+    }
+
+    if (!isset($dbError) || $dbError === '') {
+        $submittedAtExpr = in_array('submitted_at', $reservationColumns, true) ? 'r.submitted_at' : 'r.created_at';
+        $sql = "SELECT r.reservation_id, r.`{$applicantColumn}` AS applicant_user_id, {$submittedAtExpr} AS submitted_at, r.borrow_start_at, r.borrow_end_at, u.full_name, u.email
+                FROM reservations r
+                JOIN users u ON r.`{$applicantColumn}` = u.user_id
+                WHERE r.approval_status = 'pending'
+                ORDER BY {$submittedAtExpr} ASC
+                LIMIT 200";
+
+        $res = mysqli_query($link, $sql);
+        if ($res) {
+            while ($row = mysqli_fetch_assoc($res)) {
+                $pending[] = $row;
+            }
+        } else {
+            $dbError = '讀取待審核申請失敗：' . mysqli_error($link);
         }
     }
 }
@@ -143,7 +172,7 @@ function fetchItems(mysqli $link, int $reservationId): array
                                 <div style="display:flex;justify-content:space-between;align-items:center;">
                                     <div>
                                         <strong>申請編號：</strong><?php echo (int)$p['reservation_id']; ?>
-                                        &nbsp; <strong>申請人：</strong><?php echo htmlspecialchars($p['full_name'], ENT_QUOTES, 'UTF-8'); ?> (<?php echo htmlspecialchars($p['applicant_id'], ENT_QUOTES, 'UTF-8'); ?>)
+                                        &nbsp; <strong>申請人：</strong><?php echo htmlspecialchars($p['full_name'], ENT_QUOTES, 'UTF-8'); ?> (<?php echo htmlspecialchars($p['applicant_user_id'], ENT_QUOTES, 'UTF-8'); ?>)
                                     </div>
                                     <div><small>送出時間：<?php echo htmlspecialchars($p['submitted_at'], ENT_QUOTES, 'UTF-8'); ?></small></div>
                                 </div>

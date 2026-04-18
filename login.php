@@ -5,7 +5,7 @@ session_start();
 
 function getSafeRedirectTarget(?string $next): string
 {
-    $allowedTargets = ['index.php', 'borrow.php'];
+    $allowedTargets = ['index.php', 'borrow.php', 'approve.php', 'return_management.php'];
     if ($next !== null && in_array($next, $allowedTargets, true)) {
         return $next;
     }
@@ -24,7 +24,7 @@ $loginError = '';
 $userId = '';
 $password = '';
 
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
+$link = mysqli_connect('localhost', 'root', '', 'borrowing_system', 3307);
 
 if (!$link) {
     $loginError = '資料庫連線失敗：' . mysqli_connect_error();

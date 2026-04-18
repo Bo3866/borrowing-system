@@ -564,6 +564,49 @@ h3 {
     white-space: nowrap;
 }
 
+.return-management-table td {
+    vertical-align: top;
+}
+
+.return-status {
+    display: inline-block;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.return-status-ok {
+    color: #166534;
+    background: #dcfce7;
+}
+
+.return-status-pending {
+    color: #92400e;
+    background: #ffedd5;
+}
+
+.return-status-overdue {
+    color: #991b1b;
+    background: #fee2e2;
+}
+
+.return-status-normal {
+    color: #1d4ed8;
+    background: #dbeafe;
+}
+
+.return-action-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    min-width: 120px;
+}
+
+.return-action-buttons button {
+    width: 100%;
+}
+
 @media (max-width: 860px) {
     .login-shell {
         grid-template-columns: 1fr;

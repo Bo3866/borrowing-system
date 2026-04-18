@@ -12,7 +12,27 @@ $userId = (string)$_SESSION['user_id'];
 $displayName = (string)($_SESSION['full_name'] ?? $_SESSION['user_id']);
 $roleName = (string)($_SESSION['role_name'] ?? '');
 
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
+// 節次設定：可依附件節次代號與時間調整
+$periodSlots = [
+    'D0' => ['label' => '日間第0節', 'start' => '07:10:00', 'end' => '08:00:00'],
+    'D1' => ['label' => '日間第1節', 'start' => '08:10:00', 'end' => '09:00:00'],
+    'D2' => ['label' => '日間第2節', 'start' => '09:10:00', 'end' => '10:00:00'],
+    'D3' => ['label' => '日間第3節', 'start' => '10:10:00', 'end' => '11:00:00'],
+    'D4' => ['label' => '日間第4節', 'start' => '11:10:00', 'end' => '12:00:00'],
+    'DN' => ['label' => '日間第5節', 'start' => '12:40:00', 'end' => '13:30:00'],
+    'D5' => ['label' => '日間第6節', 'start' => '13:40:00', 'end' => '14:30:00'],
+    'D6' => ['label' => '日間第7節', 'start' => '14:40:00', 'end' => '15:30:00'],
+    'D7' => ['label' => '日間第8節', 'start' => '15:40:00', 'end' => '16:30:00'],
+    'D8' => ['label' => '夜間第1節', 'start' => '16:40:00', 'end' => '17:30:00'],
+    'E0' => ['label' => '夜間第2節', 'start' => '17:40:00', 'end' => '18:30:00'],
+    'E1' => ['label' => '夜間第3節', 'start' => '18:40:00', 'end' => '19:30:00'],
+    'E2' => ['label' => '夜間第4節', 'start' => '19:35:00', 'end' => '20:20:00'],
+    'E3' => ['label' => '夜間第5節', 'start' => '20:30:00', 'end' => '21:20:00'],
+    'E4' => ['label' => '夜間第6節', 'start' => '21:25:00', 'end' => '22:10:00'],
+];
+$periodOrder = array_keys($periodSlots);
+
+$link = mysqli_connect('localhost', 'root', '', 'borrowing_system', 3307);
 $dbError = '';
 if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();
@@ -86,8 +106,9 @@ $formData = [
     'equipment_code' => '',
     'space_id' => '',
     'borrow_quantity' => '1',
-    'borrow_start_at' => '',
-    'borrow_end_at' => '',
+    'borrow_date' => '',
+    'start_period_code' => '',
+    'end_period_code' => '',
     'purpose' => '',
     'contact_phone' => '',
 ];
@@ -97,8 +118,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['equipment_code'] = trim((string)($_POST['equipment_code'] ?? ''));
     $formData['space_id'] = trim((string)($_POST['space_id'] ?? ''));
     $formData['borrow_quantity'] = trim((string)($_POST['borrow_quantity'] ?? '1'));
-    $formData['borrow_start_at'] = trim((string)($_POST['borrow_start_at'] ?? ''));
-    $formData['borrow_end_at'] = trim((string)($_POST['borrow_end_at'] ?? ''));
+    $formData['borrow_date'] = trim((string)($_POST['borrow_date'] ?? ''));
+    $formData['start_period_code'] = trim((string)($_POST['start_period_code'] ?? ''));
+    $formData['end_period_code'] = trim((string)($_POST['end_period_code'] ?? ''));
     $formData['purpose'] = trim((string)($_POST['purpose'] ?? ''));
     $formData['contact_phone'] = trim((string)($_POST['contact_phone'] ?? ''));
 
@@ -136,18 +158,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
+        $borrowStartAtSql = '';
+        $borrowEndAtSql = '';
+
         if ($borrowError !== '') {
             // Keep the first validation error.
-        } elseif ($formData['borrow_start_at'] === '' || $formData['borrow_end_at'] === '') {
-            $borrowError = '請完整填寫借用起訖時間。';
+        } elseif (
+            $formData['borrow_date'] === '' ||
+            $formData['start_period_code'] === '' ||
+            $formData['end_period_code'] === ''
+        ) {
+            $borrowError = '請完整填寫借用日期與起訖節次。';
+        } elseif (!isset($periodSlots[$formData['start_period_code']]) || !isset($periodSlots[$formData['end_period_code']])) {
+            $borrowError = '節次代號無效，請重新選擇。';
         } elseif ($formData['purpose'] === '') {
             $borrowError = '請填寫用途說明。';
-        } elseif (strtotime($formData['borrow_end_at']) <= strtotime($formData['borrow_start_at'])) {
-            $borrowError = '借用結束時間必須晚於開始時間。';
         } else {
-            $submittedResourceType = $formData['resource_type'];
-            $borrowStartAtSql = date('Y-m-d H:i:s', strtotime($formData['borrow_start_at']));
-            $borrowEndAtSql = date('Y-m-d H:i:s', strtotime($formData['borrow_end_at']));
+            $startIndex = array_search($formData['start_period_code'], $periodOrder, true);
+            $endIndex = array_search($formData['end_period_code'], $periodOrder, true);
+
+            if ($startIndex === false || $endIndex === false || $endIndex < $startIndex) {
+                $borrowError = '結束節次不可早於開始節次。';
+            } else {
+                $submittedResourceType = $formData['resource_type'];
+                $borrowStartAtSql = $formData['borrow_date'] . ' ' . $periodSlots[$formData['start_period_code']]['start'];
+                $borrowEndAtSql = $formData['borrow_date'] . ' ' . $periodSlots[$formData['end_period_code']]['end'];
+            }
+        }
+
+        if ($borrowError === '') {
 
             mysqli_begin_transaction($link);
 
@@ -164,7 +203,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $reservationStmt = mysqli_prepare(
                     $link,
-                    'INSERT INTO reservations (applicant_id, borrow_start_at, borrow_end_at, approval_status) VALUES (?, ?, ?, "pending")'
+                    'INSERT INTO reservations (user_id, borrow_start_at, borrow_end_at, approval_status) VALUES (?, ?, ?, "pending")'
                 );
                 if (!$reservationStmt) {
                     throw new RuntimeException('建立預約主檔失敗：' . mysqli_error($link));
@@ -297,8 +336,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'equipment_code' => '',
                     'space_id' => '',
                     'borrow_quantity' => '1',
-                    'borrow_start_at' => '',
-                    'borrow_end_at' => '',
+                    'borrow_date' => '',
+                    'start_period_code' => '',
+                    'end_period_code' => '',
                     'purpose' => '',
                     'contact_phone' => '',
                 ];
@@ -416,13 +456,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
 
                             <div class="form-group">
-                                <label for="borrow_start_at">借用開始時間</label>
-                                <input type="datetime-local" id="borrow_start_at" name="borrow_start_at" value="<?php echo htmlspecialchars($formData['borrow_start_at'], ENT_QUOTES, 'UTF-8'); ?>" required>
+                                <label for="borrow_date">借用日期</label>
+                                <input type="date" id="borrow_date" name="borrow_date" value="<?php echo htmlspecialchars($formData['borrow_date'], ENT_QUOTES, 'UTF-8'); ?>" required>
                             </div>
 
                             <div class="form-group">
-                                <label for="borrow_end_at">借用結束時間</label>
-                                <input type="datetime-local" id="borrow_end_at" name="borrow_end_at" value="<?php echo htmlspecialchars($formData['borrow_end_at'], ENT_QUOTES, 'UTF-8'); ?>" required>
+                                <label for="start_period_code">開始節次代號</label>
+                                <select id="start_period_code" name="start_period_code" required>
+                                    <option value="">請選擇</option>
+                                    <?php foreach ($periodSlots as $periodCode => $periodConfig) { ?>
+                                        <option value="<?php echo htmlspecialchars($periodCode, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData['start_period_code'] === $periodCode ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars($periodCode . ' (' . substr($periodConfig['start'], 0, 5) . '-' . substr($periodConfig['end'], 0, 5) . ')', ENT_QUOTES, 'UTF-8'); ?>
+                                        </option>
+                                    <?php } ?>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="end_period_code">結束節次代號</label>
+                                <select id="end_period_code" name="end_period_code" required>
+                                    <option value="">請選擇</option>
+                                    <?php foreach ($periodSlots as $periodCode => $periodConfig) { ?>
+                                        <option value="<?php echo htmlspecialchars($periodCode, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData['end_period_code'] === $periodCode ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars($periodCode . ' (' . substr($periodConfig['start'], 0, 5) . '-' . substr($periodConfig['end'], 0, 5) . ')', ENT_QUOTES, 'UTF-8'); ?>
+                                        </option>
+                                    <?php } ?>
+                                </select>
                             </div>
 
                             <div class="form-group">

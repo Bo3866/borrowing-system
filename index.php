@@ -38,7 +38,7 @@ if ($link) {
                 <button class="nav-btn" onclick="handleBorrowClick(event)">我要租借</button>
                 <button class="nav-btn" onclick="navigateTo('manage')">資源管理</button>
                 <button class="nav-btn" onclick="navigateTo('myapplications')">我的申請</button>
-                <button class="nav-btn" onclick="navigateTo('admin')">審核面板</button>
+                <button class="nav-btn" onclick="location.href='approve.php'">審核面板</button>
                 <?php if ($isLoggedIn) { ?>
                     <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8'); ?></button>
                     <button class="nav-btn" onclick="location.href='logout.php'">登出</button>

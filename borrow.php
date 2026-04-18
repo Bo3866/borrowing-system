@@ -12,7 +12,7 @@ $userId = (string)$_SESSION['user_id'];
 $displayName = (string)($_SESSION['full_name'] ?? $_SESSION['user_id']);
 $roleName = (string)($_SESSION['role_name'] ?? '');
 
-$link = mysqli_connect('localhost', 'root', '', 'borrowing_system', 3307);
+$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
 $dbError = '';
 if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();
@@ -181,6 +181,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 mysqli_stmt_close($reservationStmt);
 
                 if ($formData['resource_type'] === 'equipment') {
+                    $stockCheckStmt = mysqli_prepare(
+                        $link,
+                        'SELECT COUNT(*) AS available_count FROM equipments WHERE equipment_code = ? AND operation_status = 1 FOR UPDATE'
+                    );
+                    if (!$stockCheckStmt) {
+                        throw new RuntimeException('檢查器材庫存失敗：' . mysqli_error($link));
+                    }
+                    mysqli_stmt_bind_param($stockCheckStmt, 's', $formData['equipment_code']);
+                    mysqli_stmt_execute($stockCheckStmt);
+                    $stockCheckResult = mysqli_stmt_get_result($stockCheckStmt);
+                    $stockRow = $stockCheckResult ? mysqli_fetch_assoc($stockCheckResult) : null;
+                    mysqli_stmt_close($stockCheckStmt);
+
+                    $availableCountInTransaction = $stockRow ? (int)$stockRow['available_count'] : 0;
+                    if ($availableCountInTransaction <= 0) {
+                        throw new RuntimeException('目前可借用數量為 0，無法送出申請。');
+                    }
+                    if ($availableCountInTransaction < $borrowQuantity) {
+                        throw new RuntimeException('目前可借用數量不足，請調整借用數量。');
+                    }
+
                     $selectEquipmentStmt = mysqli_prepare(
                         $link,
                         'SELECT equipment_id FROM equipments WHERE equipment_code = ? AND operation_status = 1 ORDER BY equipment_id ASC LIMIT ?'
@@ -363,9 +384,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                             value="<?php echo htmlspecialchars($equipment['equipment_code'], ENT_QUOTES, 'UTF-8'); ?>"
                                             data-available="<?php echo (int)$equipment['available_quantity']; ?>"
                                             data-limit="<?php echo $equipment['borrow_limit_quantity'] === null ? '' : (int)$equipment['borrow_limit_quantity']; ?>"
+                                            <?php echo (int)$equipment['available_quantity'] <= 0 ? 'disabled' : ''; ?>
                                             <?php echo $formData['equipment_code'] === $equipment['equipment_code'] ? 'selected' : ''; ?>
                                         >
-                                            <?php echo htmlspecialchars($equipment['equipment_code'] . ' - ' . $equipment['equipment_name'], ENT_QUOTES, 'UTF-8'); ?>
+                                            <?php echo htmlspecialchars($equipment['equipment_code'] . ' - ' . $equipment['equipment_name'] . ((int)$equipment['available_quantity'] <= 0 ? '（已借完）' : ''), ENT_QUOTES, 'UTF-8'); ?>
                                         </option>
                                     <?php } ?>
                                 </select>
@@ -414,7 +436,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
 
                             <div class="form-buttons">
-                                <button type="submit" class="btn-primary">送出借用申請</button>
+                                <button type="submit" class="btn-primary" id="borrowSubmitBtn">送出借用申請</button>
                                 <button type="button" class="btn-secondary" onclick="location.href='index.php'">取消</button>
                             </div>
                         </form>
@@ -481,12 +503,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const spaceSelect = document.getElementById('space_id');
             const resourceTypeSelect = document.getElementById('resource_type');
             const quantityInput = document.getElementById('borrow_quantity');
+            const submitButton = document.getElementById('borrowSubmitBtn');
             const availableQuantityHint = document.getElementById('availableQuantityHint');
             const borrowLimitHint = document.getElementById('borrowLimitHint');
             const equipmentGroup = document.getElementById('equipmentGroup');
             const spaceGroup = document.getElementById('spaceGroup');
             const equipmentHintBox = document.getElementById('equipmentHintBox');
             const borrowQuantityGroup = document.getElementById('borrowQuantityGroup');
+
+            function ensureSelectableEquipment() {
+                const selectedOption = equipmentSelect.options[equipmentSelect.selectedIndex];
+                if (selectedOption && selectedOption.value && !selectedOption.disabled) {
+                    return;
+                }
+
+                for (const option of equipmentSelect.options) {
+                    if (option.value && !option.disabled) {
+                        equipmentSelect.value = option.value;
+                        return;
+                    }
+                }
+
+                equipmentSelect.value = '';
+            }
 
             function refreshModeUI() {
                 const mode = resourceTypeSelect.value;
@@ -503,6 +542,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if (!isEquipment) {
                     quantityInput.value = '1';
+                    submitButton.disabled = false;
+                    quantityInput.removeAttribute('max');
+                    availableQuantityHint.textContent = '-';
+                    borrowLimitHint.textContent = '-';
+                } else {
+                    ensureSelectableEquipment();
+                    refreshBorrowHints();
                 }
             }
 
@@ -512,6 +558,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     availableQuantityHint.textContent = '-';
                     borrowLimitHint.textContent = '-';
                     quantityInput.removeAttribute('max');
+                    submitButton.disabled = true;
+                    return;
+                }
+
+                if (option.disabled) {
+                    availableQuantityHint.textContent = '0';
+                    borrowLimitHint.textContent = option.dataset.limit !== '' ? String(option.dataset.limit) : '不限';
+                    quantityInput.max = '0';
+                    quantityInput.value = '0';
+                    submitButton.disabled = true;
                     return;
                 }
 
@@ -526,19 +582,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 const maxValue = hasLimit ? Math.min(available, limit) : available;
                 if (maxValue > 0) {
                     quantityInput.max = String(maxValue);
+                    submitButton.disabled = false;
                     if (Number(quantityInput.value) > maxValue) {
                         quantityInput.value = String(maxValue);
                     }
                 } else {
                     quantityInput.max = '0';
                     quantityInput.value = '0';
+                    submitButton.disabled = true;
                 }
             }
 
             resourceTypeSelect.addEventListener('change', refreshModeUI);
             equipmentSelect.addEventListener('change', refreshBorrowHints);
             refreshModeUI();
-            refreshBorrowHints();
+            if (resourceTypeSelect.value === 'equipment') {
+                refreshBorrowHints();
+            }
         })();
     </script>
 </body>

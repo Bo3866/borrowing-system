@@ -23,36 +23,20 @@ CREATE TABLE IF NOT EXISTS users (
   UNIQUE KEY uq_users_email (email)
 ) ENGINE=InnoDB;
 
--- 2) 器材分類表
-CREATE TABLE IF NOT EXISTS equipment_categories (
-  category_code VARCHAR(20) NOT NULL COMMENT '分類代碼，例: CAM',
-  category_name VARCHAR(100) NOT NULL COMMENT '分類名稱',
-  code_prefix VARCHAR(20) NOT NULL COMMENT '編號前綴，例: CAM',
-  category_description TEXT NULL COMMENT '類別描述',
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (category_code),
-  UNIQUE KEY uq_equipment_categories_prefix (code_prefix)
-) ENGINE=InnoDB;
-
 -- 3) 器材表
 CREATE TABLE IF NOT EXISTS equipments (
-  equipment_id VARCHAR(40) NOT NULL COMMENT '器材編號(類別-年份-流水號)',
-  category_code VARCHAR(20) NOT NULL COMMENT '所屬分類(分類代碼)',
+  equipment_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '器材編號(自動流水號)',
+  equipment_code VARCHAR(5) NOT NULL COMMENT '器材代碼(例: A1, B2)',
   equipment_name VARCHAR(150) NOT NULL COMMENT '器材名稱',
-  total_quantity INT NOT NULL DEFAULT 1 COMMENT '總數量',
-  available_quantity INT NOT NULL DEFAULT 1 COMMENT '目前可用數量',
-  operation_status ENUM('normal', 'maintenance', 'disabled') NOT NULL DEFAULT 'normal' COMMENT '營運狀態: 正常/維修中/停用中',
-  is_retired TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否汰除(0:否,1:是)',
+  operation_status TINYINT(1) NOT NULL DEFAULT 1 COMMENT '營運狀態: 1=可借用、2=已借出、3=維修中、4=停用中、5=已淘汰',
+  operation_remark VARCHAR(255) NULL COMMENT '營運備註',
+  added_date DATE NULL COMMENT '入庫日期',
+  maintenance_count INT NOT NULL DEFAULT 0 COMMENT '維修次數',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (equipment_id),
-  KEY idx_equipments_category (category_code),
-  KEY idx_equipments_name (equipment_name),
-  CONSTRAINT chk_equipments_quantity CHECK (total_quantity >= 0 AND available_quantity >= 0 AND available_quantity <= total_quantity),
-  CONSTRAINT fk_equipments_category
-    FOREIGN KEY (category_code) REFERENCES equipment_categories (category_code)
-    ON UPDATE CASCADE ON DELETE RESTRICT
+  UNIQUE KEY uq_equipments_code (equipment_code),
+  KEY idx_equipments_name (equipment_name)
 ) ENGINE=InnoDB;
 
 -- 4) 空間表
@@ -107,7 +91,7 @@ CREATE TABLE IF NOT EXISTS equipment_certificates (
 CREATE TABLE IF NOT EXISTS equipment_reservation_items (
   equipment_item_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '器材預約明細編號',
   reservation_id BIGINT UNSIGNED NOT NULL COMMENT '關聯預約總表(預約編號)',
-  equipment_id VARCHAR(40) NOT NULL COMMENT '關聯器材(器材編號)',
+  equipment_id BIGINT UNSIGNED NOT NULL COMMENT '關聯器材(器材編號)',
   borrow_quantity INT NOT NULL DEFAULT 1 COMMENT '借用數量',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -165,7 +149,7 @@ CREATE TABLE IF NOT EXISTS approval_logs (
 -- 10) 器材報修
 CREATE TABLE IF NOT EXISTS equipment_maintenance (
   maintenance_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '維修編號',
-  equipment_id VARCHAR(40) NOT NULL COMMENT '關聯器材(器材編號)',
+  equipment_id BIGINT UNSIGNED NOT NULL COMMENT '關聯器材(器材編號)',
   reporter_id VARCHAR(30) NOT NULL COMMENT '報修人編號(學號/教職員編號)',
   reported_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '報修時間',
   fault_description TEXT NOT NULL COMMENT '故障描述',
@@ -207,37 +191,40 @@ CREATE TABLE IF NOT EXISTS equipment_signoffs (
     ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
--- 12) 器材一覽表：每種類別只保留前 10 個器材
--- MySQL 8.0+ 視窗函數版本
-CREATE OR REPLACE VIEW equipment_overview_top10 AS
-SELECT
-  ranked.category_code,
-  ranked.category_name,
-  ranked.equipment_id,
-  ranked.equipment_name,
-  ranked.total_quantity,
-  ranked.available_quantity,
-  ranked.operation_status,
-  ranked.is_retired
-FROM (
-  SELECT
-    c.category_code,
-    c.category_name,
-    e.equipment_id,
-    e.equipment_name,
-    e.total_quantity,
-    e.available_quantity,
-    e.operation_status,
-    e.is_retired,
-    ROW_NUMBER() OVER (
-      PARTITION BY c.category_code
-      ORDER BY e.equipment_id ASC
-    ) AS rn
-  FROM equipment_categories c
-  INNER JOIN equipments e
-    ON e.category_code = c.category_code
-) AS ranked
-WHERE ranked.rn <= 10;
-
--- 若要即時查詢（不透過 view），可使用：
--- SELECT * FROM equipment_overview_top10 ORDER BY category_code, equipment_id;
+-- 12) 器材初始化數據
+INSERT IGNORE INTO equipments (equipment_code, equipment_name, operation_status, added_date) VALUES
+('A1', '喊話器(充電電池*1)', 1, '2025-02-01'),
+('A2', '有線麥克風', 1, '2025-02-01'),
+('A3', '短麥克風架', 1, '2025-02-01'),
+('A4', '長麥克風架', 1, '2025-02-01'),
+('A5', 'MIPRO 擴音器 MA-100SB(無線麥克風*1)', 1, '2025-02-01'),
+('A6', 'MIPRO 擴音器 MA-708(無線麥克風*2)', 1, '2025-02-01'),
+('A7', 'YAMAHA 擴音器 600BT(喇叭*2、無線麥克風*2)', 1, '2025-02-01'),
+('A8', '金嗓 卡拉 ok(無線麥克風*2)', 1, '2025-02-01'),
+('A9', '戶外高級音響 MA-808(喇叭*2、無線麥克風*4)', 1, '2025-02-01'),
+('A10', '電鋼琴', 1, '2025-02-01'),
+('B1', '投影布幕(長150*寬210*高240cm)', 1, '2025-02-01'),
+('B2', '單槍投影機', 1, '2025-02-01'),
+('B3', '數位相機', 1, '2025-02-01'),
+('B4', 'DV 攝影機', 1, '2025-02-01'),
+('B5', 'DV 腳架', 1, '2025-02-01'),
+('C1A', 'A 字看板 木(長110*寬80cm)', 1, '2025-02-01'),
+('C1B', 'A 字看板 鋁(長89*寬64cm)', 1, '2025-02-01'),
+('C2', '珍珠椅', 1, '2025-02-01'),
+('C3', '折疊鐵椅', 1, '2025-02-01'),
+('C4', '折疊長桌(長180*寬70*高75cm)', 1, '2025-02-01'),
+('C5', '司令帳(沙袋*2)(開-長300*寬300*高345cm)', 1, '2025-02-01'),
+('C6', 'TRUSS 帆布立架組(300*200cm 長方形)', 1, '2025-02-01'),
+('C7', '交通警示錐', 1, '2025-02-01'),
+('C8', '交通警示橫桿(長200cm)', 1, '2025-02-01'),
+('C9', '插旗組(旗桿、旗帽)', 1, '2025-02-01'),
+('C10', '旗座', 1, '2025-02-01'),
+('D1A', '地燈 黃光', 1, '2025-02-01'),
+('D1B', '地燈 白光', 1, '2025-02-01'),
+('D2', '地燈架', 1, '2025-02-01'),
+('D3', '七彩旋轉燈', 1, '2025-02-01'),
+('D4', '追蹤燈組', 1, '2025-02-01'),
+('E1', '延長線捲', 1, '2025-02-01'),
+('E2', '無線電對講機', 1, '2025-02-01'),
+('E3', '茶桶40L', 1, '2025-02-01'),
+('E4', '睡袋', 1, '2025-02-01');

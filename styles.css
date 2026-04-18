@@ -339,6 +339,16 @@ h3 {
     font-family: inherit;
 }
 
+.form-group input[type="file"] {
+    padding: 0.5rem;
+    border: 2px dashed #3498db;
+}
+
+.form-group input[type="file"]:hover {
+    border-color: #2980b9;
+    background-color: #ecf0f1;
+}
+
 .form-group textarea {
     resize: vertical;
 }

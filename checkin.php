@@ -62,21 +62,16 @@ if ($dbError === '' && $feedbackType !== 'error') {
             PRIMARY KEY (checkin_id),
             UNIQUE KEY uq_checkin_once (reservation_id, applicant_id),
             KEY idx_checkin_applicant (applicant_id),
-            KEY idx_checkin_space (checked_in_space_id),
-            CONSTRAINT fk_checkin_logs_reservation
-                FOREIGN KEY (reservation_id) REFERENCES reservations (reservation_id)
-                ON UPDATE CASCADE ON DELETE CASCADE,
-            CONSTRAINT fk_checkin_logs_applicant
-                FOREIGN KEY (applicant_id) REFERENCES users (user_id)
-                ON UPDATE CASCADE ON DELETE RESTRICT,
-            CONSTRAINT fk_checkin_logs_space
-                FOREIGN KEY (checked_in_space_id) REFERENCES spaces (space_id)
-                ON UPDATE CASCADE ON DELETE RESTRICT
+            KEY idx_checkin_space (checked_in_space_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ";
 
-    if (!mysqli_query($link, $createLogTableSql)) {
-        $dbError = '建立報到資料表失敗：' . mysqli_error($link);
+    try {
+        if (!mysqli_query($link, $createLogTableSql)) {
+            throw new RuntimeException(mysqli_error($link));
+        }
+    } catch (Throwable $exception) {
+        error_log('checkin_logs create skipped: ' . $exception->getMessage());
     }
 }
 

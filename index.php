@@ -41,6 +41,10 @@ if ($link) {
                 <button class="nav-btn" onclick="navigateTo('manage')">資源管理</button>
                 <button class="nav-btn" onclick="location.href='return_management.php'">我的申請</button>
                 <button class="nav-btn" onclick="location.href='approve.php'">審核面板</button>
+                <button class="nav-btn" onclick="location.href='checkin.php?qr=CHECKIN_GATE_V1'">掃碼報到</button>
+                <?php if ($currentRole === '3') { ?>
+                    <button class="nav-btn" onclick="location.href='qr_admin.php'">生成報到 QR</button>
+                <?php } ?>
                 <?php if ($isManager) { ?>
                     <button class="nav-btn" onclick="location.href='return_management.php'">借還管理</button>
                 <?php } ?>
@@ -109,6 +113,18 @@ if ($link) {
                         <p>目前系統運作順暢，審核與通知服務皆在線。</p>
                         <span class="status-badge">穩定運行</span>
                     </div>
+                </div>
+
+                <div class="card dashboard-qr-card">
+                    <h3>📷 QR Code 掃碼</h3>
+                    <p>使用相機掃描 QR Code。若內容是網址將直接導向，其他內容會顯示在下方。</p>
+                    <div class="qr-actions">
+                        <button class="btn-primary" type="button" onclick="startQrScan()">開始掃描</button>
+                        <button class="btn-secondary" type="button" onclick="stopQrScan()">停止掃描</button>
+                    </div>
+                    <div id="qr-reader" class="qr-reader" aria-live="polite"></div>
+                    <div id="qrStatus" class="qr-status">尚未開始掃描</div>
+                    <div id="qrResult" class="qr-result" style="display: none;"></div>
                 </div>
 
                 <div class="dashboard-ticker" aria-hidden="true">
@@ -341,7 +357,141 @@ if ($link) {
         </footer>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <script>
+        let qrScanner = null;
+        let qrIsScanning = false;
+
+        function setQrStatus(message, isError = false) {
+            const statusEl = document.getElementById('qrStatus');
+            if (!statusEl) {
+                return;
+            }
+
+            statusEl.textContent = message;
+            statusEl.classList.toggle('error', isError);
+        }
+
+        function setQrResult(message) {
+            const resultEl = document.getElementById('qrResult');
+            if (!resultEl) {
+                return;
+            }
+
+            resultEl.style.display = 'block';
+            resultEl.textContent = `掃描結果：${message}`;
+        }
+
+        function getBorrowRedirectUrl(qrText) {
+            const payload = qrText.trim();
+            if (!payload.startsWith('borrow:')) {
+                return null;
+            }
+
+            const queryString = payload.slice(7).trim();
+            if (!queryString) {
+                return 'borrow.php';
+            }
+
+            return `borrow.php?${queryString}`;
+        }
+
+        function handleQrContent(decodedText) {
+            const value = decodedText.trim();
+            setQrResult(value);
+
+            if (/^https?:\/\//i.test(value)) {
+                setQrStatus('偵測到網址，將自動導向...');
+                window.location.href = value;
+                return;
+            }
+
+            const borrowUrl = getBorrowRedirectUrl(value);
+            if (borrowUrl !== null) {
+                setQrStatus('偵測到借用參數，將導向借用頁面...');
+                window.location.href = borrowUrl;
+                return;
+            }
+
+            setQrStatus('已讀取 QR Code 內容。');
+        }
+
+        async function startQrScan() {
+            if (qrIsScanning) {
+                setQrStatus('掃描器已在運作中。');
+                return;
+            }
+
+            const qrReaderEl = document.getElementById('qr-reader');
+            const qrResultEl = document.getElementById('qrResult');
+
+            if (!qrReaderEl || !qrResultEl) {
+                return;
+            }
+
+            qrResultEl.style.display = 'none';
+            qrResultEl.textContent = '';
+
+            if (typeof Html5Qrcode === 'undefined') {
+                setQrStatus('掃碼元件載入失敗，請重新整理頁面。', true);
+                return;
+            }
+
+            qrScanner = new Html5Qrcode('qr-reader');
+            setQrStatus('正在啟動相機...');
+
+            try {
+                await qrScanner.start(
+                    { facingMode: 'environment' },
+                    { fps: 10, qrbox: { width: 240, height: 240 } },
+                    (decodedText) => {
+                        handleQrContent(decodedText);
+                        stopQrScan();
+                    },
+                    () => {
+                        // ignore continuous decode errors while scanning
+                    }
+                );
+                qrIsScanning = true;
+                setQrStatus('掃描中，請將 QR Code 對準框內。');
+            } catch (error) {
+                setQrStatus('無法啟動相機，請檢查權限與裝置。', true);
+                if (qrScanner) {
+                    qrScanner.clear();
+                    qrScanner = null;
+                }
+                qrIsScanning = false;
+                console.error(error);
+            }
+        }
+
+        async function stopQrScan() {
+            if (!qrScanner) {
+                qrIsScanning = false;
+                setQrStatus('掃描器已停止。');
+                return;
+            }
+
+            try {
+                if (qrIsScanning) {
+                    await qrScanner.stop();
+                }
+                await qrScanner.clear();
+            } catch (error) {
+                console.error(error);
+            }
+
+            qrScanner = null;
+            qrIsScanning = false;
+            setQrStatus('掃描器已停止。');
+        }
+
+        window.addEventListener('beforeunload', () => {
+            if (qrIsScanning) {
+                stopQrScan();
+            }
+        });
+
         function handleBorrowClick(event) {
             if (event) {
                 event.preventDefault();

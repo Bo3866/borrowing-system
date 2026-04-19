@@ -11,6 +11,7 @@ if (!isset($_SESSION['user_id'])) {
 $userId = (string)$_SESSION['user_id'];
 $displayName = (string)($_SESSION['full_name'] ?? $_SESSION['user_id']);
 $roleName = (string)($_SESSION['role_name'] ?? '');
+$otherSpaceOptionValue = '__OTHER__';
 
 // 節次設定：可依附件節次代號與時間調整
 $periodSlots = [
@@ -105,6 +106,7 @@ $formData = [
     'resource_type' => 'equipment',
     'equipment_code' => '',
     'space_id' => '',
+    'other_space_name' => '',
     'borrow_quantity' => '1',
     'borrow_date' => '',
     'start_period_code' => '',
@@ -117,6 +119,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['resource_type'] = trim((string)($_POST['resource_type'] ?? 'equipment'));
     $formData['equipment_code'] = trim((string)($_POST['equipment_code'] ?? ''));
     $formData['space_id'] = trim((string)($_POST['space_id'] ?? ''));
+    $formData['other_space_name'] = trim((string)($_POST['other_space_name'] ?? ''));
     $formData['borrow_quantity'] = trim((string)($_POST['borrow_quantity'] ?? '1'));
     $formData['borrow_date'] = trim((string)($_POST['borrow_date'] ?? ''));
     $formData['start_period_code'] = trim((string)($_POST['start_period_code'] ?? ''));
@@ -148,7 +151,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         } else {
-            if (!isset($spaceMap[$formData['space_id']])) {
+            if ($formData['space_id'] === $otherSpaceOptionValue) {
+                if ($formData['other_space_name'] === '') {
+                    $borrowError = '選擇「其他」時，請輸入場地名稱。';
+                }
+            } elseif (!isset($spaceMap[$formData['space_id']])) {
                 $borrowError = '請選擇有效的空間項目。';
             } else {
                 $selectedSpace = $spaceMap[$formData['space_id']];
@@ -216,22 +223,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('資料表 reservations 欄位缺少 applicant_id 或 user_id，請檢查資料庫結構。');
                 }
 
-                $insertSql = sprintf(
-                    'INSERT INTO reservations (%s, borrow_start_at, borrow_end_at, approval_status) VALUES (?, ?, ?, "pending")',
-                    $applicantColumn
-                );
+                $otherSpaceNameForSave = null;
+                if ($formData['resource_type'] === 'space' && $formData['space_id'] === $otherSpaceOptionValue) {
+                    $otherSpaceNameForSave = $formData['other_space_name'];
+                }
+
+                $hasOtherSpaceColumn = false;
+                $otherSpaceColumnResult = mysqli_query($link, "SHOW COLUMNS FROM reservations LIKE 'other_space_name'");
+                if ($otherSpaceColumnResult && mysqli_num_rows($otherSpaceColumnResult) > 0) {
+                    $hasOtherSpaceColumn = true;
+                } elseif ($otherSpaceNameForSave !== null) {
+                    $alterSql = "ALTER TABLE reservations ADD COLUMN other_space_name VARCHAR(120) NULL COMMENT '申請者自填其他場地名稱'";
+                    if (!mysqli_query($link, $alterSql)) {
+                        throw new RuntimeException('無法建立 reservations.other_space_name 欄位：' . mysqli_error($link));
+                    }
+                    $hasOtherSpaceColumn = true;
+                }
+
+                if ($hasOtherSpaceColumn) {
+                    $insertSql = sprintf(
+                        'INSERT INTO reservations (%s, borrow_start_at, borrow_end_at, approval_status, other_space_name) VALUES (?, ?, ?, "pending", ?)',
+                        $applicantColumn
+                    );
+                } else {
+                    $insertSql = sprintf(
+                        'INSERT INTO reservations (%s, borrow_start_at, borrow_end_at, approval_status) VALUES (?, ?, ?, "pending")',
+                        $applicantColumn
+                    );
+                }
 
                 $reservationStmt = mysqli_prepare($link, $insertSql);
                 if (!$reservationStmt) {
                     throw new RuntimeException('建立預約主檔失敗：' . mysqli_error($link));
                 }
-                mysqli_stmt_bind_param(
-                    $reservationStmt,
-                    'sss',
-                    $userId,
-                    $borrowStartAtSql,
-                    $borrowEndAtSql
-                );
+                if ($hasOtherSpaceColumn) {
+                    mysqli_stmt_bind_param(
+                        $reservationStmt,
+                        'ssss',
+                        $userId,
+                        $borrowStartAtSql,
+                        $borrowEndAtSql,
+                        $otherSpaceNameForSave
+                    );
+                } else {
+                    mysqli_stmt_bind_param(
+                        $reservationStmt,
+                        'sss',
+                        $userId,
+                        $borrowStartAtSql,
+                        $borrowEndAtSql
+                    );
+                }
                 mysqli_stmt_execute($reservationStmt);
                 $reservationId = (int)mysqli_insert_id($link);
                 mysqli_stmt_close($reservationStmt);
@@ -352,38 +394,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         mysqli_stmt_close($insertSignoffStmt);
                     }
                 } else {
-                    $spaceConflictStmt = mysqli_prepare(
-                        $link,
-                        'SELECT COUNT(*) AS conflict_count
-                         FROM space_reservation_items sri
-                         JOIN reservations r ON r.reservation_id = sri.reservation_id
-                         WHERE sri.space_id = ?
-                           AND r.approval_status IN ("pending", "approved")
-                           AND NOT (r.borrow_end_at <= ? OR r.borrow_start_at >= ?)'
-                    );
-                    if (!$spaceConflictStmt) {
-                        throw new RuntimeException('檢查空間時段衝突失敗：' . mysqli_error($link));
-                    }
-                    mysqli_stmt_bind_param($spaceConflictStmt, 'sss', $formData['space_id'], $borrowStartAtSql, $borrowEndAtSql);
-                    mysqli_stmt_execute($spaceConflictStmt);
-                    $spaceConflictResult = mysqli_stmt_get_result($spaceConflictStmt);
-                    $spaceConflictRow = $spaceConflictResult ? mysqli_fetch_assoc($spaceConflictResult) : null;
-                    mysqli_stmt_close($spaceConflictStmt);
+                    if ($formData['space_id'] !== $otherSpaceOptionValue) {
+                        $spaceConflictStmt = mysqli_prepare(
+                            $link,
+                            'SELECT COUNT(*) AS conflict_count
+                             FROM space_reservation_items sri
+                             JOIN reservations r ON r.reservation_id = sri.reservation_id
+                             WHERE sri.space_id = ?
+                               AND r.approval_status IN ("pending", "approved")
+                               AND NOT (r.borrow_end_at <= ? OR r.borrow_start_at >= ?)'
+                        );
+                        if (!$spaceConflictStmt) {
+                            throw new RuntimeException('檢查空間時段衝突失敗：' . mysqli_error($link));
+                        }
+                        mysqli_stmt_bind_param($spaceConflictStmt, 'sss', $formData['space_id'], $borrowStartAtSql, $borrowEndAtSql);
+                        mysqli_stmt_execute($spaceConflictStmt);
+                        $spaceConflictResult = mysqli_stmt_get_result($spaceConflictStmt);
+                        $spaceConflictRow = $spaceConflictResult ? mysqli_fetch_assoc($spaceConflictResult) : null;
+                        mysqli_stmt_close($spaceConflictStmt);
 
-                    if ($spaceConflictRow && (int)$spaceConflictRow['conflict_count'] > 0) {
-                        throw new RuntimeException('該時段空間已被預約，請改選其他時段或空間。');
-                    }
+                        if ($spaceConflictRow && (int)$spaceConflictRow['conflict_count'] > 0) {
+                            throw new RuntimeException('該時段空間已被預約，請改選其他時段或空間。');
+                        }
 
-                    $spaceItemStmt = mysqli_prepare(
-                        $link,
-                        'INSERT INTO space_reservation_items (reservation_id, space_id) VALUES (?, ?)'
-                    );
-                    if (!$spaceItemStmt) {
-                        throw new RuntimeException('建立空間預約明細失敗：' . mysqli_error($link));
+                        $spaceItemStmt = mysqli_prepare(
+                            $link,
+                            'INSERT INTO space_reservation_items (reservation_id, space_id) VALUES (?, ?)'
+                        );
+                        if (!$spaceItemStmt) {
+                            throw new RuntimeException('建立空間預約明細失敗：' . mysqli_error($link));
+                        }
+                        mysqli_stmt_bind_param($spaceItemStmt, 'is', $reservationId, $formData['space_id']);
+                        mysqli_stmt_execute($spaceItemStmt);
+                        mysqli_stmt_close($spaceItemStmt);
                     }
-                    mysqli_stmt_bind_param($spaceItemStmt, 'is', $reservationId, $formData['space_id']);
-                    mysqli_stmt_execute($spaceItemStmt);
-                    mysqli_stmt_close($spaceItemStmt);
                 }
 
                 mysqli_commit($link);
@@ -393,6 +437,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'resource_type' => 'equipment',
                     'equipment_code' => '',
                     'space_id' => '',
+                    'other_space_name' => '',
                     'borrow_quantity' => '1',
                     'borrow_date' => '',
                     'start_period_code' => '',
@@ -500,7 +545,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                             <?php echo htmlspecialchars($space['space_id'] . ' - ' . $space['space_name'] . ' (' . $space['space_status'] . ')', ENT_QUOTES, 'UTF-8'); ?>
                                         </option>
                                     <?php } ?>
+                                    <option value="<?php echo htmlspecialchars($otherSpaceOptionValue, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData['space_id'] === $otherSpaceOptionValue ? 'selected' : ''; ?>>
+                                        其他（自行輸入）
+                                    </option>
                                 </select>
+                            </div>
+
+                            <div class="form-group" id="otherSpaceGroup" style="display:none;">
+                                <label for="other_space_name">其他場地名稱</label>
+                                <input
+                                    type="text"
+                                    id="other_space_name"
+                                    name="other_space_name"
+                                    maxlength="120"
+                                    placeholder="請輸入場地名稱（例如：校外合作場地 XXX）"
+                                    value="<?php echo htmlspecialchars($formData['other_space_name'], ENT_QUOTES, 'UTF-8'); ?>"
+                                >
                             </div>
 
                             <div class="borrow-hint-box" id="equipmentHintBox">
@@ -627,6 +687,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const spaceGroup = document.getElementById('spaceGroup');
             const equipmentHintBox = document.getElementById('equipmentHintBox');
             const borrowQuantityGroup = document.getElementById('borrowQuantityGroup');
+            const otherSpaceGroup = document.getElementById('otherSpaceGroup');
+            const otherSpaceInput = document.getElementById('other_space_name');
+            const otherSpaceOptionValue = <?php echo json_encode($otherSpaceOptionValue, JSON_UNESCAPED_UNICODE); ?>;
 
             function ensureSelectableEquipment() {
                 const selectedOption = equipmentSelect.options[equipmentSelect.selectedIndex];
@@ -647,6 +710,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             function refreshModeUI() {
                 const mode = resourceTypeSelect.value;
                 const isEquipment = mode === 'equipment';
+                const isOtherSpace = !isEquipment && spaceSelect.value === otherSpaceOptionValue;
 
                 equipmentGroup.style.display = isEquipment ? '' : 'none';
                 equipmentHintBox.style.display = isEquipment ? '' : 'none';
@@ -656,6 +720,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 equipmentSelect.required = isEquipment;
                 quantityInput.required = isEquipment;
                 spaceSelect.required = !isEquipment;
+                otherSpaceGroup.style.display = isOtherSpace ? '' : 'none';
+                otherSpaceInput.required = isOtherSpace;
+
+                if (!isOtherSpace) {
+                    otherSpaceInput.value = '';
+                }
 
                 if (!isEquipment) {
                     quantityInput.value = '1';
@@ -712,6 +782,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             resourceTypeSelect.addEventListener('change', refreshModeUI);
             equipmentSelect.addEventListener('change', refreshBorrowHints);
+            spaceSelect.addEventListener('change', refreshModeUI);
             refreshModeUI();
             if (resourceTypeSelect.value === 'equipment') {
                 refreshBorrowHints();

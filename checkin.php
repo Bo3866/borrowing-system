@@ -22,7 +22,7 @@ if ($incomingQrToken === '' && isset($_SESSION['pending_checkin_qr'])) {
 }
 unset($_SESSION['pending_checkin_qr']);
 
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
+$link = mysqli_connect('localhost', 'root', '', 'borrowing_system',3307);
 $dbError = '';
 if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();
@@ -115,14 +115,14 @@ if ($dbError === '' && $feedbackType !== 'error' && $_SERVER['REQUEST_METHOD'] =
                 r.reservation_id,
                 r.`{$borrowStartColumn}` AS borrow_start_at,
                 r.`{$borrowEndColumn}` AS borrow_end_at,
-                sri.space_id,
+                s.space_id,
                 s.space_name
             FROM reservations r
             JOIN space_reservation_items sri ON sri.reservation_id = r.reservation_id
-            LEFT JOIN spaces s ON s.space_id = sri.space_id
+            JOIN spaces s ON s.space_id = sri.space_id
             WHERE r.`{$applicantColumn}` = ?
               AND r.approval_status = 'approved'
-              AND sri.space_id = ?
+              AND s.space_id = ?
               AND NOW() BETWEEN DATE_SUB(r.`{$borrowStartColumn}`, INTERVAL 60 MINUTE)
                            AND DATE_ADD(r.`{$borrowEndColumn}`, INTERVAL 60 MINUTE)
             ORDER BY r.`{$borrowStartColumn}` DESC
@@ -202,11 +202,11 @@ if ($dbError === '' && $feedbackType !== 'error' && $_SERVER['REQUEST_METHOD'] =
 if ($dbError === '' && $feedbackType !== 'error') {
     $optionsSql = "
         SELECT DISTINCT
-            sri.space_id,
+            s.space_id,
             s.space_name
         FROM reservations r
         JOIN space_reservation_items sri ON sri.reservation_id = r.reservation_id
-        LEFT JOIN spaces s ON s.space_id = sri.space_id
+        JOIN spaces s ON s.space_id = sri.space_id
         WHERE r.`{$applicantColumn}` = ?
           AND r.approval_status = 'approved'
           AND NOW() BETWEEN DATE_SUB(r.`{$borrowStartColumn}`, INTERVAL 60 MINUTE)
@@ -217,7 +217,7 @@ if ($dbError === '' && $feedbackType !== 'error') {
               WHERE cl.reservation_id = r.reservation_id
                 AND cl.applicant_id = ?
           )
-        ORDER BY sri.space_id ASC
+                ORDER BY s.space_id ASC
     ";
 
     $optionsStmt = mysqli_prepare($link, $optionsSql);

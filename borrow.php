@@ -205,11 +205,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         } else {
-            if (!isset($spaceMap[$formData['space_id']])) {
+                if (!isset($spaceMap[$formData['space_id']])) {
                 $borrowError = '請選擇有效的空間項目。';
             } else {
                 $selectedSpace = $spaceMap[$formData['space_id']];
-                if ($selectedSpace['space_status'] !== 'available') {
+                $spaceStatusVal = (string)$selectedSpace['space_status'];
+                // Allow borrow when status is textual 'available' or numeric '1'.
+                // Treat other values (eg 'maintenance','disabled','2') as not borrowable.
+                if (!in_array($spaceStatusVal, ['available', '1'], true)) {
                     $borrowError = '所選空間目前不可借用。';
                 }
             }
@@ -313,8 +316,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         throw new RuntimeException('企劃書大小超過 5MB 限制。');
                     }
 
-                    $finfo = new finfo(FILEINFO_MIME_TYPE);
-                    $mime = (string)$finfo->file($file['tmp_name']);
+                    if (class_exists('finfo')) {
+                        $finfo = new finfo(FILEINFO_MIME_TYPE);
+                        $mime = (string)$finfo->file($file['tmp_name']);
+                    } elseif (function_exists('mime_content_type')) {
+                        $mime = (string)mime_content_type($file['tmp_name']);
+                    } else {
+                        // 臨時備援：若 server 真的無法使用 fileinfo 或 mime_content_type，
+                        // 以檔案副檔名當作最後判斷 (僅接受 .pdf)。注意：此作法有安全風險，
+                        // 建議盡快重啟 Web 伺服器以啟用 fileinfo。
+                        $ext = strtolower(pathinfo((string)$file['name'], PATHINFO_EXTENSION));
+                        if ($ext === 'pdf') {
+                            $mime = 'application/pdf';
+                        } else {
+                            throw new RuntimeException('伺服器未啟用 fileinfo 擴充套件，且無法使用 mime_content_type 判別檔案，請上傳副檔名為 .pdf 的檔案，或聯絡系統管理員以啟用 php_fileinfo。');
+                        }
+                    }
                     // 僅允許 PDF
                     $allowed = [
                         'application/pdf' => 'pdf',
@@ -491,6 +508,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     mysqli_stmt_bind_param($spaceItemStmt, 'isss', $reservationId, $formData['space_id'], $proposalFileForSpace, $proposalUploadedAtForSpace);
                     mysqli_stmt_execute($spaceItemStmt);
                     mysqli_stmt_close($spaceItemStmt);
+                    // 更新 spaces 表的營運狀態為 2（已借出）
+                    $updateSpaceStatusStmt = mysqli_prepare($link, 'UPDATE spaces SET space_status = ? WHERE space_id = ?');
+                    if ($updateSpaceStatusStmt) {
+                        $newStatus = '2';
+                        mysqli_stmt_bind_param($updateSpaceStatusStmt, 'ss', $newStatus, $formData['space_id']);
+                        mysqli_stmt_execute($updateSpaceStatusStmt);
+                        mysqli_stmt_close($updateSpaceStatusStmt);
+                    }
                 }
 
                 mysqli_commit($link);
@@ -609,8 +634,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <label for="space_id">空間項目</label>
                                 <select id="space_id" name="space_id">
                                     <option value="">請選擇</option>
-                                    <?php foreach ($spaceMap as $space) { ?>
-                                        <option value="<?php echo htmlspecialchars($space['space_id'], ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData['space_id'] === $space['space_id'] ? 'selected' : ''; ?>>
+                                    <?php foreach ($spaceMap as $space) { 
+                                        $spaceStatusVal = (string)$space['space_status'];
+                                        $isSelectable = in_array($spaceStatusVal, ['1', 'available'], true);
+                                    ?>
+                                        <option value="<?php echo htmlspecialchars($space['space_id'], ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData['space_id'] === $space['space_id'] ? 'selected' : ''; ?> <?php echo $isSelectable ? '' : 'disabled'; ?>>
                                             <?php echo htmlspecialchars($space['space_id'] . ' - ' . $space['space_name'] . ' (' . $space['space_status'] . ')', ENT_QUOTES, 'UTF-8'); ?>
                                         </option>
                                     <?php } ?>
@@ -674,9 +702,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </section>
 
                     <section class="card borrow-stock-card">
+                        <div id="equipmentStockSection">
                         <h3>器材可借狀態</h3>
                         <p class="borrow-table-note">以下為即時可借用數量與限借數量。</p>
                         <div class="borrow-table-wrapper">
+                            <div id="equipmentStockWrapper">
                             <table class="management-table borrow-table">
                                 <thead>
                                     <tr>
@@ -697,10 +727,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <?php } ?>
                                 </tbody>
                             </table>
+                            </div>
                         </div>
 
+                        </div>
+                        <div id="spaceStockSection">
                         <h3 style="margin-top: 1.2rem;">空間可借狀態</h3>
                         <div class="borrow-table-wrapper">
+                            <div id="spaceStockWrapper">
                             <table class="management-table borrow-table">
                                 <thead>
                                     <tr>
@@ -712,15 +746,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 </thead>
                                 <tbody>
                                     <?php foreach ($spaceMap as $space) { ?>
-                                        <tr>
+                                        <tr data-space-id="<?php echo htmlspecialchars($space['space_id'], ENT_QUOTES, 'UTF-8'); ?>" data-space-status="<?php echo htmlspecialchars((string)$space['space_status'], ENT_QUOTES, 'UTF-8'); ?>">
                                             <td><?php echo htmlspecialchars($space['space_id'], ENT_QUOTES, 'UTF-8'); ?></td>
                                             <td><?php echo htmlspecialchars($space['space_name'], ENT_QUOTES, 'UTF-8'); ?></td>
                                             <td><?php echo (int)$space['capacity']; ?></td>
-                                            <td><?php echo htmlspecialchars($space['space_status'], ENT_QUOTES, 'UTF-8'); ?></td>
+                                            <td class="space-status-cell"><?php echo htmlspecialchars($space['space_status'], ENT_QUOTES, 'UTF-8'); ?></td>
                                         </tr>
                                     <?php } ?>
                                 </tbody>
                             </table>
+                            </div>
+                        </div>
                         </div>
                     </section>
                 </div>
@@ -768,6 +804,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 equipmentHintBox.style.display = isEquipment ? '' : 'none';
                 borrowQuantityGroup.style.display = isEquipment ? '' : 'none';
                 spaceGroup.style.display = isEquipment ? 'none' : '';
+                const equipmentStockWrapper = document.getElementById('equipmentStockWrapper');
+                const spaceStockWrapper = document.getElementById('spaceStockWrapper');
+                const equipmentStockSection = document.getElementById('equipmentStockSection');
+                const spaceStockSection = document.getElementById('spaceStockSection');
+                if (equipmentStockWrapper) equipmentStockWrapper.style.display = isEquipment ? '' : 'none';
+                if (spaceStockWrapper) spaceStockWrapper.style.display = isEquipment ? 'none' : '';
+                if (equipmentStockSection) equipmentStockSection.style.display = isEquipment ? '' : 'none';
+                if (spaceStockSection) spaceStockSection.style.display = isEquipment ? 'none' : '';
 
                 equipmentSelect.required = isEquipment;
                 quantityInput.required = isEquipment;
@@ -833,10 +877,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            resourceTypeSelect.addEventListener('change', refreshModeUI);
+            function mapSpaceStatusToLabel(raw) {
+                switch (String(raw)) {
+                    case '1':
+                    case 'available':
+                        return '可借';
+                    case '2':
+                    case 'borrowed':
+                    case '已借出':
+                        return '已借出';
+                    case '3':
+                        return '維修中';
+                    case '4':
+                        return '停用中';
+                    case '5':
+                        return '已淘汰';
+                    default:
+                        return raw || '';
+                }
+            }
+
+            function refreshSpaceTableFilter() {
+                const rows = document.querySelectorAll('table.borrow-table tbody tr[data-space-id]');
+                const mode = resourceTypeSelect.value;
+                const selected = spaceSelect.value;
+                rows.forEach(row => {
+                    const raw = row.dataset.spaceStatus || '';
+                    const statusCell = row.querySelector('.space-status-cell');
+                    if (mode === 'space') {
+                        if (statusCell) statusCell.textContent = mapSpaceStatusToLabel(raw);
+                        if (selected === '') {
+                            row.style.display = '';
+                        } else {
+                            row.style.display = row.dataset.spaceId === selected ? '' : 'none';
+                        }
+                    } else {
+                        if (statusCell) statusCell.textContent = raw;
+                        row.style.display = '';
+                    }
+                });
+            }
+
+            resourceTypeSelect.addEventListener('change', function () { refreshModeUI(); refreshSpaceTableFilter(); });
             equipmentSelect.addEventListener('change', refreshBorrowHints);
-            spaceSelect.addEventListener('change', refreshModeUI);
+            spaceSelect.addEventListener('change', function () { refreshModeUI(); refreshSpaceTableFilter(); });
             refreshModeUI();
+            refreshSpaceTableFilter();
             if (resourceTypeSelect.value === 'equipment') {
                 refreshBorrowHints();
             }

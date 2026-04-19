@@ -111,6 +111,7 @@ CREATE TABLE IF NOT EXISTS reservations (
   borrow_start_at DATETIME NOT NULL COMMENT '借用開始時間',
   borrow_end_at DATETIME NOT NULL COMMENT '借用結束時間',
   approval_status ENUM('pending', 'approved', 'rejected') NOT NULL DEFAULT 'pending' COMMENT '預約審核狀態',
+  returned_at DATETIME NULL COMMENT '歸還完成時間',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (reservation_id),

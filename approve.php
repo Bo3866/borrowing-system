@@ -18,7 +18,7 @@ if (!in_array($currentRole, ['2', '3'], true)) {
     exit;
 }
 
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
+$link = mysqli_connect('localhost', 'root', '', 'borrowing_system',3307);
 if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();
 } else {
@@ -79,6 +79,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_id'], $_P
                 mysqli_stmt_bind_param($restoreStmt, 'i', $reservationId);
                 mysqli_stmt_execute($restoreStmt);
                 mysqli_stmt_close($restoreStmt);
+                // 若為拒絕，將該申請所關聯的空間還原為可借狀態 (space_status = '1')
+                $restoreSpaceStmt = mysqli_prepare(
+                    $link,
+                    'UPDATE spaces s JOIN space_reservation_items sri ON s.space_id = sri.space_id SET s.space_status = ? WHERE sri.reservation_id = ? AND s.space_status = ?'
+                );
+                if ($restoreSpaceStmt) {
+                    $avail = '1';
+                    $currentBorrowed = '2';
+                    mysqli_stmt_bind_param($restoreSpaceStmt, 'sis', $avail, $reservationId, $currentBorrowed);
+                    mysqli_stmt_execute($restoreSpaceStmt);
+                    mysqli_stmt_close($restoreSpaceStmt);
+                }
             }
 
             mysqli_commit($link);

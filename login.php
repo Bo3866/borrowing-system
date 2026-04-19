@@ -5,7 +5,7 @@ session_start();
 
 function getSafeRedirectTarget(?string $next): string
 {
-    $allowedTargets = ['index.php', 'borrow.php', 'approve.php', 'return_management.php'];
+    $allowedTargets = ['index.php', 'borrow.php', 'approve.php', 'return_management.php', 'checkin.php', 'qr_admin.php'];
     if ($next !== null && in_array($next, $allowedTargets, true)) {
         return $next;
     }

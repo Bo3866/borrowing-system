@@ -104,6 +104,9 @@ CREATE TABLE IF NOT EXISTS spaces (
 CREATE TABLE IF NOT EXISTS reservations (
   reservation_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '預約編號',
   applicant_id VARCHAR(10) NOT NULL COMMENT '申請人編號(學號/教職員編號)',
+  -- 活動企劃書檔案路徑（申請場地時可上傳）
+  proposal_file VARCHAR(255) NULL COMMENT '上傳之活動企劃書檔案路徑',
+  proposal_uploaded_at DATETIME NULL COMMENT '活動企劃書上傳時間',
   submitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '送出時間(先送先審)',
   borrow_start_at DATETIME NOT NULL COMMENT '借用開始時間',
   borrow_end_at DATETIME NOT NULL COMMENT '借用結束時間',

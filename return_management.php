@@ -9,10 +9,8 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 $currentUserId = (string)$_SESSION['user_id'];
-$currentRole = (string)($_SESSION['role_name'] ?? '');
-$isManager = in_array($currentRole, ['2', '3'], true);
 
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
+$link = mysqli_connect('localhost', 'root', '', 'borrowing_system',3307);
 $dbError = '';
 if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();
@@ -43,9 +41,9 @@ if ($dbError === '') {
         }
     }
 
-    $applicantColumn = pickExistingColumn($reservationColumns, ['user_id']);
+    $applicantColumn = pickExistingColumn($reservationColumns, ['applicant_id', 'user_id']);
     if ($applicantColumn === null) {
-        $dbError = 'reservations 缺少 user_id 欄位，無法關聯 users 資料。';
+        $dbError = 'reservations 缺少 applicant_id（或 user_id）欄位，無法關聯 users 資料。';
     }
 
     $borrowStartColumn = pickExistingColumn($reservationColumns, ['borrow_start_at', 'borrow_start_time']);
@@ -54,80 +52,70 @@ if ($dbError === '') {
         $dbError = 'reservations 缺少借用起訖欄位，請確認 borrow_start_at / borrow_end_at（或 borrow_ene_at）。';
     }
 
-    $pickupFlagColumn = pickExistingColumn($reservationColumns, ['pickup_confirmed', 'is_picked_up', 'picked_up', 'pickup_status']);
-    $pickupAtColumn = pickExistingColumn($reservationColumns, ['pickup_confirmed_at', 'picked_up_at', 'pickup_at']);
-    $returnFlagColumn = pickExistingColumn($reservationColumns, ['return_confirmed', 'is_returned', 'returned', 'return_status']);
-    $returnAtColumn = pickExistingColumn($reservationColumns, ['return_confirmed_at', 'returned_at', 'return_at']);
-
-    $pickupSqlExpr = '0';
-    if ($pickupFlagColumn !== null) {
-        $pickupSqlExpr = "COALESCE(r.`{$pickupFlagColumn}`, 0) = 1";
-    } elseif ($pickupAtColumn !== null) {
-        $pickupSqlExpr = "r.`{$pickupAtColumn}` IS NOT NULL";
+    // 自動遷移：確保 returned_at 欄位存在
+    if ($dbError === '') {
+        try {
+            if (!in_array('returned_at', $reservationColumns, true)) {
+                $migrationSql = 'ALTER TABLE reservations ADD COLUMN returned_at DATETIME NULL COMMENT "歸還完成時間"';
+                mysqli_query($link, $migrationSql);
+                $reservationColumns[] = 'returned_at';
+            }
+        } catch (Throwable $e) {
+            // 忽略列已存在錯誤
+        }
     }
 
-    $returnedSqlExpr = '0';
-    if ($returnFlagColumn !== null) {
-        $returnedSqlExpr = "COALESCE(r.`{$returnFlagColumn}`, 0) = 1";
-    } elseif ($returnAtColumn !== null) {
-        $returnedSqlExpr = "r.`{$returnAtColumn}` IS NOT NULL";
-    }
+    // 報到狀態：使用 checkin_logs（無需再查 pickup 欄位）
+    // 歸還狀態：使用 returned_at 欄位
 
     if ($dbError === '' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $action = (string)($_POST['action'] ?? '');
 
         try {
-            if (in_array($action, ['confirm_pickup', 'confirm_return'], true)) {
-                if (!$isManager) {
-                    throw new RuntimeException('僅管理人員可操作報到與歸還確認。');
-                }
-
+            if (in_array($action, ['confirm_return'], true)) {
                 $reservationId = (int)($_POST['reservation_id'] ?? 0);
                 if ($reservationId <= 0) {
                     throw new RuntimeException('無效的申請編號。');
                 }
 
-                if ($action === 'confirm_pickup' && $pickupFlagColumn === null && $pickupAtColumn === null) {
-                    throw new RuntimeException('reservations 尚未設定取件欄位，請先補上 pickup 欄位。');
+                $ownershipStmt = mysqli_prepare(
+                    $link,
+                    'SELECT r.reservation_id, r.returned_at, cl.checked_in_at
+                     FROM reservations r
+                     LEFT JOIN checkin_logs cl
+                       ON cl.reservation_id = r.reservation_id
+                      AND cl.applicant_id COLLATE utf8mb4_unicode_ci = r.`' . $applicantColumn . '` COLLATE utf8mb4_unicode_ci
+                     WHERE r.reservation_id = ?
+                       AND r.`' . $applicantColumn . '` COLLATE utf8mb4_unicode_ci = ?
+                     LIMIT 1'
+                );
+                if (!$ownershipStmt) {
+                    throw new RuntimeException('驗證申請權限失敗：' . mysqli_error($link));
                 }
 
-                if ($action === 'confirm_return' && $returnFlagColumn === null && $returnAtColumn === null) {
-                    throw new RuntimeException('reservations 尚未設定歸還欄位，請先補上 return 欄位。');
+                mysqli_stmt_bind_param($ownershipStmt, 'is', $reservationId, $currentUserId);
+                mysqli_stmt_execute($ownershipStmt);
+                $ownershipResult = mysqli_stmt_get_result($ownershipStmt);
+                $reservationRow = $ownershipResult ? mysqli_fetch_assoc($ownershipResult) : null;
+                mysqli_stmt_close($ownershipStmt);
+
+                if (!$reservationRow) {
+                    throw new RuntimeException('找不到可操作的申請資料，或此申請不屬於目前使用者。');
+                }
+
+                if (empty($reservationRow['checked_in_at'])) {
+                    throw new RuntimeException('尚未報到，無法確認歸還或離場。');
+                }
+
+                if (!empty($reservationRow['returned_at'])) {
+                    throw new RuntimeException('此申請已完成歸還或離場。');
                 }
 
                 mysqli_begin_transaction($link);
 
-                if ($action === 'confirm_pickup') {
-                    $setParts = [];
-                    if ($pickupFlagColumn !== null) {
-                        $setParts[] = "`{$pickupFlagColumn}` = 1";
-                    }
-                    if ($pickupAtColumn !== null) {
-                        $setParts[] = "`{$pickupAtColumn}` = COALESCE(`{$pickupAtColumn}`, NOW())";
-                    }
-
-                    $pickupSql = 'UPDATE reservations SET ' . implode(', ', $setParts) . ' WHERE reservation_id = ?';
-                    $pickupStmt = mysqli_prepare($link, $pickupSql);
-                    if (!$pickupStmt) {
-                        throw new RuntimeException('更新取件狀態失敗：' . mysqli_error($link));
-                    }
-                    mysqli_stmt_bind_param($pickupStmt, 'i', $reservationId);
-                    mysqli_stmt_execute($pickupStmt);
-                    mysqli_stmt_close($pickupStmt);
-
-                    $actionMsg = '已確認取件。';
-                }
-
                 if ($action === 'confirm_return') {
-                    $setParts = [];
-                    if ($returnFlagColumn !== null) {
-                        $setParts[] = "`{$returnFlagColumn}` = 1";
-                    }
-                    if ($returnAtColumn !== null) {
-                        $setParts[] = "`{$returnAtColumn}` = COALESCE(`{$returnAtColumn}`, NOW())";
-                    }
-
-                    $returnSql = 'UPDATE reservations SET ' . implode(', ', $setParts) . ' WHERE reservation_id = ?';
+                    // 更新歸還時間
+                    $returnSql = 'UPDATE reservations SET returned_at = COALESCE(returned_at, NOW()) WHERE reservation_id = ?';
                     $returnStmt = mysqli_prepare($link, $returnSql);
                     if (!$returnStmt) {
                         throw new RuntimeException('更新歸還狀態失敗：' . mysqli_error($link));
@@ -136,6 +124,7 @@ if ($dbError === '') {
                     mysqli_stmt_execute($returnStmt);
                     mysqli_stmt_close($returnStmt);
 
+                    // 還原借出的器材狀態
                     $restoreStmt = mysqli_prepare(
                         $link,
                         'UPDATE equipments e
@@ -150,7 +139,7 @@ if ($dbError === '') {
                     mysqli_stmt_execute($restoreStmt);
                     mysqli_stmt_close($restoreStmt);
 
-                    $actionMsg = '已確認歸還，器材可借狀態已回復。';
+                    $actionMsg = '已確認歸還／離場。';
                 }
 
                 mysqli_commit($link);
@@ -162,15 +151,13 @@ if ($dbError === '') {
     }
 
     if ($dbError === '') {
-        $pickupAtSelect = $pickupAtColumn !== null ? "r.`{$pickupAtColumn}`" : 'NULL';
-        $returnAtSelect = $returnAtColumn !== null ? "r.`{$returnAtColumn}`" : 'NULL';
-
         $listWhere = "r.approval_status = 'approved'";
-        if (!$isManager) {
-            $safeUserId = mysqli_real_escape_string($link, $currentUserId);
-            $listWhere .= " AND r.`{$applicantColumn}` = '{$safeUserId}'";
-        }
+        $safeUserId = mysqli_real_escape_string($link, $currentUserId);
+        $listWhere .= " AND r.`{$applicantColumn}` = '{$safeUserId}'";
 
+        // 查詢邏輯：
+        // - pickup_confirmed: 使用 checkin_logs.checked_in_at 判斷（NULL = 未報到，NOT NULL = 已報到）
+        // - return_confirmed: 使用 reservations.returned_at 判斷（NULL = 未歸還，NOT NULL = 已歸還）
         $listSql = "
             SELECT
                 r.reservation_id,
@@ -180,10 +167,11 @@ if ($dbError === '') {
                 r.`{$borrowStartColumn}` AS borrow_start_at,
                 r.`{$borrowEndColumn}` AS borrow_end_at,
                 r.approval_status,
-                ({$pickupSqlExpr}) AS pickup_confirmed,
-                {$pickupAtSelect} AS pickup_confirmed_at,
-                ({$returnedSqlExpr}) AS return_confirmed,
-                {$returnAtSelect} AS return_confirmed_at,
+                (cl.checked_in_at IS NOT NULL) AS pickup_confirmed,
+                cl.checked_in_at AS pickup_confirmed_at,
+                cl.checked_in_space_id,
+                (r.returned_at IS NOT NULL) AS return_confirmed,
+                r.returned_at AS return_confirmed_at,
                 (
                     SELECT GROUP_CONCAT(DISTINCT ec.equipment_code ORDER BY ec.equipment_code SEPARATOR ', ')
                     FROM equipment_reservation_items eri
@@ -195,9 +183,16 @@ if ($dbError === '') {
                     SELECT GROUP_CONCAT(DISTINCT sri.space_id ORDER BY sri.space_id SEPARATOR ', ')
                     FROM space_reservation_items sri
                     WHERE sri.reservation_id = r.reservation_id
-                ) AS space_ids
+                ) AS space_ids,
+                (
+                    SELECT GROUP_CONCAT(DISTINCT s.space_name ORDER BY s.space_name SEPARATOR ', ')
+                    FROM space_reservation_items sri
+                    JOIN spaces s ON s.space_id = sri.space_id
+                    WHERE sri.reservation_id = r.reservation_id
+                ) AS space_names
             FROM reservations r
-            JOIN users u ON u.user_id = r.`{$applicantColumn}`
+            JOIN users u ON u.user_id COLLATE utf8mb4_unicode_ci = r.`{$applicantColumn}` COLLATE utf8mb4_unicode_ci
+            LEFT JOIN checkin_logs cl ON cl.reservation_id = r.reservation_id AND cl.applicant_id COLLATE utf8mb4_unicode_ci = r.`{$applicantColumn}` COLLATE utf8mb4_unicode_ci
             WHERE {$listWhere}
             ORDER BY r.`{$borrowEndColumn}` DESC
             LIMIT 300
@@ -228,9 +223,6 @@ if ($dbError === '') {
             <div class="navbar-brand"><h1>📚 校園資源租借系統</h1></div>
             <div class="navbar-menu">
                 <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
-                <?php if ($isManager) { ?>
-                    <button class="nav-btn" onclick="location.href='approve.php'">審核面板</button>
-                <?php } ?>
                 <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['user_id'], ENT_QUOTES, 'UTF-8'); ?></button>
                 <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
             </div>
@@ -238,7 +230,7 @@ if ($dbError === '') {
 
         <main class="main-content">
             <section class="card">
-                <h2><?php echo $isManager ? '借還確認管理' : '我的申請紀錄'; ?></h2>
+                <h2>我的申請紀錄</h2>
 
                 <?php if ($actionMsg !== '') { ?>
                     <div class="borrow-success"><?php echo htmlspecialchars($actionMsg, ENT_QUOTES, 'UTF-8'); ?></div>
@@ -256,14 +248,11 @@ if ($dbError === '') {
                                     <th>借用項目</th>
                                     <th>是否已報到</th>
                                     <th>歸還</th>
-                                    <?php if ($isManager) { ?>
-                                        <th>操作</th>
-                                    <?php } ?>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if (count($rows) === 0) { ?>
-                                    <tr><td colspan="<?php echo $isManager ? '6' : '5'; ?>"><?php echo $isManager ? '目前沒有可管理的已核准借用資料。' : '目前沒有可顯示的申請資料。'; ?></td></tr>
+                                    <tr><td colspan="5">目前沒有可顯示的申請資料。</td></tr>
                                 <?php } else { ?>
                                     <?php foreach ($rows as $row) { ?>
                                         <?php
@@ -289,36 +278,38 @@ if ($dbError === '') {
                                             </td>
                                             <td><?php echo htmlspecialchars($resourceText, ENT_QUOTES, 'UTF-8'); ?></td>
                                             <td>
+                                                <?php
+                                                    $isPickup = (int)$row['pickup_confirmed'] === 1;
+                                                    $checkinTime = $row['pickup_confirmed_at'];
+                                                    $checkinSpace = $row['checked_in_space_id'];
+                                                ?>
                                                 <span class="return-status <?php echo $isPickup ? 'return-status-ok' : 'return-status-pending'; ?>">
                                                     <?php echo $isPickup ? '已報到' : '未報到'; ?>
                                                 </span>
+                                                <?php if ($isPickup) { ?>
+                                                    <br><small>時間: <?php echo htmlspecialchars((string)$checkinTime, ENT_QUOTES, 'UTF-8'); ?></small>
+                                                    <br><small>位置: <?php echo htmlspecialchars((string)$checkinSpace, ENT_QUOTES, 'UTF-8'); ?></small>
+                                                <?php } ?>
                                             </td>
                                             <td>
+                                                <?php
+                                                    $isReturned = (int)$row['return_confirmed'] === 1;
+                                                    $returnTime = $row['return_confirmed_at'];
+                                                ?>
                                                 <span class="return-status <?php echo $isReturned ? 'return-status-ok' : 'return-status-pending'; ?>">
-                                                    <?php echo $isReturned ? '已歸還' : '未歸還'; ?>
+                                                        <?php echo $isReturned ? '已離場' : '可離場'; ?>
                                                 </span>
+                                                <?php if ($isReturned) { ?>
+                                                        <br><small>時間: <?php echo htmlspecialchars((string)$returnTime, ENT_QUOTES, 'UTF-8'); ?></small>
+                                                    <?php } elseif ($isPickup) { ?>
+                                                    <br>
+                                                    <form method="post" style="margin-top: 8px;">
+                                                        <input type="hidden" name="action" value="confirm_return">
+                                                        <input type="hidden" name="reservation_id" value="<?php echo (int)$row['reservation_id']; ?>">
+                                                            <button type="submit" class="btn-secondary" style="font-size: 12px; padding: 4px 12px;" onclick="return confirm('確認此申請已歸還或離場？')">確認歸還／離場</button>
+                                                    </form>
+                                                <?php } ?>
                                             </td>
-                                            <?php if ($isManager) { ?>
-                                                <td>
-                                                    <div class="return-action-buttons">
-                                                        <?php if (!$isPickup) { ?>
-                                                            <form method="post">
-                                                                <input type="hidden" name="action" value="confirm_pickup">
-                                                                <input type="hidden" name="reservation_id" value="<?php echo (int)$row['reservation_id']; ?>">
-                                                                <button type="submit" class="btn-primary">確認取件</button>
-                                                            </form>
-                                                        <?php } ?>
-
-                                                        <?php if (!$isReturned) { ?>
-                                                            <form method="post">
-                                                                <input type="hidden" name="action" value="confirm_return">
-                                                                <input type="hidden" name="reservation_id" value="<?php echo (int)$row['reservation_id']; ?>">
-                                                                <button type="submit" class="btn-secondary" onclick="return confirm('確認此申請已歸還？')">確認歸還</button>
-                                                            </form>
-                                                        <?php } ?>
-                                                    </div>
-                                                </td>
-                                            <?php } ?>
                                         </tr>
                                     <?php } ?>
                                 <?php } ?>

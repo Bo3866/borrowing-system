@@ -1,6 +1,13 @@
 <?php
 declare(strict_types=1);
 
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+
+require 'lib/PHPMailer/PHPMailer.php';
+require 'lib/PHPMailer/SMTP.php';
+require 'lib/PHPMailer/Exception.php';
+
 session_start();
 
 if (!isset($_SESSION['user_id'])) {
@@ -93,8 +100,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_id'], $_P
                 }
             }
 
+            // 取得申請人資訊以寄送郵件
+            $userEmail = '';
+            $userName = '';
+            $userQuery = mysqli_prepare($link, 'SELECT u.email, u.full_name FROM users u JOIN reservations r ON u.user_id = r.user_id WHERE r.reservation_id = ?');
+            if ($userQuery) {
+                mysqli_stmt_bind_param($userQuery, 'i', $reservationId);
+                mysqli_stmt_execute($userQuery);
+                $userResult = mysqli_stmt_get_result($userQuery);
+                if ($userData = mysqli_fetch_assoc($userResult)) {
+                    $userEmail = $userData['email'];
+                    $userName = $userData['full_name'];
+                }
+                mysqli_stmt_close($userQuery);
+            }
+
             mysqli_commit($link);
             $actionMsg = $action === 'approved' ? '已核准此申請。' : '已拒絕此申請。';
+
+            // 如果有申請人信箱，則寄送通知信
+            if ($userEmail) {
+                $mail = new PHPMailer(true);
+                try {
+                    //Server settings
+                    $mail->isSMTP();
+                    $mail->Host       = 'smtp.gmail.com'; // Gmail SMTP 伺服器
+                    $mail->SMTPAuth   = true;
+                    $mail->Username   = 'sasass041919@gmail.com'; // 您的 Gmail 信箱
+                    $mail->Password   = 'xogusuplsoapxayc';    // Gmail 應用程式密碼
+                    $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+                    $mail->Port       = 465;
+                    $mail->CharSet    = 'UTF-8';
+
+                    //Recipients
+                    $mail->setFrom('sasass041919@gmail.com', '器材借用系統');
+                    $mail->addAddress($userEmail, $userName);
+
+                    //Content
+                    $mail->isHTML(true);
+                    $mail->Subject = '您的借用申請狀態已更新';
+                    $statusText = $action === 'approved' ? '已被核准' : '已被拒絕';
+                    $mail->Body    = "您好 {$userName}：<br><br>您提出的借用申請（編號：{$reservationId}）{$statusText}。<br><br>審核意見：<br>" . nl2br(htmlspecialchars($comment ?? '無')) . "<br><br>感謝您！";
+                    $mail->AltBody = "您好 {$userName}：\n\n您提出的借用申請（編號：{$reservationId}）{$statusText}。\n\n審核意見：\n" . htmlspecialchars($comment ?? '無') . "\n\n感謝您！";
+
+                    $mail->send();
+                    $actionMsg .= ' 已寄出通知信。';
+                } catch (Exception $e) {
+                    // 郵件寄送失敗，但不要影響主要操作結果
+                    $actionMsg .= " 但通知信寄送失敗： {$mail->ErrorInfo}";
+                }
+            }
+
         } catch (Throwable $e) {
             mysqli_rollback($link);
             $actionMsg = '處理失敗：' . $e->getMessage();

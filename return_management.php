@@ -151,8 +151,9 @@ if ($dbError === '') {
     }
 
     if ($dbError === '') {
+        $listWhere = "r.approval_status = 'approved'";
         $safeUserId = mysqli_real_escape_string($link, $currentUserId);
-        $listWhere = "r.`{$applicantColumn}` = '{$safeUserId}'";
+        $listWhere .= " AND r.`{$applicantColumn}` = '{$safeUserId}'";
 
         // 查詢邏輯：
         // - pickup_confirmed: 使用 checkin_logs.checked_in_at 判斷（NULL = 未報到，NOT NULL = 已報到）
@@ -245,14 +246,13 @@ if ($dbError === '') {
                                     <th>申請人</th>
                                     <th>借用時段</th>
                                     <th>借用項目</th>
-                                    <th>申請狀態</th>
                                     <th>是否已報到</th>
                                     <th>歸還</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if (count($rows) === 0) { ?>
-                                    <tr><td colspan="6">目前沒有可顯示的申請資料。</td></tr>
+                                    <tr><td colspan="5">目前沒有可顯示的申請資料。</td></tr>
                                 <?php } else { ?>
                                     <?php foreach ($rows as $row) { ?>
                                         <?php
@@ -276,7 +276,6 @@ if ($dbError === '') {
                                                 <?php echo htmlspecialchars((string)$row['borrow_start_at'], ENT_QUOTES, 'UTF-8'); ?><br>
                                                 ～ <?php echo htmlspecialchars((string)$row['borrow_end_at'], ENT_QUOTES, 'UTF-8'); ?>
                                             </td>
-                                            <td><?php echo htmlspecialchars((string)$row['approval_status'], ENT_QUOTES, 'UTF-8'); ?></td>
                                             <td><?php echo htmlspecialchars($resourceText, ENT_QUOTES, 'UTF-8'); ?></td>
                                             <td>
                                                 <?php

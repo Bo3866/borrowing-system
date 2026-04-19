@@ -22,7 +22,7 @@ if ($incomingQrToken === '' && isset($_SESSION['pending_checkin_qr'])) {
 }
 unset($_SESSION['pending_checkin_qr']);
 
-$link = mysqli_connect('localhost', 'root', '', 'borrowing_system',3307);
+$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
 $dbError = '';
 if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();

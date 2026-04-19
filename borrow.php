@@ -48,9 +48,14 @@ if ($dbError === '') {
             ec.equipment_code,
             ec.equipment_name,
             ec.borrow_limit_quantity,
-            COALESCE(SUM(CASE WHEN e.operation_status = 1 THEN 1 ELSE 0 END), 0) AS available_quantity
+            COALESCE(SUM(CASE WHEN e.operation_status = 1 THEN 1 ELSE 0 END), 0) - COALESCE(SUM(eri.borrow_quantity), 0) AS available_quantity
         FROM equipment_categories ec
         LEFT JOIN equipments e ON e.equipment_code = ec.equipment_code
+        LEFT JOIN equipment_reservation_items eri ON e.equipment_id = eri.equipment_id
+        LEFT JOIN reservations r ON eri.reservation_id = r.reservation_id
+            AND r.borrow_start_at <= NOW()
+            AND r.borrow_end_at > NOW()
+            AND r.approval_status IN ('pending', 'approved')
         GROUP BY ec.equipment_code, ec.equipment_name, ec.borrow_limit_quantity
         ORDER BY ec.equipment_code ASC
     ";
@@ -79,6 +84,7 @@ if ($dbError === '') {
                 s.capacity,
                 s.space_status
             FROM spaces s
+            WHERE s.space_status IN ('available', '1')
             ORDER BY s.space_id ASC
         ";
 
@@ -419,19 +425,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $updateEquipmentStatusStmt = mysqli_prepare(
                         $link,
-                        'UPDATE equipments SET operation_status = 2 WHERE equipment_id = ? AND operation_status = 1'
+                        'UPDATE equipments SET operation_status = 2 WHERE equipment_id = ? AND operation_status = 1 AND ? <= NOW()'
                     );
                     if (!$updateEquipmentStatusStmt) {
                         throw new RuntimeException('更新器材可借狀態失敗：' . mysqli_error($link));
                     }
 
                     foreach ($equipmentIds as $equipmentId) {
-                        mysqli_stmt_bind_param($updateEquipmentStatusStmt, 'i', $equipmentId);
+                        mysqli_stmt_bind_param($updateEquipmentStatusStmt, 'is', $equipmentId, $borrowStartAtSql);
                         mysqli_stmt_execute($updateEquipmentStatusStmt);
 
-                        if (mysqli_stmt_affected_rows($updateEquipmentStatusStmt) !== 1) {
-                            throw new RuntimeException('器材狀態更新異常，請重新送出申請。');
-                        }
+                        // 如果是未來預約，不會更新，所以affected_rows可能為0，但不拋錯
+                        // if (mysqli_stmt_affected_rows($updateEquipmentStatusStmt) !== 1) {
+                        //     throw new RuntimeException('器材狀態更新異常，請重新送出申請。');
+                        // }
                     }
                     mysqli_stmt_close($updateEquipmentStatusStmt);
                     // 嘗試建立器材核簽紀錄（若申請人有有效證照）
@@ -508,14 +515,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     mysqli_stmt_bind_param($spaceItemStmt, 'isss', $reservationId, $formData['space_id'], $proposalFileForSpace, $proposalUploadedAtForSpace);
                     mysqli_stmt_execute($spaceItemStmt);
                     mysqli_stmt_close($spaceItemStmt);
-                    // 更新 spaces 表的營運狀態為 2（已借出）
-                    $updateSpaceStatusStmt = mysqli_prepare($link, 'UPDATE spaces SET space_status = ? WHERE space_id = ?');
-                    if ($updateSpaceStatusStmt) {
-                        $newStatus = '2';
-                        mysqli_stmt_bind_param($updateSpaceStatusStmt, 'ss', $newStatus, $formData['space_id']);
-                        mysqli_stmt_execute($updateSpaceStatusStmt);
-                        mysqli_stmt_close($updateSpaceStatusStmt);
-                    }
+                    // 不再更新 spaces 表的營運狀態，因為我們通過查詢衝突來檢查可用性
                 }
 
                 mysqli_commit($link);

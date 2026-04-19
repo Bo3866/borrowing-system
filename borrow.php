@@ -294,8 +294,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         throw new RuntimeException('企劃書大小超過 5MB 限制。');
                     }
 
-                    $finfo = new finfo(FILEINFO_MIME_TYPE);
-                    $mime = (string)$finfo->file($file['tmp_name']);
+                    if (class_exists('finfo')) {
+                        $finfo = new finfo(FILEINFO_MIME_TYPE);
+                        $mime = (string)$finfo->file($file['tmp_name']);
+                    } else {
+                        $ext = strtolower(pathinfo((string)$file['name'], PATHINFO_EXTENSION));
+                        $mime = $file['type'] ?? ($ext === 'pdf' ? 'application/pdf' : 'application/octet-stream');
+                    }
                     // 僅允許 PDF
                     $allowed = [
                         'application/pdf' => 'pdf',

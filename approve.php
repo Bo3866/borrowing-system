@@ -18,7 +18,7 @@ if (!in_array($currentRole, ['2', '3'], true)) {
     exit;
 }
 
-$link = mysqli_connect('localhost', 'root', '', 'borrowing_system', 3307);
+$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
 if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();
 } else {

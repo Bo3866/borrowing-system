@@ -12,7 +12,7 @@ $currentUserId = (string)$_SESSION['user_id'];
 $currentRole = (string)($_SESSION['role_name'] ?? '');
 $isManager = in_array($currentRole, ['2', '3'], true);
 
-$link = mysqli_connect('localhost', 'root', '', 'borrowing_system', 3307);
+$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
 $dbError = '';
 if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();

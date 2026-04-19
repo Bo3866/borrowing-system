@@ -226,7 +226,7 @@ CREATE TABLE IF NOT EXISTS equipment_maintenance (
 CREATE TABLE IF NOT EXISTS equipment_signoffs (
   signoff_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '簽核編號',
   reservation_id BIGINT UNSIGNED NOT NULL COMMENT '關聯預約單(預約編號)',
-  certificate_id BIGINT UNSIGNED NOT NULL COMMENT '關聯證照(證照編號)',
+  certificate_id BIGINT UNSIGNED NULL COMMENT '關聯證照(證照編號)',
   reviewer_id VARCHAR(10) NOT NULL COMMENT '審核人員ID(學號/教職員編號)',
   signoff_status ENUM('approved', 'rejected', 'pending') NOT NULL DEFAULT 'pending' COMMENT '狀態(通過/不通過/待審)',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

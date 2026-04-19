@@ -4,10 +4,12 @@ declare(strict_types=1);
 function getDatabaseConnection(): PDO
 {
     $host = '127.0.0.1';
-    $port = '3306';
+    // Use port 3307 to match mysqli usage elsewhere in the project
+    $port = '3307';
     $database = 'borrowing_system';
     $username = 'root';
-    $password = '12345678';
+    // MySQL in this workspace uses an empty root password for local dev
+    $password = '';
 
     $dsn = "mysql:host={$host};port={$port};dbname={$database};charset=utf8mb4";
 

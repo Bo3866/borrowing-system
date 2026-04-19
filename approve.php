@@ -25,11 +25,12 @@ if (!in_array($currentRole, ['2', '3'], true)) {
     exit;
 }
 
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
+$link = mysqli_connect('localhost', 'root', '', 'borrowing_system', 3307);
 if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();
 } else {
     mysqli_set_charset($link, 'utf8mb4');
+    mysqli_query($link, "SET time_zone = '+08:00'");
 }
 
 function pickExistingColumn(array $columns, array $candidates): ?string

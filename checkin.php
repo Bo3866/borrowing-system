@@ -22,7 +22,7 @@ if ($incomingQrToken === '' && isset($_SESSION['pending_checkin_qr'])) {
 }
 unset($_SESSION['pending_checkin_qr']);
 
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
+$link = mysqli_connect('localhost', 'root', '', 'borrowing_system',3307);
 $dbError = '';
 if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();
@@ -123,9 +123,7 @@ if ($dbError === '' && $feedbackType !== 'error' && $_SERVER['REQUEST_METHOD'] =
             JOIN spaces s ON s.space_id = sri.space_id
             WHERE r.`{$applicantColumn}` = ?
               AND r.approval_status = 'approved'
-              AND s.space_id = ?
-              AND NOW() BETWEEN DATE_SUB(r.`{$borrowStartColumn}`, INTERVAL 60 MINUTE)
-                           AND DATE_ADD(r.`{$borrowEndColumn}`, INTERVAL 60 MINUTE)
+            AND s.space_id = ?
             ORDER BY r.`{$borrowStartColumn}` DESC
             LIMIT 1
         ";
@@ -210,8 +208,7 @@ if ($dbError === '' && $feedbackType !== 'error') {
         JOIN spaces s ON s.space_id = sri.space_id
         WHERE r.`{$applicantColumn}` = ?
           AND r.approval_status = 'approved'
-          AND NOW() BETWEEN DATE_SUB(r.`{$borrowStartColumn}`, INTERVAL 60 MINUTE)
-                       AND DATE_ADD(r.`{$borrowEndColumn}`, INTERVAL 60 MINUTE)
+          -- 時間限制已移除：允許在任何時間對核准的預約進行報到
           AND NOT EXISTS (
               SELECT 1
               FROM checkin_logs cl

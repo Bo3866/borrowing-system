@@ -211,15 +211,16 @@ CREATE TABLE IF NOT EXISTS equipment_maintenance (
   maintenance_status ENUM('pending', 'in_progress', 'completed') NOT NULL DEFAULT 'pending' COMMENT '報修狀態',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  photo_path VARCHAR(255) NULL COMMENT '上傳照片路徑',
   PRIMARY KEY (maintenance_id),
   KEY idx_equipment_maintenance_equipment (equipment_id),
   KEY idx_equipment_maintenance_reporter (reporter_id),
   CONSTRAINT fk_equipment_maintenance_equipment
     FOREIGN KEY (equipment_id) REFERENCES equipments (equipment_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT,
+    ON UPDATE CASCADE,
   CONSTRAINT fk_equipment_maintenance_reporter
     FOREIGN KEY (reporter_id) REFERENCES users (user_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT
+    ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
 -- 11) 器材核簽

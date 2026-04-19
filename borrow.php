@@ -278,6 +278,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $reservationId = (int)mysqli_insert_id($link);
                 mysqli_stmt_close($reservationStmt);
 
+                // 若為申請空間且有上傳企劃書，處理上傳並更新 reservations
+                if ($formData['resource_type'] === 'space') {
+                    if (!isset($_FILES['proposal_file']) || $_FILES['proposal_file']['error'] === UPLOAD_ERR_NO_FILE) {
+                        throw new RuntimeException('申請場地需上傳活動企劃書。');
+                    }
+
+                    $file = $_FILES['proposal_file'];
+                    if ($file['error'] !== UPLOAD_ERR_OK) {
+                        throw new RuntimeException('企劃書上傳失敗（錯誤碼：' . (int)$file['error'] . '）。');
+                    }
+
+                    $maxBytes = 5 * 1024 * 1024; // 5MB
+                    if ($file['size'] > $maxBytes) {
+                        throw new RuntimeException('企劃書大小超過 5MB 限制。');
+                    }
+
+                    $finfo = new finfo(FILEINFO_MIME_TYPE);
+                    $mime = (string)$finfo->file($file['tmp_name']);
+                    // 僅允許 PDF
+                    $allowed = [
+                        'application/pdf' => 'pdf',
+                    ];
+                    if (!array_key_exists($mime, $allowed)) {
+                        throw new RuntimeException('企劃書格式不支援，僅接受 PDF。');
+                    }
+
+                    $uploadDir = __DIR__ . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'proposals';
+                    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+                        throw new RuntimeException('建立上傳目錄失敗。');
+                    }
+
+                    $ext = $allowed[$mime];
+                    $safeBasename = preg_replace('/[^a-zA-Z0-9_-]/', '_', pathinfo((string)$file['name'], PATHINFO_FILENAME));
+                    $targetName = sprintf('%d_%s.%s', $reservationId, $safeBasename, $ext);
+                    $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $targetName;
+
+                    if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
+                        throw new RuntimeException('企劃書儲存失敗。');
+                    }
+
+                    // 儲存相對路徑到資料庫
+                    $relativePath = 'uploads/proposals/' . $targetName;
+                    $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET proposal_file = ?, proposal_uploaded_at = NOW() WHERE reservation_id = ?');
+                    if (!$updateStmt) {
+                        throw new RuntimeException('更新企劃書路徑失敗：' . mysqli_error($link));
+                    }
+                    mysqli_stmt_bind_param($updateStmt, 'si', $relativePath, $reservationId);
+                    mysqli_stmt_execute($updateStmt);
+                    mysqli_stmt_close($updateStmt);
+                }
+
                 if ($formData['resource_type'] === 'equipment') {
                     $stockCheckStmt = mysqli_prepare(
                         $link,
@@ -504,13 +555,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="borrow-layout">
                     <section class="card borrow-form-card">
                         <h3>申請資料</h3>
-                        <form method="post" class="borrow-form" action="borrow.php">
+                        <form method="post" enctype="multipart/form-data" class="borrow-form" action="borrow.php">
                             <div class="form-group">
                                 <label for="resource_type">借用類型</label>
                                 <select id="resource_type" name="resource_type">
                                     <option value="equipment" <?php echo $formData['resource_type'] === 'equipment' ? 'selected' : ''; ?>>器材</option>
                                     <option value="space" <?php echo $formData['resource_type'] === 'space' ? 'selected' : ''; ?>>空間</option>
                                 </select>
+                                <div id="proposalGroup" style="margin-top:0.6rem;">
+                                    <label for="proposal_file">活動企劃書（申請場地時必填，僅接受 PDF，限 5MB）</label>
+                                    <input type="file" id="proposal_file" name="proposal_file" accept="application/pdf">
+                                </div>
                             </div>
 
                             <div class="form-group">
@@ -690,6 +745,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const otherSpaceGroup = document.getElementById('otherSpaceGroup');
             const otherSpaceInput = document.getElementById('other_space_name');
             const otherSpaceOptionValue = <?php echo json_encode($otherSpaceOptionValue, JSON_UNESCAPED_UNICODE); ?>;
+            const proposalFileInput = document.getElementById('proposal_file');
+            const proposalGroup = document.getElementById('proposalGroup');
 
             function ensureSelectableEquipment() {
                 const selectedOption = equipmentSelect.options[equipmentSelect.selectedIndex];
@@ -720,11 +777,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 equipmentSelect.required = isEquipment;
                 quantityInput.required = isEquipment;
                 spaceSelect.required = !isEquipment;
+<<<<<<< HEAD
                 otherSpaceGroup.style.display = isOtherSpace ? '' : 'none';
                 otherSpaceInput.required = isOtherSpace;
 
                 if (!isOtherSpace) {
                     otherSpaceInput.value = '';
+                }
+
+                if (proposalFileInput) {
+                    proposalFileInput.required = !isEquipment;
+                }
+                if (proposalGroup) {
+                    proposalGroup.style.display = isEquipment ? 'none' : '';
                 }
 
                 if (!isEquipment) {

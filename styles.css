@@ -160,6 +160,80 @@ h3 {
     transform: translateY(-4px);
 }
 
+/* ===== 報修卡片 (粉色主題) ===== */
+.maintenance-card {
+    background: linear-gradient(180deg, #fff7f7 0%, #fff1f2 100%);
+    border: 1px solid #f3d6d8;
+    padding: 1.6rem;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.maintenance-card h2 {
+    font-size: 1.8rem;
+    color: #8b2d2d;
+    margin-bottom: 0.6rem;
+}
+
+.maintenance-card .hint {
+    background: #fff0f0;
+    border: 1px solid #ffd6d8;
+    padding: 0.85rem;
+    border-radius: 12px;
+    margin-bottom: 1rem;
+    color: #6b2b2b;
+}
+
+.maintenance-card label {
+    display: block;
+    font-weight: 700;
+    color: #5a2323;
+    margin-bottom: 0.35rem;
+}
+
+.maintenance-card input[type="text"],
+.maintenance-card input[type="email"],
+.maintenance-card textarea,
+.maintenance-card select,
+.maintenance-card input[type="file"] {
+    width: 100%;
+    padding: 0.75rem 0.85rem;
+    border: 1px solid #f0c7c8;
+    background: #fff;
+    border-radius: 10px;
+    font-size: 0.98rem;
+    color: #4a2a2a;
+    margin-bottom: 0.6rem;
+}
+
+.maintenance-card textarea { min-height: 140px; }
+
+.maintenance-card .form-row { margin-bottom: 0.9rem; }
+
+.maintenance-card .btn-primary {
+    background: #b44b4b;
+    color: #fff;
+}
+
+.maintenance-card .btn-secondary {
+    background: #f5dede;
+    color: #7b2b2b;
+}
+
+.maintenance-card .hint.small { font-size: 0.9rem; color: #7b2b2b; }
+
+.maintenance-card .login-alert {
+    background: #fff0f0;
+    border: 1px solid #ffd6d8;
+    color: #8b2d2d;
+}
+
+.maintenance-card .borrow-success {
+    background: #fff9f9;
+    border: 1px solid #ffd6d8;
+    color: #6b2b2b;
+}
+
 .card h3 {
     margin-bottom: 0.5rem;
 }

@@ -32,6 +32,7 @@ $relativeCheckinPath = 'checkin.php?qr=' . urlencode($payload);
             <div class="navbar-brand"><h1>📚 校園資源租借系統</h1></div>
             <div class="navbar-menu">
                 <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
+                <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
                 <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
             </div>
         </nav>

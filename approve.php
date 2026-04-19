@@ -25,7 +25,7 @@ if (!in_array($currentRole, ['2', '3'], true)) {
     exit;
 }
 
-$link = mysqli_connect('localhost', 'root', '', 'borrowing_system',3307);
+$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
 if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();
 } else {
@@ -237,6 +237,7 @@ function fetchItems(mysqli $link, int $reservationId): array
             <div class="navbar-brand"><h1>📚 校園資源租借系統</h1></div>
             <div class="navbar-menu">
                 <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
+                <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
                 <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['user_id'], ENT_QUOTES, 'UTF-8'); ?></button>
                 <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
             </div>

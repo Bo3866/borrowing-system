@@ -7,7 +7,7 @@ function getDatabaseConnection(): PDO
     $port = '3306';
     $database = 'borrowing_system';
     $username = 'root';
-    $password = '';
+    $password = '12345678';
 
     $dsn = "mysql:host={$host};port={$port};dbname={$database};charset=utf8mb4";
 

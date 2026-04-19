@@ -32,7 +32,7 @@ $periodSlots = [
 ];
 $periodOrder = array_keys($periodSlots);
 
-$link = mysqli_connect('localhost', 'root', '', 'borrowing_system', 3307);
+$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
 $dbError = '';
 if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();
@@ -99,6 +99,8 @@ if ($dbError === '') {
     }
 }
 
+$reservationApplicantColumn = 'user_id';
+
 $borrowError = '';
 $borrowSuccess = '';
 $formData = [
@@ -129,6 +131,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (!in_array($formData['resource_type'], ['equipment', 'space'], true)) {
         $borrowError = '請選擇有效的借用類型。';
     } else {
+        // 先計算借用時間（用於後續驗證）
+        $borrowStartAtSql = '';
+        $borrowEndAtSql = '';
+        
+        if (
+            $formData['borrow_date'] !== '' &&
+            $formData['start_period_code'] !== '' &&
+            $formData['end_period_code'] !== ''
+        ) {
+            if (isset($periodSlots[$formData['start_period_code']]) && isset($periodSlots[$formData['end_period_code']])) {
+                $startIndex = array_search($formData['start_period_code'], $periodOrder, true);
+                $endIndex = array_search($formData['end_period_code'], $periodOrder, true);
+                if ($startIndex !== false && $endIndex !== false && $endIndex >= $startIndex) {
+                    $borrowStartAtSql = $formData['borrow_date'] . ' ' . $periodSlots[$formData['start_period_code']]['start'];
+                    $borrowEndAtSql = $formData['borrow_date'] . ' ' . $periodSlots[$formData['end_period_code']]['end'];
+                }
+            }
+        }
+
         $selectedEquipment = null;
         $selectedSpace = null;
         $borrowQuantity = 1;
@@ -145,6 +166,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $borrowError = '借用數量超過限借數量。';
                 } elseif ($borrowQuantity > (int)$selectedEquipment['available_quantity']) {
                     $borrowError = '借用數量超過目前可借用數量。';
+                } else {
+                    // 檢查該使用者對此器材類別所有未拒絕預約的總借用數量
+                    if ($selectedEquipment['borrow_limit_quantity'] !== null && $borrowError === '') {
+                        $reservApplicantCol = $reservationApplicantColumn;
+                        $totalQuantitySql = sprintf(
+                            'SELECT COALESCE(SUM(eri.borrow_quantity), 0) AS total_quantity
+                             FROM reservations r
+                             JOIN equipment_reservation_items eri ON r.reservation_id = eri.reservation_id
+                             JOIN equipments e ON eri.equipment_id = e.equipment_id
+                             WHERE r.%s = ?
+                               AND r.approval_status IN ("pending", "approved")
+                               AND e.equipment_code = ?'
+                            , $reservApplicantCol
+                        );
+                        $totalQuantityStmt = mysqli_prepare($link, $totalQuantitySql);
+                        if ($totalQuantityStmt) {
+                            mysqli_stmt_bind_param($totalQuantityStmt, 'ss', $userId, $formData['equipment_code']);
+                            mysqli_stmt_execute($totalQuantityStmt);
+                            $totalQuantityResult = mysqli_stmt_get_result($totalQuantityStmt);
+                            $totalQuantityRow = $totalQuantityResult ? mysqli_fetch_assoc($totalQuantityResult) : null;
+                            mysqli_stmt_close($totalQuantityStmt);
+
+                            $currentTotalQuantity = $totalQuantityRow ? (int)$totalQuantityRow['total_quantity'] : 0;
+                            $nextTotalQuantity = $currentTotalQuantity + $borrowQuantity;
+
+                            if ($nextTotalQuantity > (int)$selectedEquipment['borrow_limit_quantity']) {
+                                $borrowError = sprintf(
+                                    '您對該器材的所有未完成預約共 %d 個，加上本次申請 %d 個共 %d 個，已超過限借數量 %d 個，無法申請。',
+                                    $currentTotalQuantity,
+                                    $borrowQuantity,
+                                    $nextTotalQuantity,
+                                    (int)$selectedEquipment['borrow_limit_quantity']
+                                );
+                            }
+                        }
+                    }
                 }
             }
         } else {
@@ -157,9 +214,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
-
-        $borrowStartAtSql = '';
-        $borrowEndAtSql = '';
 
         if ($borrowError !== '') {
             // Keep the first validation error.
@@ -181,8 +235,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $borrowError = '結束節次不可早於開始節次。';
             } else {
                 $submittedResourceType = $formData['resource_type'];
-                $borrowStartAtSql = $formData['borrow_date'] . ' ' . $periodSlots[$formData['start_period_code']]['start'];
-                $borrowEndAtSql = $formData['borrow_date'] . ' ' . $periodSlots[$formData['end_period_code']]['end'];
             }
         }
 
@@ -216,20 +268,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     mysqli_stmt_execute($updatePhoneStmt);
                     mysqli_stmt_close($updatePhoneStmt);
                 }
-                // 檢查 reservations 表格是否存在 applicant_id 或 user_id 欄位，並使用存在的欄位
-                $applicantColumn = null;
-                $colA = mysqli_query($link, "SHOW COLUMNS FROM reservations LIKE 'applicant_id'");
-                if ($colA && mysqli_num_rows($colA) > 0) {
-                    $applicantColumn = 'applicant_id';
-                } else {
-                    $colB = mysqli_query($link, "SHOW COLUMNS FROM reservations LIKE 'user_id'");
-                    if ($colB && mysqli_num_rows($colB) > 0) {
-                        $applicantColumn = 'user_id';
-                    }
-                }
-
-                if ($applicantColumn === null) {
-                    throw new RuntimeException('資料表 reservations 欄位缺少 applicant_id 或 user_id，請檢查資料庫結構。');
+                $applicantColumn = $reservationApplicantColumn;
+                if ($applicantColumn !== 'user_id') {
+                    throw new RuntimeException('資料表 reservations 欄位缺少 user_id，請檢查資料庫結構。');
                 }
 
                 $insertSql = sprintf(

@@ -11,7 +11,6 @@ if (!isset($_SESSION['user_id'])) {
 $userId = (string)$_SESSION['user_id'];
 $displayName = (string)($_SESSION['full_name'] ?? $_SESSION['user_id']);
 $roleName = (string)($_SESSION['role_name'] ?? '');
-$otherSpaceOptionValue = '__OTHER__';
 
 // 節次設定：可依附件節次代號與時間調整
 $periodSlots = [
@@ -33,7 +32,7 @@ $periodSlots = [
 ];
 $periodOrder = array_keys($periodSlots);
 
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
+$link = mysqli_connect('localhost', 'root', '', 'borrowing_system', 3307);
 $dbError = '';
 if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();
@@ -106,7 +105,6 @@ $formData = [
     'resource_type' => 'equipment',
     'equipment_code' => '',
     'space_id' => '',
-    'other_space_name' => '',
     'borrow_quantity' => '1',
     'borrow_date' => '',
     'start_period_code' => '',
@@ -119,7 +117,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['resource_type'] = trim((string)($_POST['resource_type'] ?? 'equipment'));
     $formData['equipment_code'] = trim((string)($_POST['equipment_code'] ?? ''));
     $formData['space_id'] = trim((string)($_POST['space_id'] ?? ''));
-    $formData['other_space_name'] = trim((string)($_POST['other_space_name'] ?? ''));
     $formData['borrow_quantity'] = trim((string)($_POST['borrow_quantity'] ?? '1'));
     $formData['borrow_date'] = trim((string)($_POST['borrow_date'] ?? ''));
     $formData['start_period_code'] = trim((string)($_POST['start_period_code'] ?? ''));
@@ -151,11 +148,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         } else {
-            if ($formData['space_id'] === $otherSpaceOptionValue) {
-                if ($formData['other_space_name'] === '') {
-                    $borrowError = '選擇「其他」時，請輸入場地名稱。';
-                }
-            } elseif (!isset($spaceMap[$formData['space_id']])) {
+            if (!isset($spaceMap[$formData['space_id']])) {
                 $borrowError = '請選擇有效的空間項目。';
             } else {
                 $selectedSpace = $spaceMap[$formData['space_id']];
@@ -198,6 +191,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             mysqli_begin_transaction($link);
 
             try {
+                // 確保 space_reservation_items 表有 proposal_file 和 proposal_uploaded_at 欄位
+                $proposalFileColumnResult = mysqli_query($link, "SHOW COLUMNS FROM space_reservation_items LIKE 'proposal_file'");
+                if (!($proposalFileColumnResult && mysqli_num_rows($proposalFileColumnResult) > 0)) {
+                    if (!mysqli_query($link, "ALTER TABLE space_reservation_items ADD COLUMN proposal_file VARCHAR(255) NULL COMMENT '上傳之活動企劃書檔案路徑' AFTER space_id")) {
+                        throw new RuntimeException('無法建立 space_reservation_items.proposal_file 欄位：' . mysqli_error($link));
+                    }
+                }
+                $proposalUploadedAtColumnResult = mysqli_query($link, "SHOW COLUMNS FROM space_reservation_items LIKE 'proposal_uploaded_at'");
+                if (!($proposalUploadedAtColumnResult && mysqli_num_rows($proposalUploadedAtColumnResult) > 0)) {
+                    if (!mysqli_query($link, "ALTER TABLE space_reservation_items ADD COLUMN proposal_uploaded_at DATETIME NULL COMMENT '活動企劃書上傳時間' AFTER proposal_file")) {
+                        throw new RuntimeException('無法建立 space_reservation_items.proposal_uploaded_at 欄位：' . mysqli_error($link));
+                    }
+                }
+
                 if ($formData['contact_phone'] !== '') {
                     $updatePhoneStmt = mysqli_prepare($link, 'UPDATE users SET phone = ? WHERE user_id = ?');
                     if (!$updatePhoneStmt) {
@@ -223,60 +230,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('資料表 reservations 欄位缺少 applicant_id 或 user_id，請檢查資料庫結構。');
                 }
 
-                $otherSpaceNameForSave = null;
-                if ($formData['resource_type'] === 'space' && $formData['space_id'] === $otherSpaceOptionValue) {
-                    $otherSpaceNameForSave = $formData['other_space_name'];
-                }
-
-                $hasOtherSpaceColumn = false;
-                $otherSpaceColumnResult = mysqli_query($link, "SHOW COLUMNS FROM reservations LIKE 'other_space_name'");
-                if ($otherSpaceColumnResult && mysqli_num_rows($otherSpaceColumnResult) > 0) {
-                    $hasOtherSpaceColumn = true;
-                } elseif ($otherSpaceNameForSave !== null) {
-                    $alterSql = "ALTER TABLE reservations ADD COLUMN other_space_name VARCHAR(120) NULL COMMENT '申請者自填其他場地名稱'";
-                    if (!mysqli_query($link, $alterSql)) {
-                        throw new RuntimeException('無法建立 reservations.other_space_name 欄位：' . mysqli_error($link));
-                    }
-                    $hasOtherSpaceColumn = true;
-                }
-
-                if ($hasOtherSpaceColumn) {
-                    $insertSql = sprintf(
-                        'INSERT INTO reservations (%s, borrow_start_at, borrow_end_at, approval_status, other_space_name) VALUES (?, ?, ?, "pending", ?)',
-                        $applicantColumn
-                    );
-                } else {
-                    $insertSql = sprintf(
-                        'INSERT INTO reservations (%s, borrow_start_at, borrow_end_at, approval_status) VALUES (?, ?, ?, "pending")',
-                        $applicantColumn
-                    );
-                }
+                $insertSql = sprintf(
+                    'INSERT INTO reservations (%s, borrow_start_at, borrow_end_at, approval_status) VALUES (?, ?, ?, "pending")',
+                    $applicantColumn
+                );
 
                 $reservationStmt = mysqli_prepare($link, $insertSql);
                 if (!$reservationStmt) {
                     throw new RuntimeException('建立預約主檔失敗：' . mysqli_error($link));
                 }
-                if ($hasOtherSpaceColumn) {
-                    mysqli_stmt_bind_param(
-                        $reservationStmt,
-                        'ssss',
-                        $userId,
-                        $borrowStartAtSql,
-                        $borrowEndAtSql,
-                        $otherSpaceNameForSave
-                    );
-                } else {
-                    mysqli_stmt_bind_param(
-                        $reservationStmt,
-                        'sss',
-                        $userId,
-                        $borrowStartAtSql,
-                        $borrowEndAtSql
-                    );
-                }
+                mysqli_stmt_bind_param(
+                    $reservationStmt,
+                    'sss',
+                    $userId,
+                    $borrowStartAtSql,
+                    $borrowEndAtSql
+                );
                 mysqli_stmt_execute($reservationStmt);
                 $reservationId = (int)mysqli_insert_id($link);
                 mysqli_stmt_close($reservationStmt);
+
+                // 企劃書相關變數
+                $proposalFileForSpace = null;
+                $proposalUploadedAtForSpace = null;
 
                 // 若為申請空間且有上傳企劃書，處理上傳並更新 reservations
                 if ($formData['resource_type'] === 'space') {
@@ -319,12 +295,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
 
                     // 儲存相對路徑到資料庫
-                    $relativePath = 'uploads/proposals/' . $targetName;
-                    $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET proposal_file = ?, proposal_uploaded_at = NOW() WHERE reservation_id = ?');
+                    $proposalFileForSpace = 'uploads/proposals/' . $targetName;
+                    $proposalUploadedAtForSpace = date('Y-m-d H:i:s');
+                    $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET proposal_file = ?, proposal_uploaded_at = ? WHERE reservation_id = ?');
                     if (!$updateStmt) {
                         throw new RuntimeException('更新企劃書路徑失敗：' . mysqli_error($link));
                     }
-                    mysqli_stmt_bind_param($updateStmt, 'si', $relativePath, $reservationId);
+                    mysqli_stmt_bind_param($updateStmt, 'ssi', $proposalFileForSpace, $proposalUploadedAtForSpace, $reservationId);
                     mysqli_stmt_execute($updateStmt);
                     mysqli_stmt_close($updateStmt);
                 }
@@ -445,8 +422,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         mysqli_stmt_close($insertSignoffStmt);
                     }
                 } else {
-                    if ($formData['space_id'] !== $otherSpaceOptionValue) {
-                        $spaceConflictStmt = mysqli_prepare(
+                    $spaceConflictStmt = mysqli_prepare(
                             $link,
                             'SELECT COUNT(*) AS conflict_count
                              FROM space_reservation_items sri
@@ -468,17 +444,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             throw new RuntimeException('該時段空間已被預約，請改選其他時段或空間。');
                         }
 
-                        $spaceItemStmt = mysqli_prepare(
-                            $link,
-                            'INSERT INTO space_reservation_items (reservation_id, space_id) VALUES (?, ?)'
-                        );
-                        if (!$spaceItemStmt) {
-                            throw new RuntimeException('建立空間預約明細失敗：' . mysqli_error($link));
-                        }
-                        mysqli_stmt_bind_param($spaceItemStmt, 'is', $reservationId, $formData['space_id']);
-                        mysqli_stmt_execute($spaceItemStmt);
-                        mysqli_stmt_close($spaceItemStmt);
+                    $spaceItemStmt = mysqli_prepare(
+                        $link,
+                        'INSERT INTO space_reservation_items (reservation_id, space_id, proposal_file, proposal_uploaded_at) VALUES (?, ?, ?, ?)'
+                    );
+                    if (!$spaceItemStmt) {
+                        throw new RuntimeException('建立空間預約明細失敗：' . mysqli_error($link));
                     }
+                    mysqli_stmt_bind_param($spaceItemStmt, 'isss', $reservationId, $formData['space_id'], $proposalFileForSpace, $proposalUploadedAtForSpace);
+                    mysqli_stmt_execute($spaceItemStmt);
+                    mysqli_stmt_close($spaceItemStmt);
                 }
 
                 mysqli_commit($link);
@@ -488,7 +463,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'resource_type' => 'equipment',
                     'equipment_code' => '',
                     'space_id' => '',
-                    'other_space_name' => '',
                     'borrow_quantity' => '1',
                     'borrow_date' => '',
                     'start_period_code' => '',
@@ -600,22 +574,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                             <?php echo htmlspecialchars($space['space_id'] . ' - ' . $space['space_name'] . ' (' . $space['space_status'] . ')', ENT_QUOTES, 'UTF-8'); ?>
                                         </option>
                                     <?php } ?>
-                                    <option value="<?php echo htmlspecialchars($otherSpaceOptionValue, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData['space_id'] === $otherSpaceOptionValue ? 'selected' : ''; ?>>
-                                        其他（自行輸入）
-                                    </option>
                                 </select>
-                            </div>
-
-                            <div class="form-group" id="otherSpaceGroup" style="display:none;">
-                                <label for="other_space_name">其他場地名稱</label>
-                                <input
-                                    type="text"
-                                    id="other_space_name"
-                                    name="other_space_name"
-                                    maxlength="120"
-                                    placeholder="請輸入場地名稱（例如：校外合作場地 XXX）"
-                                    value="<?php echo htmlspecialchars($formData['other_space_name'], ENT_QUOTES, 'UTF-8'); ?>"
-                                >
                             </div>
 
                             <div class="borrow-hint-box" id="equipmentHintBox">
@@ -742,9 +701,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const spaceGroup = document.getElementById('spaceGroup');
             const equipmentHintBox = document.getElementById('equipmentHintBox');
             const borrowQuantityGroup = document.getElementById('borrowQuantityGroup');
-            const otherSpaceGroup = document.getElementById('otherSpaceGroup');
-            const otherSpaceInput = document.getElementById('other_space_name');
-            const otherSpaceOptionValue = <?php echo json_encode($otherSpaceOptionValue, JSON_UNESCAPED_UNICODE); ?>;
             const proposalFileInput = document.getElementById('proposal_file');
             const proposalGroup = document.getElementById('proposalGroup');
 
@@ -767,7 +723,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             function refreshModeUI() {
                 const mode = resourceTypeSelect.value;
                 const isEquipment = mode === 'equipment';
-                const isOtherSpace = !isEquipment && spaceSelect.value === otherSpaceOptionValue;
 
                 equipmentGroup.style.display = isEquipment ? '' : 'none';
                 equipmentHintBox.style.display = isEquipment ? '' : 'none';
@@ -777,13 +732,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 equipmentSelect.required = isEquipment;
                 quantityInput.required = isEquipment;
                 spaceSelect.required = !isEquipment;
-<<<<<<< HEAD
-                otherSpaceGroup.style.display = isOtherSpace ? '' : 'none';
-                otherSpaceInput.required = isOtherSpace;
-
-                if (!isOtherSpace) {
-                    otherSpaceInput.value = '';
-                }
 
                 if (proposalFileInput) {
                     proposalFileInput.required = !isEquipment;

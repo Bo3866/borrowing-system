@@ -164,6 +164,8 @@ CREATE TABLE IF NOT EXISTS space_reservation_items (
   space_item_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '空間預約明細編號',
   reservation_id BIGINT UNSIGNED NOT NULL COMMENT '關聯預約總表(預約編號)',
   space_id VARCHAR(30) NOT NULL COMMENT '關聯空間編號(場地/教室編號)',
+  proposal_file VARCHAR(255) NULL COMMENT '上傳之活動企劃書檔案路徑',
+  proposal_uploaded_at DATETIME NULL COMMENT '活動企劃書上傳時間',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (space_item_id),

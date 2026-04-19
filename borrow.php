@@ -224,6 +224,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $otherSpaceNameForSave = null;
+                $proposalFileForSpaceItem = null;
                 if ($formData['resource_type'] === 'space' && $formData['space_id'] === $otherSpaceOptionValue) {
                     $otherSpaceNameForSave = $formData['other_space_name'];
                 }
@@ -323,15 +324,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         throw new RuntimeException('企劃書儲存失敗。');
                     }
 
-                    // 儲存相對路徑到資料庫
+                    // 儲存相對路徑（會在插入 space_reservation_items 後寫入該筆明細）
                     $relativePath = 'uploads/proposals/' . $targetName;
-                    $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET proposal_file = ?, proposal_uploaded_at = NOW() WHERE reservation_id = ?');
-                    if (!$updateStmt) {
-                        throw new RuntimeException('更新企劃書路徑失敗：' . mysqli_error($link));
-                    }
-                    mysqli_stmt_bind_param($updateStmt, 'si', $relativePath, $reservationId);
-                    mysqli_stmt_execute($updateStmt);
-                    mysqli_stmt_close($updateStmt);
+                    $proposalFileForSpaceItem = $relativePath;
                 }
 
                 if ($formData['resource_type'] === 'equipment') {
@@ -483,6 +478,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         mysqli_stmt_bind_param($spaceItemStmt, 'is', $reservationId, $formData['space_id']);
                         mysqli_stmt_execute($spaceItemStmt);
                         mysqli_stmt_close($spaceItemStmt);
+                        if ($proposalFileForSpaceItem !== null) {
+                            $updateSpaceItemStmt = mysqli_prepare(
+                                $link,
+                                'UPDATE space_reservation_items SET proposal_file = ?, proposal_uploaded_at = NOW() WHERE reservation_id = ? AND space_id = ?'
+                            );
+                            if (!$updateSpaceItemStmt) {
+                                throw new RuntimeException('更新 space_reservation_items 的企劃書路徑失敗：' . mysqli_error($link));
+                            }
+                            mysqli_stmt_bind_param($updateSpaceItemStmt, 'sis', $proposalFileForSpaceItem, $reservationId, $formData['space_id']);
+                            mysqli_stmt_execute($updateSpaceItemStmt);
+                            mysqli_stmt_close($updateSpaceItemStmt);
+                        }
                     }
                 }
 

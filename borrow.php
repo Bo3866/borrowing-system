@@ -191,6 +191,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             mysqli_begin_transaction($link);
 
             try {
+                $uploadedProposalPath = null;
+
                 // 確保 space_reservation_items 表有 proposal_file 和 proposal_uploaded_at 欄位
                 $proposalFileColumnResult = mysqli_query($link, "SHOW COLUMNS FROM space_reservation_items LIKE 'proposal_file'");
                 if (!($proposalFileColumnResult && mysqli_num_rows($proposalFileColumnResult) > 0)) {
@@ -297,13 +299,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // 儲存相對路徑到資料庫
                     $proposalFileForSpace = 'uploads/proposals/' . $targetName;
                     $proposalUploadedAtForSpace = date('Y-m-d H:i:s');
-                    $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET proposal_file = ?, proposal_uploaded_at = ? WHERE reservation_id = ?');
-                    if (!$updateStmt) {
-                        throw new RuntimeException('更新企劃書路徑失敗：' . mysqli_error($link));
-                    }
-                    mysqli_stmt_bind_param($updateStmt, 'ssi', $proposalFileForSpace, $proposalUploadedAtForSpace, $reservationId);
-                    mysqli_stmt_execute($updateStmt);
-                    mysqli_stmt_close($updateStmt);
+                    $uploadedProposalPath = $targetPath;
                 }
 
                 if ($formData['resource_type'] === 'equipment') {
@@ -482,6 +478,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             } catch (Throwable $exception) {
                 mysqli_rollback($link);
+                if ($uploadedProposalPath !== null && is_file($uploadedProposalPath)) {
+                    @unlink($uploadedProposalPath);
+                }
                 $borrowError = $exception->getMessage();
             }
         }

@@ -55,13 +55,13 @@ if ($dbError === '' && $feedbackType !== 'error') {
         CREATE TABLE IF NOT EXISTS checkin_logs (
             checkin_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             reservation_id BIGINT UNSIGNED NOT NULL,
-            applicant_id VARCHAR(10) NOT NULL,
+            user_id VARCHAR(10) NOT NULL,
             checked_in_space_id VARCHAR(30) NOT NULL,
             checked_in_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             checkin_source VARCHAR(20) NOT NULL DEFAULT 'qr',
             PRIMARY KEY (checkin_id),
-            UNIQUE KEY uq_checkin_once (reservation_id, applicant_id),
-            KEY idx_checkin_applicant (applicant_id),
+            UNIQUE KEY uq_checkin_once (reservation_id, user_id),
+            KEY idx_checkin_user (user_id),
             KEY idx_checkin_space (checked_in_space_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ";
@@ -90,14 +90,15 @@ if ($dbError === '' && $feedbackType !== 'error') {
         }
     }
 
-    $applicantColumn = pickExistingColumn($reservationColumns, ['applicant_id', 'user_id']);
+    // 固定使用 `user_id` 作為申請人欄位
+    $applicantColumn = 'user_id';
     $borrowStartColumn = pickExistingColumn($reservationColumns, ['borrow_start_at', 'borrow_start_time']);
     $borrowEndColumn = pickExistingColumn($reservationColumns, ['borrow_end_at', 'borrow_ene_at', 'borrow_end_time']);
     $pickupFlagColumn = pickExistingColumn($reservationColumns, ['pickup_confirmed', 'is_picked_up', 'picked_up', 'pickup_status']);
     $pickupAtColumn = pickExistingColumn($reservationColumns, ['pickup_confirmed_at', 'picked_up_at', 'pickup_at']);
 
-    if ($applicantColumn === null) {
-        $dbError = 'reservations 缺少 applicant_id 或 user_id，無法比對申請人。';
+    if (!in_array($applicantColumn, $reservationColumns, true)) {
+        $dbError = 'reservations 缺少 user_id，無法比對申請人。';
     } elseif ($borrowStartColumn === null || $borrowEndColumn === null) {
         $dbError = 'reservations 缺少借用時段欄位，無法進行報到判斷。';
     }
@@ -151,7 +152,7 @@ if ($dbError === '' && $feedbackType !== 'error' && $_SERVER['REQUEST_METHOD'] =
 
                     $insertLogStmt = mysqli_prepare(
                         $link,
-                        'INSERT INTO checkin_logs (reservation_id, applicant_id, checked_in_space_id, checkin_source) VALUES (?, ?, ?, "qr")'
+                        'INSERT INTO checkin_logs (reservation_id, user_id, checked_in_space_id, checkin_source) VALUES (?, ?, ?, "qr")'
                     );
                     if (!$insertLogStmt) {
                         throw new RuntimeException('寫入報到紀錄失敗：' . mysqli_error($link));
@@ -215,7 +216,7 @@ if ($dbError === '' && $feedbackType !== 'error') {
               SELECT 1
               FROM checkin_logs cl
               WHERE cl.reservation_id = r.reservation_id
-                AND cl.applicant_id = ?
+                AND cl.user_id = ?
           )
                 ORDER BY s.space_id ASC
     ";

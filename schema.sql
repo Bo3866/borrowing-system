@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS spaces (
 -- 5) 預約總表
 CREATE TABLE IF NOT EXISTS reservations (
   reservation_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '預約編號',
-  applicant_id VARCHAR(10) NOT NULL COMMENT '申請人編號(學號/教職員編號)',
+  user_id VARCHAR(10) NOT NULL COMMENT '申請人編號(學號/教職員編號)',
   -- 活動企劃書檔案路徑（申請場地時可上傳）
   proposal_file VARCHAR(255) NULL COMMENT '上傳之活動企劃書檔案路徑',
   proposal_uploaded_at DATETIME NULL COMMENT '活動企劃書上傳時間',
@@ -115,11 +115,11 @@ CREATE TABLE IF NOT EXISTS reservations (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (reservation_id),
-  KEY idx_reservations_applicant (applicant_id),
+  KEY idx_reservations_applicant (user_id),
   KEY idx_reservations_time (borrow_start_at, borrow_end_at),
   CONSTRAINT chk_reservations_time CHECK (borrow_end_at > borrow_start_at),
   CONSTRAINT fk_reservations_applicant
-    FOREIGN KEY (applicant_id) REFERENCES users (user_id)
+    FOREIGN KEY (user_id) REFERENCES users (user_id)
     ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
@@ -226,7 +226,7 @@ CREATE TABLE IF NOT EXISTS equipment_maintenance (
 CREATE TABLE IF NOT EXISTS equipment_signoffs (
   signoff_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '簽核編號',
   reservation_id BIGINT UNSIGNED NOT NULL COMMENT '關聯預約單(預約編號)',
-  certificate_id BIGINT UNSIGNED NULL COMMENT '關聯證照(證照編號)',
+  certificate_id BIGINT UNSIGNED NOT NULL COMMENT '關聯證照(證照編號)',
   reviewer_id VARCHAR(10) NOT NULL COMMENT '審核人員ID(學號/教職員編號)',
   signoff_status ENUM('approved', 'rejected', 'pending') NOT NULL DEFAULT 'pending' COMMENT '狀態(通過/不通過/待審)',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

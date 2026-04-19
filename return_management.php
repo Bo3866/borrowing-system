@@ -41,9 +41,10 @@ if ($dbError === '') {
         }
     }
 
-    $applicantColumn = pickExistingColumn($reservationColumns, ['applicant_id', 'user_id']);
-    if ($applicantColumn === null) {
-        $dbError = 'reservations 缺少 applicant_id（或 user_id）欄位，無法關聯 users 資料。';
+    // 固定使用 `user_id` 作為申請人欄位
+    $applicantColumn = 'user_id';
+    if (!in_array($applicantColumn, $reservationColumns, true)) {
+        $dbError = 'reservations 缺少 user_id 欄位，無法關聯 users 資料。';
     }
 
     $borrowStartColumn = pickExistingColumn($reservationColumns, ['borrow_start_at', 'borrow_start_time']);
@@ -84,7 +85,7 @@ if ($dbError === '') {
                      FROM reservations r
                      LEFT JOIN checkin_logs cl
                        ON cl.reservation_id = r.reservation_id
-                      AND cl.applicant_id COLLATE utf8mb4_unicode_ci = r.`' . $applicantColumn . '` COLLATE utf8mb4_unicode_ci
+                      AND cl.user_id COLLATE utf8mb4_unicode_ci = r.`' . $applicantColumn . '` COLLATE utf8mb4_unicode_ci
                      WHERE r.reservation_id = ?
                        AND r.`' . $applicantColumn . '` COLLATE utf8mb4_unicode_ci = ?
                      LIMIT 1'
@@ -192,7 +193,7 @@ if ($dbError === '') {
                 ) AS space_names
             FROM reservations r
             JOIN users u ON u.user_id COLLATE utf8mb4_unicode_ci = r.`{$applicantColumn}` COLLATE utf8mb4_unicode_ci
-            LEFT JOIN checkin_logs cl ON cl.reservation_id = r.reservation_id AND cl.applicant_id COLLATE utf8mb4_unicode_ci = r.`{$applicantColumn}` COLLATE utf8mb4_unicode_ci
+            LEFT JOIN checkin_logs cl ON cl.reservation_id = r.reservation_id AND cl.user_id COLLATE utf8mb4_unicode_ci = r.`{$applicantColumn}` COLLATE utf8mb4_unicode_ci
             WHERE {$listWhere}
             ORDER BY r.`{$borrowEndColumn}` DESC
             LIMIT 300

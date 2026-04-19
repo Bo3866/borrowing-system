@@ -173,15 +173,11 @@ if (isset($dbError) && $dbError !== '') {
         }
     }
 
-    $applicantColumn = null;
-    if (in_array('applicant_id', $reservationColumns, true)) {
-        $applicantColumn = 'applicant_id';
-    } elseif (in_array('user_id', $reservationColumns, true)) {
-        $applicantColumn = 'user_id';
-    }
+    // 使用現行資料表欄位 `user_id`
+    $applicantColumn = 'user_id';
 
-    if ($applicantColumn === null) {
-        $dbError = '資料表 reservations 缺少 applicant_id 或 user_id，無法顯示審核資料。';
+    if (!in_array($applicantColumn, $reservationColumns, true)) {
+        $dbError = '資料表 reservations 缺少 user_id，無法顯示審核資料。';
     } else {
         $submittedAtExpr = in_array('submitted_at', $reservationColumns, true) ? 'r.submitted_at' : 'r.created_at';
         $sql = sprintf(

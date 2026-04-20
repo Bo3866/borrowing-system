@@ -1,0 +1,16 @@
+# Ignore uploaded files and runtime artifacts
+/uploads/
+/uploads/*
+
+# OS files
+Thumbs.db
+Desktop.ini
+
+# PHPStorm / JetBrains
+.idea/
+
+# Node / deps
+node_modules/
+
+# env
+.env

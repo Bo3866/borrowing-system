@@ -103,19 +103,23 @@ CREATE TABLE IF NOT EXISTS spaces (
 -- 5) 預約總表
 CREATE TABLE IF NOT EXISTS reservations (
   reservation_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '預約編號',
-  applicant_id VARCHAR(10) NOT NULL COMMENT '申請人編號(學號/教職員編號)',
+  user_id VARCHAR(10) NOT NULL COMMENT '申請人編號(學號/教職員編號)',
+  -- 活動企劃書檔案路徑（申請場地時可上傳）
+  proposal_file VARCHAR(255) NULL COMMENT '上傳之活動企劃書檔案路徑',
+  proposal_uploaded_at DATETIME NULL COMMENT '活動企劃書上傳時間',
   submitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '送出時間(先送先審)',
   borrow_start_at DATETIME NOT NULL COMMENT '借用開始時間',
   borrow_end_at DATETIME NOT NULL COMMENT '借用結束時間',
   approval_status ENUM('pending', 'approved', 'rejected') NOT NULL DEFAULT 'pending' COMMENT '預約審核狀態',
+  returned_at DATETIME NULL COMMENT '歸還完成時間',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (reservation_id),
-  KEY idx_reservations_applicant (applicant_id),
+  KEY idx_reservations_applicant (user_id),
   KEY idx_reservations_time (borrow_start_at, borrow_end_at),
   CONSTRAINT chk_reservations_time CHECK (borrow_end_at > borrow_start_at),
   CONSTRAINT fk_reservations_applicant
-    FOREIGN KEY (applicant_id) REFERENCES users (user_id)
+    FOREIGN KEY (user_id) REFERENCES users (user_id)
     ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
@@ -161,6 +165,8 @@ CREATE TABLE IF NOT EXISTS space_reservation_items (
   space_item_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '空間預約明細編號',
   reservation_id BIGINT UNSIGNED NOT NULL COMMENT '關聯預約總表(預約編號)',
   space_id VARCHAR(30) NOT NULL COMMENT '關聯空間編號(場地/教室編號)',
+  proposal_file VARCHAR(255) NULL COMMENT '上傳之活動企劃書檔案路徑',
+  proposal_uploaded_at DATETIME NULL COMMENT '活動企劃書上傳時間',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (space_item_id),
@@ -205,15 +211,16 @@ CREATE TABLE IF NOT EXISTS equipment_maintenance (
   maintenance_status ENUM('pending', 'in_progress', 'completed') NOT NULL DEFAULT 'pending' COMMENT '報修狀態',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  photo_path VARCHAR(255) NULL COMMENT '上傳照片路徑',
   PRIMARY KEY (maintenance_id),
   KEY idx_equipment_maintenance_equipment (equipment_id),
   KEY idx_equipment_maintenance_reporter (reporter_id),
   CONSTRAINT fk_equipment_maintenance_equipment
     FOREIGN KEY (equipment_id) REFERENCES equipments (equipment_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT,
+    ON UPDATE CASCADE,
   CONSTRAINT fk_equipment_maintenance_reporter
     FOREIGN KEY (reporter_id) REFERENCES users (user_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT
+    ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
 -- 11) 器材核簽

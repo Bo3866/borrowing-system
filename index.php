@@ -42,6 +42,7 @@ if ($link) {
                 <button class="nav-btn" onclick="location.href='return_management.php'">我的申請</button>
                 <button class="nav-btn" onclick="location.href='approve.php'">審核面板</button>
                 <button class="nav-btn" onclick="location.href='checkin.php?qr=CHECKIN_GATE_V1'">掃碼報到</button>
+                <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
                 <?php if ($currentRole === '3') { ?>
                     <button class="nav-btn" onclick="location.href='qr_admin.php'">生成報到 QR</button>
                 <?php } ?>
@@ -515,3 +516,11 @@ if ($link) {
     <script src="app.js"></script>
 </body>
 </html>
+<?php
+// 掛載 Web Cron (背景寄信機制，不寫大學名字版本)
+register_shutdown_function(function() {
+    if (file_exists(__DIR__ . '/auto_remind.php')) {
+        include_once __DIR__ . '/auto_remind.php';
+    }
+});
+?>

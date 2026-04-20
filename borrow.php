@@ -32,7 +32,7 @@ $periodSlots = [
 ];
 $periodOrder = array_keys($periodSlots);
 
-$link = mysqli_connect('localhost', 'root', '', 'borrowing_system',3307);
+$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
 $dbError = '';
 if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();
@@ -48,7 +48,7 @@ if ($dbError === '') {
             ec.equipment_code,
             ec.equipment_name,
             ec.borrow_limit_quantity,
-            COALESCE(SUM(CASE WHEN e.operation_status = 1 THEN 1 ELSE 0 END), 0) - COALESCE(SUM(eri.borrow_quantity), 0) AS available_quantity
+            COALESCE(SUM(CASE WHEN (e.operation_status = 1 OR e.operation_status = '1') THEN 1 ELSE 0 END), 0) - COALESCE(SUM(eri.borrow_quantity), 0) AS available_quantity
         FROM equipment_categories ec
         LEFT JOIN equipments e ON e.equipment_code = ec.equipment_code
         LEFT JOIN equipment_reservation_items eri ON e.equipment_id = eri.equipment_id
@@ -84,7 +84,6 @@ if ($dbError === '') {
                 s.capacity,
                 s.space_status
             FROM spaces s
-            WHERE s.space_status IN ('available', '1')
             ORDER BY s.space_id ASC
         ";
 
@@ -406,7 +405,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($formData['resource_type'] === 'equipment') {
                     $stockCheckStmt = mysqli_prepare(
                         $link,
-                        'SELECT COUNT(*) AS available_count FROM equipments WHERE equipment_code = ? AND operation_status = 1 FOR UPDATE'
+                        'SELECT COUNT(*) AS available_count FROM equipments WHERE equipment_code = ? AND (operation_status = 1 OR operation_status = \"1\") FOR UPDATE'
                     );
                     if (!$stockCheckStmt) {
                         throw new RuntimeException('檢查器材庫存失敗：' . mysqli_error($link));
@@ -427,7 +426,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $selectEquipmentStmt = mysqli_prepare(
                         $link,
-                        'SELECT equipment_id FROM equipments WHERE equipment_code = ? AND operation_status = 1 ORDER BY equipment_id ASC LIMIT ?'
+                        'SELECT equipment_id FROM equipments WHERE equipment_code = ? AND (operation_status = 1 OR operation_status = \"1\") ORDER BY equipment_id ASC LIMIT ?'
                     );
                     if (!$selectEquipmentStmt) {
                         throw new RuntimeException('讀取可借器材失敗：' . mysqli_error($link));
@@ -462,7 +461,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $updateEquipmentStatusStmt = mysqli_prepare(
                         $link,
-                        'UPDATE equipments SET operation_status = 2 WHERE equipment_id = ? AND operation_status = 1 AND ? <= NOW()'
+                        'UPDATE equipments SET operation_status = 2 WHERE equipment_id = ? AND (operation_status = 1 OR operation_status = \"1\") AND ? <= NOW()'
                     );
                     if (!$updateEquipmentStatusStmt) {
                         throw new RuntimeException('更新器材可借狀態失敗：' . mysqli_error($link));
@@ -677,7 +676,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         $isSelectable = in_array($spaceStatusVal, ['1', 'available'], true);
                                     ?>
                                         <option value="<?php echo htmlspecialchars($space['space_id'], ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData['space_id'] === $space['space_id'] ? 'selected' : ''; ?> <?php echo $isSelectable ? '' : 'disabled'; ?>>
-                                            <?php echo htmlspecialchars($space['space_id'] . ' - ' . $space['space_name'] . ' (' . $space['space_status'] . ')', ENT_QUOTES, 'UTF-8'); ?>
+                                            <?php echo htmlspecialchars($space['space_id'] . ' - ' . $space['space_name'], ENT_QUOTES, 'UTF-8'); ?>
                                         </option>
                                     <?php } ?>
                                 </select>

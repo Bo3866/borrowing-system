@@ -206,6 +206,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $attStmt->execute();
                         }
                     }
+                    // mark equipment as under maintenance (operation_status = 3)
+                    try {
+                        $upd = $pdo->prepare('UPDATE equipments SET operation_status = 3 WHERE equipment_id = :equipment_id');
+                        $upd->execute(['equipment_id' => $equipmentId]);
+                    } catch (Throwable $t) {
+                        $errors[] = '更新器材狀態失敗：' . $t->getMessage();
+                    }
                     $success = '器材報修已送出，感謝您的回報。';
                 } catch (Throwable $t) {
                     $errors[] = '儲存器材報修失敗：' . $t->getMessage();
@@ -269,6 +276,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $attStmt->bindValue(':file_content', $f['content'], PDO::PARAM_LOB);
                             $attStmt->execute();
                         }
+                    }
+                    // mark space as under maintenance (space_status = 'maintenance')
+                    try {
+                        // Support both legacy numeric statuses (e.g. '1','2') and string statuses ('available','maintenance'):
+                        // If current value is numeric, set to '3' (維修中) to match equipments operation_status convention.
+                        // Otherwise set to the string 'maintenance'.
+                        $upd = $pdo->prepare("UPDATE spaces SET space_status = IF(space_status REGEXP '^[0-9]+$', '3', 'maintenance') WHERE space_id = :space_id");
+                        $upd->execute(['space_id' => $spaceId]);
+                    } catch (Throwable $t) {
+                        $errors[] = '更新空間狀態失敗：' . $t->getMessage();
                     }
                     $success = '空間報修已送出，感謝您的回報。';
                 } catch (Throwable $t) {

@@ -516,3 +516,11 @@ if ($link) {
     <script src="app.js"></script>
 </body>
 </html>
+<?php
+// 掛載 Web Cron (背景寄信機制，不寫大學名字版本)
+register_shutdown_function(function() {
+    if (file_exists(__DIR__ . '/auto_remind.php')) {
+        include_once __DIR__ . '/auto_remind.php';
+    }
+});
+?>

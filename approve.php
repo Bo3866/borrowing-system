@@ -30,7 +30,6 @@ if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();
 } else {
     mysqli_set_charset($link, 'utf8mb4');
-    mysqli_query($link, "SET time_zone = '+08:00'");
 }
 
 function pickExistingColumn(array $columns, array $candidates): ?string

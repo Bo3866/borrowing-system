@@ -46,10 +46,7 @@ if ($link) {
                 <?php if ($currentRole === '3') { ?>
                     <button class="nav-btn" onclick="location.href='qr_admin.php'">生成報到 QR</button>
                 <?php } ?>
-<<<<<<< HEAD
 
-=======
->>>>>>> 1328e3648ec616adb9b6de029bcd95f630b47ef9
                 <?php if ($isLoggedIn) { ?>
                     <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8'); ?></button>
                     <button class="nav-btn" onclick="location.href='logout.php'">登出</button>

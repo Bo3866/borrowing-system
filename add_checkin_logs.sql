@@ -21,4 +21,4 @@ CREATE TABLE IF NOT EXISTS checkin_logs (
   CONSTRAINT fk_checkin_logs_space
     FOREIGN KEY (checked_in_space_id) REFERENCES spaces (space_id)
     ON UPDATE CASCADE ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

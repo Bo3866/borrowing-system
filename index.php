@@ -355,7 +355,7 @@ if ($link) {
 
         <!-- 頁腳 -->
         <footer class="footer">
-            <p>&copy; 2024 校園資源租借系統。所有權利保留。</p>
+            <p>&copy; 2026 校園資源租借系統。所有權利保留。</p>
         </footer>
     </div>
 

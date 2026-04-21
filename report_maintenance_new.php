@@ -3,6 +3,14 @@ declare(strict_types=1);
 
 session_start();
 
+// debug log file for diagnosing failed inserts
+$__rm_debug_log = __DIR__ . '/report_maintenance_debug.log';
+function __rm_dbg($msg) {
+    global $__rm_debug_log;
+    @file_put_contents($__rm_debug_log, '[' . date('Y-m-d H:i:s') . '] ' . $msg . PHP_EOL, FILE_APPEND | LOCK_EX);
+    error_log('[report_maintenance_new] ' . $msg);
+}
+
 if (!isset($_SESSION['user_id'])) {
     header('Location: login.php?next=report_maintenance.php');
     exit;
@@ -161,16 +169,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($errors)) {
                     if ($targetType === 'equipment') {
-            $equipmentId = (int)($_POST['equipment_id'] ?? 0);
+            $equipmentInput = trim((string)($_POST['equipment_id'] ?? ''));
+            $equipmentId = 0;
+            if ($equipmentInput !== '' && ctype_digit($equipmentInput)) {
+                $equipmentId = (int)$equipmentInput;
+            }
+
+            if ($equipmentId <= 0 && $equipmentInput !== '' && $pdo !== null) {
+                try {
+                    $stmtEq = $pdo->prepare('SELECT equipment_id FROM equipments WHERE equipment_code = :code LIMIT 1');
+                    $stmtEq->execute(['code' => $equipmentInput]);
+                    $found = $stmtEq->fetchColumn();
+                    if ($found) {
+                        $equipmentId = (int)$found;
+                    }
+                } catch (Throwable $t) {
+                    __rm_dbg('equipment lookup failed: ' . $t->getMessage());
+                }
+            }
+
             if ($equipmentId <= 0) {
-                $errors[] = '請選擇要報修的器材。';
+                $errors[] = '請選擇要報修的器材（請輸入正確的器材編號或器材代碼）。';
             } else {
                 try {
+                    __rm_dbg('Attempting equipment insert: equipment_id=' . $equipmentId . ' reporter_id=' . $reporterId . ' fault_description_len=' . strlen($damageDetail) . ' photo=' . (!empty($uploadedPaths) ? $uploadedPaths[0] : 'NULL'));
                     // ensure equipment_maintenance has photo_path column (in case schema was modified)
                     try {
-                        $pdo->exec("ALTER TABLE equipment_maintenance ADD COLUMN IF NOT EXISTS photo_path VARCHAR(255) NULL");
+                        $colStmt = $pdo->prepare("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'equipment_maintenance' AND column_name = 'photo_path'");
+                        $colStmt->execute();
+                        if ((int)$colStmt->fetchColumn() === 0) {
+                            $pdo->exec("ALTER TABLE equipment_maintenance ADD COLUMN photo_path VARCHAR(255) NULL");
+                        }
                     } catch (Throwable $ignore) {
-                        // ignore if ALTER not supported or fails; user may have already added column
+                        __rm_dbg('Warning: could not ensure equipment.photo_path column: ' . $ignore->getMessage());
                     }
                     $insert = $pdo->prepare('INSERT INTO equipment_maintenance (equipment_id, reporter_id, fault_description, photo_path) VALUES (:equipment_id, :reporter_id, :fault_description, :photo_path)');
                     $insert->execute([
@@ -208,7 +239,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     $success = '器材報修已送出，感謝您的回報。';
                 } catch (Throwable $t) {
-                    $errors[] = '儲存器材報修失敗：' . $t->getMessage();
+                    $err = '儲存器材報修失敗：' . $t->getMessage();
+                    $errors[] = $err;
+                    __rm_dbg('Equipment insert failed: ' . $t->getMessage());
                 }
             }
 
@@ -218,6 +251,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = '請選擇要報修的空間。';
             } else {
                 try {
+                    __rm_dbg('Attempting space insert: space_id=' . $spaceId . ' reporter_id=' . $reporterId . ' fault_description_len=' . strlen($damageDetail) . ' photo=' . (!empty($uploadedPaths) ? $uploadedPaths[0] : 'NULL'));
                     // ensure space_maintenance table exists
                     $pdo->exec("CREATE TABLE IF NOT EXISTS space_maintenance (
                 maintenance_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -232,10 +266,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 PRIMARY KEY (maintenance_id)
             ) ENGINE=InnoDB");
 
-                    // also ensure equipment_maintenance has photo_path if space table was created first
+                    // also ensure space_maintenance has photo_path if space table was created first
                     try {
-                        $pdo->exec("ALTER TABLE space_maintenance ADD COLUMN IF NOT EXISTS photo_path VARCHAR(255) NULL");
+                        $colStmt2 = $pdo->prepare("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'space_maintenance' AND column_name = 'photo_path'");
+                        $colStmt2->execute();
+                        if ((int)$colStmt2->fetchColumn() === 0) {
+                            $pdo->exec("ALTER TABLE space_maintenance ADD COLUMN photo_path VARCHAR(255) NULL");
+                        }
                     } catch (Throwable $ignore) {
+                        __rm_dbg('Warning: could not ensure space.photo_path column: ' . $ignore->getMessage());
                     }
 
                     $insert = $pdo->prepare('INSERT INTO space_maintenance (space_id, reporter_id, fault_description, photo_path) VALUES (:space_id, :reporter_id, :fault_description, :photo_path)');
@@ -272,7 +311,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     $success = '空間報修已送出，感謝您的回報。';
                 } catch (Throwable $t) {
-                    $errors[] = '儲存空間報修失敗：' . $t->getMessage();
+                    $err = '儲存空間報修失敗：' . $t->getMessage();
+                    $errors[] = $err;
+                    __rm_dbg('Space insert failed: ' . $t->getMessage());
                 }
             }
 

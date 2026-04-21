@@ -5,7 +5,7 @@ function getDatabaseConnection(): PDO
 {
     $host = '127.0.0.1';
     // Use port 3307 to match mysqli usage elsewhere in the project
-    $port = '3306';
+    $port = '3307';
     $database = 'borrowing_system';
     $username = 'root';
     // MySQL in this workspace uses an empty root password for local dev

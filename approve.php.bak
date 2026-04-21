@@ -44,108 +44,96 @@ function pickExistingColumn(array $columns, array $candidates): ?string
 }
 
 $actionMsg = '';
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_POST['action'])) {
-    $reservationIdsRaw = explode(',', $_POST['reservation_ids']);
-    $reservationIds = [];
-    foreach ($reservationIdsRaw as $rid) {
-        $r = (int)$rid;
-        if ($r > 0) $reservationIds[] = $r;
-    }
-    
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_id'], $_POST['action'])) {
+    $reservationId = (int)$_POST['reservation_id'];
     $action = $_POST['action'] === 'approve' ? 'approved' : 'rejected';
     $comment = trim((string)($_POST['comment'] ?? '')) ?: null;
 
-    if ($link && !empty($reservationIds)) {
+    if ($link) {
         mysqli_begin_transaction($link);
         try {
-            $totalAffected = 0;
-            $userEmailNameMap = [];
+            // Only update pending reservations to avoid race conditions
+            $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET approval_status = ?, updated_at = NOW() WHERE reservation_id = ? AND approval_status = "pending"');
+            if (!$updateStmt) {
+                throw new RuntimeException('更新預約狀態準備失敗：' . mysqli_error($link));
+            }
+            mysqli_stmt_bind_param($updateStmt, 'si', $action, $reservationId);
+            mysqli_stmt_execute($updateStmt);
+            $affected = mysqli_stmt_affected_rows($updateStmt);
+            mysqli_stmt_close($updateStmt);
 
-            foreach ($reservationIds as $reservationId) {
-                // Only update pending reservations to avoid race conditions
-                $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET approval_status = ?, updated_at = NOW() WHERE reservation_id = ? AND approval_status = "pending"');
-                if (!$updateStmt) {
-                    throw new RuntimeException('更新預約狀態準備失敗：' . mysqli_error($link));
+            if ($affected <= 0) {
+                throw new RuntimeException('更新失敗：該申請可能已被審核。');
+            }
+
+            $logStmt = mysqli_prepare($link, 'INSERT INTO approval_logs (reservation_id, reviewer_id, review_result, review_comment) VALUES (?, ?, ?, ?)');
+            if (!$logStmt) {
+                throw new RuntimeException('建立審核紀錄失敗：' . mysqli_error($link));
+            }
+            mysqli_stmt_bind_param($logStmt, 'isss', $reservationId, $currentUserId, $action, $comment);
+            mysqli_stmt_execute($logStmt);
+            mysqli_stmt_close($logStmt);
+
+            // 若為拒絕，需將相關器材狀態還原為可借 (operation_status = 1)
+            if ($action === 'rejected') {
+                $restoreStmt = mysqli_prepare(
+                    $link,
+                    'UPDATE equipments e JOIN equipment_reservation_items eri ON e.equipment_id = eri.equipment_id SET e.operation_status = 1 WHERE eri.reservation_id = ? AND e.operation_status = 2'
+                );
+                if (!$restoreStmt) {
+                    throw new RuntimeException('還原器材狀態失敗：' . mysqli_error($link));
                 }
-                mysqli_stmt_bind_param($updateStmt, 'si', $action, $reservationId);
-                mysqli_stmt_execute($updateStmt);
-                $affected = mysqli_stmt_affected_rows($updateStmt);
-                mysqli_stmt_close($updateStmt);
-    
-                if ($affected > 0) {
-                    $totalAffected++;
-                    $logStmt = mysqli_prepare($link, 'INSERT INTO approval_logs (reservation_id, reviewer_id, review_result, review_comment) VALUES (?, ?, ?, ?)');
-                    if (!$logStmt) {
-                        throw new RuntimeException('建立審核紀錄失敗：' . mysqli_error($link));
-                    }
-                    mysqli_stmt_bind_param($logStmt, 'isss', $reservationId, $currentUserId, $action, $comment);
-                    mysqli_stmt_execute($logStmt);
-                    mysqli_stmt_close($logStmt);
-        
-                    // 若為拒絕，需將相關器材狀態還原為可借 (operation_status = 1)
-                    if ($action === 'rejected') {
-                        $restoreStmt = mysqli_prepare(
-                            $link,
-                            'UPDATE equipments e JOIN equipment_reservation_items eri ON e.equipment_id = eri.equipment_id SET e.operation_status = 1 WHERE eri.reservation_id = ? AND e.operation_status = 2'
-                        );
-                        if (!$restoreStmt) {
-                            throw new RuntimeException('還原器材狀態失敗：' . mysqli_error($link));
-                        }
-                        mysqli_stmt_bind_param($restoreStmt, 'i', $reservationId);
-                        mysqli_stmt_execute($restoreStmt);
-                        mysqli_stmt_close($restoreStmt);
-                        // 若為拒絕，將該申請所關聯的空間還原為可借狀態 (space_status = '1')
-                        $restoreSpaceStmt = mysqli_prepare(
-                            $link,
-                            'UPDATE spaces s JOIN space_reservation_items sri ON s.space_id = sri.space_id SET s.space_status = ? WHERE sri.reservation_id = ? AND s.space_status = ?'
-                        );
-                        if ($restoreSpaceStmt) {
-                            $avail = '1';
-                            $currentBorrowed = '2';
-                            mysqli_stmt_bind_param($restoreSpaceStmt, 'sis', $avail, $reservationId, $currentBorrowed);
-                            mysqli_stmt_execute($restoreSpaceStmt);
-                            mysqli_stmt_close($restoreSpaceStmt);
-                        }
-                    }
-                    // 若為核准，將該申請所關聯的空間標示為已借出 (space_status = '2' 或 'borrowed')
-                    if ($action === 'approved') {
-                        $markBorrowedStmt = mysqli_prepare(
-                            $link,
-                            'UPDATE spaces s JOIN space_reservation_items sri ON s.space_id = sri.space_id SET s.space_status = IF(s.space_status REGEXP "^[0-9]+$", ?, ?) WHERE sri.reservation_id = ?'
-                        );
-                        if ($markBorrowedStmt) {
-                            $numBorrowed = '2';
-                            $strBorrowed = 'borrowed';
-                            mysqli_stmt_bind_param($markBorrowedStmt, 'ssi', $numBorrowed, $strBorrowed, $reservationId);
-                            mysqli_stmt_execute($markBorrowedStmt);
-                            mysqli_stmt_close($markBorrowedStmt);
-                        }
-                    }
-        
-                    // 取得申請人資訊以寄送郵件
-                    $userQuery = mysqli_prepare($link, 'SELECT u.email, u.full_name FROM users u JOIN reservations r ON u.user_id = r.user_id WHERE r.reservation_id = ?');
-                    if ($userQuery) {
-                        mysqli_stmt_bind_param($userQuery, 'i', $reservationId);
-                        mysqli_stmt_execute($userQuery);
-                        $userResult = mysqli_stmt_get_result($userQuery);
-                        if ($userData = mysqli_fetch_assoc($userResult)) {
-                            $userEmailNameMap[$userData['email']] = $userData['full_name'];
-                        }
-                        mysqli_stmt_close($userQuery);
-                    }
+                mysqli_stmt_bind_param($restoreStmt, 'i', $reservationId);
+                mysqli_stmt_execute($restoreStmt);
+                mysqli_stmt_close($restoreStmt);
+                // 若為拒絕，將該申請所關聯的空間還原為可借狀態 (space_status = '1')
+                $restoreSpaceStmt = mysqli_prepare(
+                    $link,
+                    'UPDATE spaces s JOIN space_reservation_items sri ON s.space_id = sri.space_id SET s.space_status = ? WHERE sri.reservation_id = ? AND s.space_status = ?'
+                );
+                if ($restoreSpaceStmt) {
+                    $avail = '1';
+                    $currentBorrowed = '2';
+                    mysqli_stmt_bind_param($restoreSpaceStmt, 'sis', $avail, $reservationId, $currentBorrowed);
+                    mysqli_stmt_execute($restoreSpaceStmt);
+                    mysqli_stmt_close($restoreSpaceStmt);
+                }
+            }
+            // 若為核准，將該申請所關聯的空間標示為已借出 (space_status = '2' 或 'borrowed')
+            if ($action === 'approved') {
+                $markBorrowedStmt = mysqli_prepare(
+                    $link,
+                    'UPDATE spaces s JOIN space_reservation_items sri ON s.space_id = sri.space_id SET s.space_status = IF(s.space_status REGEXP "^[0-9]+$", ?, ?) WHERE sri.reservation_id = ?'
+                );
+                if ($markBorrowedStmt) {
+                    $numBorrowed = '2';
+                    $strBorrowed = 'borrowed';
+                    mysqli_stmt_bind_param($markBorrowedStmt, 'ssi', $numBorrowed, $strBorrowed, $reservationId);
+                    mysqli_stmt_execute($markBorrowedStmt);
+                    mysqli_stmt_close($markBorrowedStmt);
                 }
             }
 
-            if ($totalAffected <= 0) {
-                throw new RuntimeException('更新失敗：申請可能已被審核。');
+            // 取得申請人資訊以寄送郵件
+            $userEmail = '';
+            $userName = '';
+            $userQuery = mysqli_prepare($link, 'SELECT u.email, u.full_name FROM users u JOIN reservations r ON u.user_id = r.user_id WHERE r.reservation_id = ?');
+            if ($userQuery) {
+                mysqli_stmt_bind_param($userQuery, 'i', $reservationId);
+                mysqli_stmt_execute($userQuery);
+                $userResult = mysqli_stmt_get_result($userQuery);
+                if ($userData = mysqli_fetch_assoc($userResult)) {
+                    $userEmail = $userData['email'];
+                    $userName = $userData['full_name'];
+                }
+                mysqli_stmt_close($userQuery);
             }
 
             mysqli_commit($link);
-            
             $actionMsg = $action === 'approved' ? '已核准此申請。' : '已拒絕此申請。';
 
-            // 如果有申請人信箱，則寄送通知信 (合併信件)
-            if (count($userEmailNameMap) > 0) {
+            // 如果有申請人信箱，則寄送通知信
+            if ($userEmail) {
                 $mail = new PHPMailer(true);
                 try {
                     //Server settings
@@ -160,21 +148,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
 
                     //Recipients
                     $mail->setFrom('sasass041919@gmail.com', '器材借用系統');
-                    foreach ($userEmailNameMap as $userEmail => $userName) {
-                        $mail->addAddress($userEmail, $userName);
-                    }
+                    $mail->addAddress($userEmail, $userName);
 
                     //Content
                     $mail->isHTML(true);
                     $mail->Subject = '您的借用申請狀態已更新';
                     $statusText = $action === 'approved' ? '已被核准' : '已被拒絕';
-                    $idsStr = implode(', ', $reservationIds);
-                    $mail->Body    = "您好：<br><br>您提出的借用申請（編號：{$idsStr}）{$statusText}。<br><br>審核意見：<br>" . nl2br(htmlspecialchars($comment ?? '無')) . "<br><br>感謝您！";
-                    $mail->AltBody = "您好：\n\n您提出的借用申請（編號：{$idsStr}）{$statusText}。\n\n審核意見：\n" . htmlspecialchars($comment ?? '無') . "\n\n感謝您！";
+                    $mail->Body    = "您好 {$userName}：<br><br>您提出的借用申請（編號：{$reservationId}）{$statusText}。<br><br>審核意見：<br>" . nl2br(htmlspecialchars($comment ?? '無')) . "<br><br>感謝您！";
+                    $mail->AltBody = "您好 {$userName}：\n\n您提出的借用申請（編號：{$reservationId}）{$statusText}。\n\n審核意見：\n" . htmlspecialchars($comment ?? '無') . "\n\n感謝您！";
 
                     $mail->send();
                     $actionMsg .= ' 已寄出通知信。';
                 } catch (Exception $e) {
+                    // 郵件寄送失敗，但不要影響主要操作結果
                     $actionMsg .= " 但通知信寄送失敗： {$mail->ErrorInfo}";
                 }
             }
@@ -223,29 +209,9 @@ if (isset($dbError) && $dbError !== '') {
 
         $res = mysqli_query($link, $sql);
         if ($res) {
-            $groupedPending = [];
             while ($row = mysqli_fetch_assoc($res)) {
-                $groupKey = $row['applicant_user_id'] . '_' . $row['submitted_at'];
-                if (!isset($groupedPending[$groupKey])) {
-                    $groupedPending[$groupKey] = [
-                        'applicant_user_id' => $row['applicant_user_id'],
-                        'full_name' => $row['full_name'],
-                        'submitted_at' => $row['submitted_at'],
-                        'borrow_start_at' => $row['borrow_start_at'],
-                        'borrow_end_at' => $row['borrow_end_at'],
-                        'reservation_ids' => [],
-                        'items' => []
-                    ];
-                }
-                $groupedPending[$groupKey]['reservation_ids'][] = $row['reservation_id'];
-                
-                // Fetch items for this reservation_id and merge them
-                $items = fetchItems($link, (int)$row['reservation_id']);
-                foreach ($items as $it) {
-                    $groupedPending[$groupKey]['items'][] = $it;
-                }
+                $pending[] = $row;
             }
-            $pending = array_values($groupedPending);
         } else {
             $dbError = '讀取待審核申請失敗：' . mysqli_error($link);
         }
@@ -306,11 +272,11 @@ function fetchItems(mysqli $link, int $reservationId): array
                     <?php if (count($pending) === 0) { ?>
                         <p>目前沒有待審核的申請。</p>
                     <?php } else { ?>
-                        <?php foreach ($pending as $p) { ?>
+                        <?php foreach ($pending as $p) { $items = fetchItems($link, (int)$p['reservation_id']); ?>
                             <div class="card admin-application-card" style="margin-bottom:1rem;">
                                 <div style="display:flex;justify-content:space-between;align-items:center;">
                                     <div>
-                                        <strong>申請編號：</strong><?php echo implode(', ', $p['reservation_ids']); ?>
+                                        <strong>申請編號：</strong><?php echo (int)$p['reservation_id']; ?>
                                         &nbsp; <strong>申請人：</strong><?php echo htmlspecialchars($p['full_name'], ENT_QUOTES, 'UTF-8'); ?> (<?php echo htmlspecialchars($p['applicant_user_id'], ENT_QUOTES, 'UTF-8'); ?>)
                                     </div>
                                     <div><small>送出時間：<?php echo htmlspecialchars($p['submitted_at'], ENT_QUOTES, 'UTF-8'); ?></small></div>
@@ -324,21 +290,21 @@ function fetchItems(mysqli $link, int $reservationId): array
                                 <div style="margin-top:0.5rem;">
                                     <strong>申請項目：</strong>
                                     <ul>
-                                        <?php foreach ($p['items'] as $it) { ?>
+                                        <?php foreach ($items as $it) { ?>
                                             <li><?php echo htmlspecialchars($it['equipment_code'] . ' - ' . $it['equipment_name'], ENT_QUOTES, 'UTF-8'); ?></li>
                                         <?php } ?>
                                     </ul>
                                 </div>
 
                                 <form method="post" style="margin-top:0.5rem;display:flex;gap:0.5rem;align-items:flex-end;">
-                                    <input type="hidden" name="reservation_ids" value="<?php echo implode(',', $p['reservation_ids']); ?>">
+                                    <input type="hidden" name="reservation_id" value="<?php echo (int)$p['reservation_id']; ?>">
                                     <div style="flex:1;">
                                         <label>審核備註（可選）：</label>
                                         <textarea name="comment" rows="2" style="width:100%;"></textarea>
                                     </div>
                                     <div style="display:flex;flex-direction:column;gap:0.5rem;">
-                                        <button type="submit" name="action" value="approve" class="btn-primary" onclick="return confirm('確認要核准此批申請？')">核准</button>
-                                        <button type="submit" name="action" value="reject" class="btn-secondary" onclick="return confirm('確認要拒絕此批申請？')">拒絕</button>
+                                        <button type="submit" name="action" value="approve" class="btn-primary" onclick="return confirm('確認要核准此申請？')">核准</button>
+                                        <button type="submit" name="action" value="reject" class="btn-secondary" onclick="return confirm('確認要拒絕此申請？')">拒絕</button>
                                     </div>
                                 </form>
                             </div>

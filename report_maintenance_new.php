@@ -1,6 +1,13 @@
 <?php
 declare(strict_types=1);
 
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+
+require_once __DIR__ . '/lib/PHPMailer/PHPMailer.php';
+require_once __DIR__ . '/lib/PHPMailer/SMTP.php';
+require_once __DIR__ . '/lib/PHPMailer/Exception.php';
+
 session_start();
 
 if (!isset($_SESSION['user_id'])) {
@@ -207,6 +214,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
                     $success = '器材報修已送出，感謝您的回報。';
+                    try {
+                        if ($email !== '') {
+                            $mail = new PHPMailer(true);
+                            $mail->isSMTP();
+                            $mail->Host       = 'smtp.gmail.com'; 
+                            $mail->SMTPAuth   = true;
+                            $mail->Username   = 'sasass041919@gmail.com'; 
+                            $mail->Password   = 'xogusuplsoapxayc'; 
+                            $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+                            $mail->Port       = 465;
+                            $mail->CharSet    = 'UTF-8';
+
+                            $mail->setFrom('sasass041919@gmail.com', '校園資源租借系統');
+                            $mail->addAddress($email, $name);
+
+                            $mail->isHTML(true);
+                            $mail->Subject = '【校園資源租借系統】器材報修申請通知';
+                            $mail->Body    = "您好 {$name}：<br><br>我們已收到您的「器材報修」申請，詳細內容如下：<br><br>" . nl2br(htmlspecialchars($fullFaultDescription)) . "<br><br>管理團隊會盡快協助處理，謝謝！";
+                            
+                            $mail->send();
+                            $success .= ' (已同步發送通知信至您的信箱)';
+                        }
+                    } catch (Exception $e) {
+                         $errors[] = "通知信發送失敗: " . $mail->ErrorInfo;
+                    }
                 } catch (Throwable $t) {
                     $errors[] = '儲存器材報修失敗：' . $t->getMessage();
                 }
@@ -271,6 +303,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
                     $success = '空間報修已送出，感謝您的回報。';
+                    try {
+                        if ($email !== '') {
+                            $mail = new PHPMailer(true);
+                            $mail->isSMTP();
+                            $mail->Host       = 'smtp.gmail.com'; 
+                            $mail->SMTPAuth   = true;
+                            $mail->Username   = 'sasass041919@gmail.com'; 
+                            $mail->Password   = 'xogusuplsoapxayc'; 
+                            $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+                            $mail->Port       = 465;
+                            $mail->CharSet    = 'UTF-8';
+
+                            $mail->setFrom('sasass041919@gmail.com', '校園資源租借系統');
+                            $mail->addAddress($email, $name);
+
+                            $mail->isHTML(true);
+                            $mail->Subject = '【校園資源租借系統】空間報修申請通知';
+                            $mail->Body    = "您好 {$name}：<br><br>我們已收到您的「空間報修」申請，詳細內容如下：<br><br>" . nl2br(htmlspecialchars($fullFaultDescription)) . "<br><br>管理團隊會盡快協助處理，謝謝！";
+                            
+                            $mail->send();
+                            $success .= ' (已同步發送通知信至您的信箱)';
+                        }
+                    } catch (Exception $e) {
+                         $errors[] = "通知信發送失敗: " . $mail->ErrorInfo;
+                    }
                 } catch (Throwable $t) {
                     $errors[] = '儲存空間報修失敗：' . $t->getMessage();
                 }

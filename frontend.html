@@ -1,0 +1,617 @@
+<?php
+?>
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>報修回報｜校園資源租借系統</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-blue: #0056b3;
+            --light-blue: #eef2f7;
+            --border-color: #d1d5db;
+            --text-main: #374151;
+            --text-muted: #6b7280;
+            --focus-ring: rgba(0, 86, 179, 0.2);
+            --bg-body: #f3f4f6;
+            --danger-red: #dc2626;
+        }
+        body {
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        .main-content {
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        .maintenance-card {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            overflow: hidden;
+            border-top: 5px solid var(--primary-blue);
+        }
+        .card-header {
+            padding: 2rem 2rem 1rem;
+            text-align: center;
+        }
+        .card-header h2 {
+            margin: 0 0 0.5rem;
+            color: var(--primary-blue);
+            font-size: 1.8rem;
+        }
+        .card-header p.hint {
+            color: var(--text-muted);
+            margin: 0;
+            font-size: 0.95rem;
+        }
+        .form-body {
+            padding: 1rem 2rem 2rem;
+        }
+        
+        /* 區塊標題 */
+        .section-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--primary-blue);
+            margin: 1.5rem 0 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--light-blue);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        /* 表單列與網格 */
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.25rem;
+            margin-bottom: 1.25rem;
+        }
+        @media (max-width: 600px) {
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        .form-row {
+            margin-bottom: 1.25rem;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* 標籤 */
+        label {
+            font-weight: 500;
+            margin-bottom: 0.4rem;
+            color: var(--text-main);
+            font-size: 0.9rem;
+        }
+        .required-mark {
+            color: var(--danger-red);
+            font-weight: bold;
+        }
+
+        /* 類型選取 (Radio Buttons as Tiles) */
+        .type-selector {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .type-tile {
+            position: relative;
+            cursor: pointer;
+        }
+        .type-tile input[type="radio"] {
+            position: absolute;
+            opacity: 0;
+        }
+        .tile-content {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 1rem;
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            background: #fff;
+            transition: all 0.2s ease;
+            font-weight: 600;
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+        .type-tile input[type="radio"]:checked + .tile-content {
+            border-color: var(--primary-blue);
+            background: var(--light-blue);
+            color: var(--primary-blue);
+        }
+        .type-tile input[type="radio"]:focus-visible + .tile-content {
+            box-shadow: 0 0 0 3px var(--focus-ring);
+        }
+
+        /* 輸入框樣式 */
+        input[type="text"],
+        input[type="email"],
+        select,
+        textarea {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 0.95rem;
+            color: var(--text-main);
+            transition: all 0.2s;
+            box-sizing: border-box;
+            background-color: #fafafa;
+        }
+        input[type="text"]:focus,
+        input[type="email"]:focus,
+        select:focus,
+        textarea:focus {
+            outline: none;
+            border-color: var(--primary-blue);
+            background-color: #fff;
+            box-shadow: 0 0 0 3px var(--focus-ring);
+        }
+        input[readonly] {
+            background-color: #e5e7eb;
+            color: var(--text-muted);
+            cursor: not-allowed;
+            border-color: var(--border-color);
+        }
+        
+        /* 檔案上傳樣式 */
+        .file-upload-wrapper {
+            position: relative;
+            border: 2px dashed var(--border-color);
+            border-radius: 8px;
+            padding: 2rem 1rem;
+            text-align: center;
+            background-color: #f9fafb;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .file-upload-wrapper:hover {
+            border-color: var(--primary-blue);
+            background-color: var(--light-blue);
+        }
+        .file-upload-wrapper input[type="file"] {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+        .file-icon {
+            font-size: 2rem;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+        }
+        .attachment-hint {
+            margin-top: 0.5rem;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+        .selected-files {
+            margin-top: 10px;
+            font-weight: 600;
+            color: var(--primary-blue);
+        }
+
+        /* 警告與成功訊息 */
+        .alert-box {
+            padding: 1rem;
+            border-radius: 6px;
+            margin-bottom: 1.5rem;
+            font-weight: 500;
+        }
+        .alert-error {
+            background-color: #fef2f2;
+            color: var(--danger-red);
+            border-left: 4px solid var(--danger-red);
+        }
+        .alert-success {
+            background-color: #ecfdf5;
+            color: #059669;
+            border-left: 4px solid #059669;
+        }
+
+        /* 按鈕區 */
+        .form-actions {
+            margin-top: 2.5rem;
+            display: flex;
+            gap: 1rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--border-color);
+        }
+        .btn {
+            flex: 1;
+            padding: 0.85rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+        .btn-submit {
+            background-color: var(--primary-blue);
+            color: #fff;
+        }
+        .btn-submit:hover {
+            background-color: #004494;
+            transform: translateY(-1px);
+        }
+        .btn-cancel {
+            background-color: #f3f4f6;
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+        }
+        .btn-cancel:hover {
+            background-color: #e5e7eb;
+        }
+
+        /* 隱藏面板過場 */
+        .dynamic-panel {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .consent-label {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            font-weight: normal;
+            background: var(--light-blue);
+            padding: 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .consent-label input {
+            margin-top: 3px;
+        }
+    </style>
+    <script>
+        function toggleTargetFields() {
+            const type = document.querySelector('input[name="target_type"]:checked').value;
+            document.getElementById('equipment-only-fields').style.display = type === 'equipment' ? 'block' : 'none';
+            document.getElementById('space-only-fields').style.display = type === 'space' ? 'block' : 'none';
+        }
+        function filterEquipments() {}
+        function toggleRepairCategoryOther() {
+            const cat = document.getElementById('repair_category').value;
+            document.getElementById('repair_category_other_wrap').style.display = cat === '其他' ? 'block' : 'none';
+        }
+        function populateSpaceCategories() {
+            const categories = new Set();
+            const options = document.querySelectorAll('#space_id option');
+            options.forEach(opt => {
+                const cat = opt.getAttribute('data-category');
+                if (cat) categories.add(cat);
+            });
+            const sel = document.getElementById('space_category');
+            
+            sel.innerHTML = '<option value="">-- 選擇場地分類 --</option>';
+
+            categories.forEach(cat => {
+                const opt = document.createElement('option');
+                opt.value = cat;
+                opt.textContent = cat;
+                sel.appendChild(opt);
+            });
+            
+            const pVal = "<?php echo addslashes($_POST['space_category'] ?? ''); ?>";
+            if (pVal && categories.has(pVal)) {
+                sel.value = pVal;
+            }
+        }
+        function filterSpaces() {
+            const cat = document.getElementById('space_category').value;
+            const options = document.querySelectorAll('#space_id option');
+            options.forEach(opt => {
+                if(opt.value === "") {
+                    opt.style.display = '';
+                } else if (cat === "" || opt.getAttribute('data-category') === cat) {
+                    opt.style.display = '';
+                } else {
+                    opt.style.display = 'none';
+                }
+            });
+        }
+        window.addEventListener('DOMContentLoaded', function(){
+            const radios = document.querySelectorAll('input[name="target_type"]');
+            radios.forEach(r => r.addEventListener('change', toggleTargetFields));
+            toggleTargetFields();
+            populateSpaceCategories();
+            
+            if (document.getElementById('eq_category').value !== '') {
+                filterEquipments();
+            }
+            if (document.getElementById('space_category').value !== '') {
+                filterSpaces();
+                document.getElementById('space_id').value = "<?php echo addslashes($_POST['space_id'] ?? ''); ?>";
+            }
+        });
+    </script>
+</head>
+<body>
+    <div class="container">
+        <nav class="navbar">
+            <div class="navbar-brand"><h1>?? 校園資源租借系統</h1></div>
+            <div class="navbar-menu">
+                <button class="nav-btn" onclick="location.href='index.php'"><i class="fas fa-home"></i> 回首頁</button>
+                <button class="nav-btn" onclick="location.href='logout.php'"><i class="fas fa-sign-out-alt"></i> 登出</button>
+            </div>
+        </nav>
+
+        <main class="main-content">
+            <div class="card maintenance-card">
+                <div class="card-header">
+                    <h2><i class="fas fa-tools"></i> 報修單填寫</h2>
+                    <p class="hint">請選擇有問題的對象，並詳細描述狀況，以利我們迅速為您處理！</p>
+                </div>
+
+                <div class="form-body">
+                    <?php if (!empty($errors)) { ?>
+                        <div class="alert-box alert-error">
+                            <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars(implode(' / ', $errors), ENT_QUOTES, 'UTF-8'); ?>
+                        </div>
+                    <?php } ?>
+
+                    <?php if ($success !== '') { ?>
+                        <div class="alert-box alert-success">
+                            <i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($success, ENT_QUOTES, 'UTF-8'); ?>
+                        </div>
+                    <?php } ?>
+
+                    <form method="post" action="report_maintenance.php" enctype="multipart/form-data">
+                        
+                        <div class="section-title"><i class="fas fa-crosshairs"></i> 1. 選擇報修對象</div>
+                        <div class="type-selector">
+                            <label class="type-tile">
+                                <input type="radio" name="target_type" value="equipment" <?php echo (($_POST['target_type'] ?? 'equipment') === 'equipment') ? 'checked' : ''; ?>>
+                                <div class="tile-content">
+                                    <i class="fas fa-laptop"></i> 器材報修
+                                </div>
+                            </label>
+                            <label class="type-tile">
+                                <input type="radio" name="target_type" value="space" <?php echo (($_POST['target_type'] ?? '') === 'space') ? 'checked' : ''; ?>>
+                                <div class="tile-content">
+                                    <i class="fas fa-door-open"></i> 空間報修
+                                </div>
+                            </label>
+                        </div>
+
+                        <!-- 動態面板：器材 -->
+                        <div id="equipment-only-fields" class="dynamic-panel">
+                            <div class="section-title"><i class="fas fa-laptop-medical"></i> 器材詳細資訊</div>
+                            <div class="form-grid">
+                                <div class="form-row">
+                                    <label for="eq_category">器材分類 <span class="required-mark">*</span></label>
+                                    <div class="select-wrapper">
+                                        <select id="eq_category" name="eq_category" onchange="document.getElementById('equipment_id').value=''; filterEquipments();">
+                                            <option value="">-- 選擇器材分類 --</option>
+                                            <?php foreach ($equipmentCategories as $cat) { ?>
+                                                <option value="<?php echo htmlspecialchars($cat['equipment_code'], ENT_QUOTES, 'UTF-8'); ?>" <?php echo ((isset($_POST['eq_category']) && $_POST['eq_category'] === $cat['equipment_code']) ? 'selected' : ''); ?>><?php echo htmlspecialchars($cat['equipment_name'], ENT_QUOTES, 'UTF-8'); ?></option>
+                                            <?php } ?>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <label for="equipment_id">器材編號 <span class="required-mark">*</span></label>
+                                    <input type="text" id="equipment_id" name="equipment_id" value="<?php echo htmlspecialchars($_POST['equipment_id'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" placeholder="請填寫器材身上的財產編號">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 動態面板：場地 -->
+                        <div id="space-only-fields" class="dynamic-panel" style="display:none;">
+                            <div class="section-title"><i class="fas fa-building"></i> 空間詳細資訊</div>
+                            <div class="form-grid">
+                                <div class="form-row">
+                                    <label for="space_category">場地分類 <span class="required-mark">*</span></label>
+                                    <select id="space_category" name="space_category" onchange="document.getElementById('space_id').value=''; filterSpaces();">
+                                        <option value="">-- 選擇場地分類 --</option>
+                                    </select>
+                                </div>
+                                <div class="form-row">
+                                    <label for="space_id">故障空間 <span class="required-mark">*</span></label>
+                                    <select id="space_id" name="space_id">
+                                        <option value="">-- 選擇空間 --</option>
+                                        <?php foreach ($spaces as $sp) { 
+                                            // Extract the first word before space character as category
+                                            $cat = explode(' ', trim($sp['space_name']))[0];
+                                        ?>
+                                            <option data-category="<?php echo htmlspecialchars($cat, ENT_QUOTES, 'UTF-8'); ?>" value="<?php echo htmlspecialchars($sp['space_id'], ENT_QUOTES, 'UTF-8'); ?>" <?php echo (isset($_POST['space_id']) && $_POST['space_id'] === $sp['space_id']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($sp['space_name'] . ' (' . $sp['space_id'] . ')', ENT_QUOTES, 'UTF-8'); ?></option>
+                                        <?php } ?>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <label for="repair_category">損壞類型 <span class="required-mark">*</span></label>
+                                <select id="repair_category" name="repair_category" onchange="toggleRepairCategoryOther()">
+                                    <option value="">-- 選擇報修類別（簡易判斷即可） --</option>
+                                    <?php
+                                    $cats = ['建築(壁癌)','建築(木作)','建築(天花板)','建築(窗戶)','電器(插座)','電器(電燈)','電器(冷氣)','電器(音響/投影機)','水類(飲水機)','水類(給水/排水/積水/漏水)','水類(馬桶/洗手台/水龍頭)','其他'];
+                                    foreach ($cats as $c) {
+                                        $selected = (isset($_POST['repair_category']) && $_POST['repair_category'] === $c) ? 'selected' : '';
+                                        echo '<option value="' . htmlspecialchars($c, ENT_QUOTES, 'UTF-8') . '" ' . $selected . '>' . htmlspecialchars($c, ENT_QUOTES, 'UTF-8') . '</option>';
+                                    }
+                                    ?>
+                                </select>
+                                <div id="repair_category_other_wrap" style="margin-top:10px; display:<?php echo (($_POST['repair_category'] ?? '') === '其他') ? 'block' : 'none'; ?>">
+                                    <input type="text" id="repair_category_other" name="repair_category_other" value="<?php echo htmlspecialchars($_POST['repair_category_other'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" placeholder="請大略描述其他的裝修類別">
+                                </div>
+                            </div>
+                            <div class="form-grid">
+                                <div class="form-row">
+                                    <label for="repair_item">維修項目</label>
+                                    <input id="repair_item" name="repair_item" type="text" value="<?php echo htmlspecialchars($_POST['repair_item'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" placeholder="例如：地下室-演講廳-左後方講台">
+                                </div>
+                                <div class="form-row">
+                                    <label for="location_input">精確位置</label>
+                                    <input id="location_input" name="location_input" type="text" value="<?php echo htmlspecialchars($_POST['location_input'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" placeholder="例如：黑板左側的插座">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="section-title"><i class="fas fa-clipboard-list"></i> 2. 問題描述</div>
+                        <div class="form-row">
+                            <label for="damage_detail">損壞情況詳細說明 <span class="required-mark">*</span></label>
+                            <textarea id="damage_detail" name="damage_detail" rows="5" placeholder="請盡可能詳細敘述損毀的狀態、發生的時間等，幫助維修人員快速釐清問題！"><?php echo htmlspecialchars($_POST['damage_detail'] ?? '', ENT_QUOTES, 'UTF-8'); ?></textarea>
+                        </div>
+                        
+                        <div class="form-row">
+                            <label>上傳佐證照片或檔案</label>
+                            <div class="file-upload-wrapper">
+                                <i class="fas fa-cloud-upload-alt file-icon"></i>
+                                <div style="font-weight: 500; color: var(--primary-blue);">點擊此處或拖曳檔案來上傳</div>
+                                <div class="attachment-hint">最多支援 5 個檔案，每個上限 10 MB (JPG/PNG/GIF/PDF)</div>
+                                <input id="attachments" name="attachments[]" type="file" multiple accept="image/*,.pdf">
+                                <div id="attachments-hint" class="selected-files"></div>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <label for="other_problems">補充備註（選填）</label>
+                            <textarea id="other_problems" name="other_problems" rows="2" placeholder="任何其他想交代的事項"><?php echo htmlspecialchars($_POST['other_problems'] ?? '', ENT_QUOTES, 'UTF-8'); ?></textarea>
+                        </div>
+
+                        <div class="section-title"><i class="fas fa-user-circle"></i> 3. 填寫人資訊</div>
+                        <div class="form-grid">
+                            <div class="form-row">
+                                <label for="name">姓名 <span class="required-mark">*</span></label>
+                                <input id="name" name="name" type="text" value="<?php echo htmlspecialchars($_POST['name'] ?? ($_SESSION['full_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" required readonly>
+                            </div>
+                            <div class="form-row">
+                                <label for="reporter_id">學號 / 員工編號 <span class="required-mark">*</span></label>
+                                <input id="reporter_id" name="reporter_id" type="text" value="<?php echo htmlspecialchars($_POST['reporter_id'] ?? $_SESSION['user_id'], ENT_QUOTES, 'UTF-8'); ?>" required readonly>
+                            </div>
+                            <div class="form-row">
+                                <label for="email">聯絡信箱</label>
+                                <input id="email" name="email" type="email" value="<?php echo htmlspecialchars($_POST['email'] ?? ($_SESSION['email'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" placeholder="接收報修進度通知的最主要信箱">
+                            </div>
+                            <div class="form-row">
+                                <label for="phone">聯絡電話</label>
+                                <input id="phone" name="phone" type="text" value="<?php echo htmlspecialchars($_POST['phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" placeholder="分機或手機">
+                            </div>
+                            <div class="form-row" style="grid-column: 1 / -1;">
+                                <label for="unit">所屬單位（社團/系學會/行政單位）</label>
+                                <input id="unit" name="unit" type="text" value="<?php echo htmlspecialchars($_POST['unit'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" placeholder="以便聯絡所屬單位">
+                            </div>
+                        </div>
+
+                        <label class="consent-label">
+                            <input id="consent" type="checkbox" name="consent" <?php echo isset($_POST['consent']) ? 'checked' : ''; ?>>
+                            <span>我們將依據個資法蒐集您的姓名、學號等聯絡資訊，僅限於<b>輔大課指組維修追蹤</b>之用途。勾選代表您同意上述聲明。<span class="required-mark">*</span></span>
+                        </label>
+
+                        <div class="form-actions">
+                            <button class="btn btn-cancel" type="button" onclick="location.href='index.php'"><i class="fas fa-times"></i> 取消返回</button>
+                            <button class="btn btn-submit" type="submit"><i class="fas fa-paper-plane"></i> 送出報修單</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        (function(){
+            const form = document.querySelector('form');
+            const attachments = document.getElementById('attachments');
+            const hint = document.getElementById('attachments-hint');
+            const maxFiles = 5;
+            const maxSize = 10 * 1024 * 1024; // 10MB
+            const allowed = ['image/jpeg','image/png','image/gif','application/pdf','image/webp'];
+
+            attachments.addEventListener('change', function(){
+                const files = attachments.files;
+                if (!files || files.length === 0) {
+                    hint.textContent = '';
+                    return;
+                }
+                if (files.length > maxFiles) {
+                    hint.innerHTML = <span style="color:var(--danger-red);"><i class="fas fa-times-circle"></i> 選取超過  個檔案（已選 ）</span>;
+                } else {
+                    hint.innerHTML = <i class="fas fa-check-circle"></i> 已確實夾帶  個附件;
+                }
+            });
+
+            form.addEventListener('submit', function(e){
+                const name = document.getElementById('name').value.trim();
+                const reporter = document.getElementById('reporter_id').value.trim();
+                const consent = document.getElementById('consent').checked;
+                const repairItem = document.getElementById('repair_item').value.trim();
+                const damage = document.getElementById('damage_detail').value.trim();
+                const targetType = document.querySelector('input[name="target_type"]:checked').value;
+                const equipmentId = document.getElementById('equipment_id').value;
+                const equipmentCategory = document.getElementById('eq_category').value;
+                const spaceId = document.getElementById('space_id').value;
+                const spaceCategory = document.getElementById('space_category').value;
+                const repairCategorySelected = document.getElementById('repair_category').value;
+
+                if (!consent) {
+                    alert('請同意個資蒐集聲明，勾選最下方的知情同意框。');
+                    e.preventDefault();
+                    return false;
+                }
+                if (name === '') { alert('請填寫姓名。'); e.preventDefault(); return false; }
+                if (reporter === '') { alert('請填寫學號或員工編號。'); e.preventDefault(); return false; }
+                
+                if (targetType === 'equipment') {
+                    if (!equipmentCategory) { alert('請選擇要報修的器材分類。'); e.preventDefault(); return false; }
+                    if (!equipmentId) { alert('請填寫要報修的財產編號。'); e.preventDefault(); return false; }
+                    if (damage === '') { alert('請填寫損壞情況說明。'); e.preventDefault(); return false; }
+                } else if (targetType === 'space') {
+                    if (!spaceCategory) { alert('請選擇場地分類。'); e.preventDefault(); return false; }
+                    if (!spaceId) { alert('請選擇要報修的空間。'); e.preventDefault(); return false; }
+                    if (!repairCategorySelected) { alert('請選擇報修類別。'); e.preventDefault(); return false; }
+                    if (repairItem === '' && damage === '') {
+                        alert('請填寫維修項目或損壞情況詳細說明。');
+                        e.preventDefault();
+                        return false;
+                    }
+                }
+
+                const files = attachments.files;
+                if (files && files.length > 0) {
+                    if (files.length > maxFiles) {
+                        alert("最多只能上傳  個附件檔案喔！");
+                        e.preventDefault();
+                        return false;
+                    }
+                    for (let i=0;i<files.length;i++){
+                        const f = files[i];
+                        if (f.size > maxSize) {
+                            alert("檔案「」已超過單一檔案 10MB 的上限！");
+                            e.preventDefault();
+                            return false;
+                        }
+                        if (!allowed.includes(f.type)) {
+                            alert("糟糕！檔案「」的格式不被允許，請上傳 JPG/PNG/PDF 等圖文格式。");
+                            e.preventDefault();
+                            return false;
+                        }
+                    }
+                }
+            });
+        })();
+    </script>
+</body>
+</html>
+

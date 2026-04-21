@@ -41,9 +41,10 @@ if ($dbError === '') {
         }
     }
 
-    $applicantColumn = pickExistingColumn($reservationColumns, ['applicant_id', 'user_id']);
-    if ($applicantColumn === null) {
-        $dbError = 'reservations 缺少 applicant_id（或 user_id）欄位，無法關聯 users 資料。';
+    // 固定使用 `user_id` 作為申請人欄位
+    $applicantColumn = 'user_id';
+    if (!in_array($applicantColumn, $reservationColumns, true)) {
+        $dbError = 'reservations 缺少 user_id 欄位，無法關聯 users 資料。';
     }
 
     $borrowStartColumn = pickExistingColumn($reservationColumns, ['borrow_start_at', 'borrow_start_time']);
@@ -84,7 +85,7 @@ if ($dbError === '') {
                      FROM reservations r
                      LEFT JOIN checkin_logs cl
                        ON cl.reservation_id = r.reservation_id
-                      AND cl.applicant_id COLLATE utf8mb4_unicode_ci = r.`' . $applicantColumn . '` COLLATE utf8mb4_unicode_ci
+                      AND cl.user_id COLLATE utf8mb4_unicode_ci = r.`' . $applicantColumn . '` COLLATE utf8mb4_unicode_ci
                      WHERE r.reservation_id = ?
                        AND r.`' . $applicantColumn . '` COLLATE utf8mb4_unicode_ci = ?
                      LIMIT 1'
@@ -151,8 +152,9 @@ if ($dbError === '') {
     }
 
     if ($dbError === '') {
+        $listWhere = "r.approval_status = 'approved'";
         $safeUserId = mysqli_real_escape_string($link, $currentUserId);
-        $listWhere = "r.`{$applicantColumn}` = '{$safeUserId}'";
+        $listWhere .= " AND r.`{$applicantColumn}` = '{$safeUserId}'";
 
         // 查詢邏輯：
         // - pickup_confirmed: 使用 checkin_logs.checked_in_at 判斷（NULL = 未報到，NOT NULL = 已報到）
@@ -191,7 +193,7 @@ if ($dbError === '') {
                 ) AS space_names
             FROM reservations r
             JOIN users u ON u.user_id COLLATE utf8mb4_unicode_ci = r.`{$applicantColumn}` COLLATE utf8mb4_unicode_ci
-            LEFT JOIN checkin_logs cl ON cl.reservation_id = r.reservation_id AND cl.applicant_id COLLATE utf8mb4_unicode_ci = r.`{$applicantColumn}` COLLATE utf8mb4_unicode_ci
+            LEFT JOIN checkin_logs cl ON cl.reservation_id = r.reservation_id AND cl.user_id COLLATE utf8mb4_unicode_ci = r.`{$applicantColumn}` COLLATE utf8mb4_unicode_ci
             WHERE {$listWhere}
             ORDER BY r.`{$borrowEndColumn}` DESC
             LIMIT 300
@@ -222,6 +224,7 @@ if ($dbError === '') {
             <div class="navbar-brand"><h1>📚 校園資源租借系統</h1></div>
             <div class="navbar-menu">
                 <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
+                <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
                 <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['user_id'], ENT_QUOTES, 'UTF-8'); ?></button>
                 <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
             </div>
@@ -245,14 +248,13 @@ if ($dbError === '') {
                                     <th>申請人</th>
                                     <th>借用時段</th>
                                     <th>借用項目</th>
-                                    <th>申請狀態</th>
                                     <th>是否已報到</th>
                                     <th>歸還</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if (count($rows) === 0) { ?>
-                                    <tr><td colspan="6">目前沒有可顯示的申請資料。</td></tr>
+                                    <tr><td colspan="5">目前沒有可顯示的申請資料。</td></tr>
                                 <?php } else { ?>
                                     <?php foreach ($rows as $row) { ?>
                                         <?php
@@ -276,7 +278,6 @@ if ($dbError === '') {
                                                 <?php echo htmlspecialchars((string)$row['borrow_start_at'], ENT_QUOTES, 'UTF-8'); ?><br>
                                                 ～ <?php echo htmlspecialchars((string)$row['borrow_end_at'], ENT_QUOTES, 'UTF-8'); ?>
                                             </td>
-                                            <td><?php echo htmlspecialchars((string)$row['approval_status'], ENT_QUOTES, 'UTF-8'); ?></td>
                                             <td><?php echo htmlspecialchars($resourceText, ENT_QUOTES, 'UTF-8'); ?></td>
                                             <td>
                                                 <?php

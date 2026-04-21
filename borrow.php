@@ -118,7 +118,7 @@ $formData = [
     'start_period_code' => '',
     'end_period_code' => '',
     'purpose' => '',
-    'contact_phone' => '',
+    'phone' => '',
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -130,7 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['start_period_code'] = trim((string)($_POST['start_period_code'] ?? ''));
     $formData['end_period_code'] = trim((string)($_POST['end_period_code'] ?? ''));
     $formData['purpose'] = trim((string)($_POST['purpose'] ?? ''));
-    $formData['contact_phone'] = trim((string)($_POST['contact_phone'] ?? ''));
+    $formData['phone'] = trim((string)($_POST['phone'] ?? ''));
 
     if ($dbError !== '') {
         $borrowError = $dbError;
@@ -166,7 +166,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $selectedEquipment = $equipmentMap[$formData['equipment_code']];
                 $borrowQuantity = (int)$formData['borrow_quantity'];
-                if ($borrowQuantity <= 0) {
+
+                // 檢查證照
+                $certificateCheckSql = "
+                    SELECT 1
+                    FROM equipment_certificates
+                    WHERE holder_id = ?
+                      AND validity_status = 'valid'
+                      AND CURDATE() <= valid_until
+                ";
+                $certStmt = mysqli_prepare($link, $certificateCheckSql);
+                mysqli_stmt_bind_param($certStmt, 's', $userId);
+                mysqli_stmt_execute($certStmt);
+                $certResult = mysqli_stmt_get_result($certStmt);
+                $hasValidCertificate = mysqli_num_rows($certResult) > 0;
+                mysqli_stmt_close($certStmt);
+
+                if (!$hasValidCertificate) {
+                    $borrowError = '您沒有有效的器材證照，無法借用此器材。';
+                }
+                // 原有的數量檢查
+                elseif ($borrowQuantity <= 0) {
                     $borrowError = '借用數量必須大於 0。';
                 } elseif ($selectedEquipment['borrow_limit_quantity'] !== null && $borrowQuantity > (int)$selectedEquipment['borrow_limit_quantity']) {
                     $borrowError = '借用數量超過限借數量。';
@@ -268,36 +288,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
 
-                if ($formData['contact_phone'] !== '') {
+                if ($formData['phone'] !== '') {
                     $updatePhoneStmt = mysqli_prepare($link, 'UPDATE users SET phone = ? WHERE user_id = ?');
                     if (!$updatePhoneStmt) {
                         throw new RuntimeException('更新聯絡電話失敗：' . mysqli_error($link));
                     }
-                    mysqli_stmt_bind_param($updatePhoneStmt, 'ss', $formData['contact_phone'], $userId);
+                    mysqli_stmt_bind_param($updatePhoneStmt, 'ss', $formData['phone'], $userId);
                     mysqli_stmt_execute($updatePhoneStmt);
                     mysqli_stmt_close($updatePhoneStmt);
                 }
                 $applicantColumn = $reservationApplicantColumn;
-                if ($applicantColumn !== 'user_id') {
-                    throw new RuntimeException('資料表 reservations 欄位缺少 user_id，請檢查資料庫結構。');
+
+                // 檢查 reservations 表是否有 purpose 與 certificate_id 欄位，視情況決定 INSERT 欄位
+                $reservationCols = [];
+                $colRes = mysqli_query($link, 'SHOW COLUMNS FROM reservations');
+                if ($colRes) {
+                    while ($crow = mysqli_fetch_assoc($colRes)) {
+                        $reservationCols[] = (string)$crow['Field'];
+                    }
+                }
+                $hasPurposeCol = in_array('purpose', $reservationCols, true);
+                $hasCertificateIdCol = in_array('certificate_id', $reservationCols, true);
+
+                $insertCols = [$applicantColumn, 'borrow_start_at', 'borrow_end_at'];
+                $bindValues = [$userId, $borrowStartAtSql, $borrowEndAtSql];
+                $bindTypes = 'sss';
+
+                if ($hasPurposeCol) {
+                    $insertCols[] = 'purpose';
+                    $bindValues[] = $formData['purpose'];
+                    $bindTypes .= 's';
                 }
 
-                $insertSql = sprintf(
-                    'INSERT INTO reservations (%s, borrow_start_at, borrow_end_at, approval_status) VALUES (?, ?, ?, "pending")',
-                    $applicantColumn
-                );
+                $colsSql = implode(", ", $insertCols) . ", approval_status, created_at";
+                if ($hasCertificateIdCol) {
+                    $colsSql .= ", certificate_id";
+                }
 
-                $reservationStmt = mysqli_prepare($link, $insertSql);
+                $placeholders = implode(', ', array_fill(0, count($insertCols), '?')) . ', "pending", NOW()' . ($hasCertificateIdCol ? ', NULL' : '');
+
+                $insertReservationSql = sprintf("INSERT INTO reservations ( %s ) VALUES (%s)", $colsSql, $placeholders);
+
+                $reservationStmt = mysqli_prepare($link, $insertReservationSql);
                 if (!$reservationStmt) {
                     throw new RuntimeException('建立預約主檔失敗：' . mysqli_error($link));
                 }
-                mysqli_stmt_bind_param(
-                    $reservationStmt,
-                    'sss',
-                    $userId,
-                    $borrowStartAtSql,
-                    $borrowEndAtSql
-                );
+
+                mysqli_stmt_bind_param($reservationStmt, $bindTypes, ...$bindValues);
                 mysqli_stmt_execute($reservationStmt);
                 $reservationId = (int)mysqli_insert_id($link);
                 mysqli_stmt_close($reservationStmt);
@@ -530,7 +567,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'start_period_code' => '',
                     'end_period_code' => '',
                     'purpose' => '',
-                    'contact_phone' => '',
+                    'phone' => '',
                 ];
 
                 if ($submittedResourceType === 'equipment' && $selectedEquipment !== null) {
@@ -569,6 +606,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
             <div class="navbar-menu">
                 <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
+                <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
                 <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8'); ?></button>
                 <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
             </div>
@@ -685,8 +723,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
 
                             <div class="form-group">
-                                <label for="contact_phone">聯絡電話</label>
-                                <input type="text" id="contact_phone" name="contact_phone" placeholder="例：09XXXXXXXX" value="<?php echo htmlspecialchars($formData['contact_phone'], ENT_QUOTES, 'UTF-8'); ?>">
+                                <label for="phone">聯絡電話</label>
+                                <input type="text" id="phone" name="phone" placeholder="例：09XXXXXXXX" value="<?php echo htmlspecialchars($formData['phone'], ENT_QUOTES, 'UTF-8'); ?>">
                             </div>
 
                             <div class="form-group">

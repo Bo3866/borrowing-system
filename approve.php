@@ -314,7 +314,7 @@ function fetchItems(mysqli $link, int $reservationId): array
                 <?php } ?>
             </section>
         </main>
-        <footer class="footer"><p>&copy; 2024 校園資源租借系統。所有權利保留。</p></footer>
+        <footer class="footer"><p>&copy; 2026 校園資源租借系統。所有權利保留。</p></footer>
     </div>
 </body>
 </html>

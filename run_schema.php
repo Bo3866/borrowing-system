@@ -24,7 +24,7 @@ $host = '127.0.0.1';
 $port = 3306
 ;
 $username = 'root';
-$password = '';
+$password = '12345678';
 
 $mysqli = @new mysqli($host, $username, $password, '', $port);
 if ($mysqli->connect_errno) {

@@ -18,7 +18,7 @@ if (!in_array($currentRole, ['2', '3'], true)) {
     exit;
 }
 
-$link = mysqli_connect('localhost', 'root', '', 'borrowing_system',3307);
+$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
 if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();
 } else {
@@ -247,7 +247,7 @@ function fetchItems(mysqli $link, int $reservationId): array
                 <?php } ?>
             </section>
         </main>
-        <footer class="footer"><p>&copy; 2024 校園資源租借系統。所有權利保留。</p></footer>
+        <footer class="footer"><p>&copy; 2026 校園資源租借系統。所有權利保留。</p></footer>
     </div>
 </body>
 </html>

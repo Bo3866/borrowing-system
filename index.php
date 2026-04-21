@@ -10,7 +10,7 @@ $displayName = (string)($_SESSION['full_name'] ?? '訪客');
 $currentRole = (string)($_SESSION['role_name'] ?? '');
 $isManager = in_array($currentRole, ['2', '3'], true);
 
-$link = mysqli_connect('localhost', 'root', '', 'borrowing_system',3307);
+$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
 
 if ($link) {
     $dbConnected = true;
@@ -353,7 +353,7 @@ if ($link) {
 
         <!-- 頁腳 -->
         <footer class="footer">
-            <p>&copy; 2024 校園資源租借系統。所有權利保留。</p>
+            <p>&copy; 2026 校園資源租借系統。所有權利保留。</p>
         </footer>
     </div>
 

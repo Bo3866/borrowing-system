@@ -9,7 +9,7 @@ function getDatabaseConnection(): PDO
     $database = 'borrowing_system';
     $username = 'root';
     // MySQL in this workspace uses an empty root password for local dev
-    $password = '';
+    $password = '12345678';
 
     $dsn = "mysql:host={$host};port={$port};dbname={$database};charset=utf8mb4";
 

@@ -556,7 +556,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 mysqli_commit($link);
                 $borrowSuccess = '申請已送出，申請編號：' . $reservationId . '。';
-
+                // ----- 寄送預約成功通知信 -----
+                $userEmailStmt = mysqli_prepare($link, 'SELECT email FROM users WHERE user_id = ?');
+                if ($userEmailStmt) {
+                    mysqli_stmt_bind_param($userEmailStmt, 's', $userId);
+                    mysqli_stmt_execute($userEmailStmt);
+                    $resObj = mysqli_stmt_get_result($userEmailStmt);
+                    if ($rowObj = mysqli_fetch_assoc($resObj)) {
+                        $userEmail = $rowObj['email'];
+                        if (!empty($userEmail)) {
+                            if (!class_exists('PHPMailer\PHPMailer\PHPMailer')) {
+                                require_once __DIR__ . '/lib/PHPMailer/Exception.php';
+                                require_once __DIR__ . '/lib/PHPMailer/PHPMailer.php';
+                                require_once __DIR__ . '/lib/PHPMailer/SMTP.php';
+                            }
+                            $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
+                            try {
+                                $mail->isSMTP();
+                                $mail->Host       = 'smtp.gmail.com'; 
+                                $mail->SMTPAuth   = true;
+                                $mail->Username   = 'sasass041919@gmail.com';
+                                $mail->Password   = 'xogusuplsoapxayc';      
+                                $mail->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
+                                $mail->Port       = 465;
+                                $mail->CharSet    = 'UTF-8';
+                                $mail->setFrom('sasass041919@gmail.com', '借用系統通知');
+                                $mail->addAddress($userEmail, $displayName);
+                                $mail->isHTML(true);
+                                $mail->Subject = '【系統通知】預約申請已成功送出';
+                                $mail->Body    = "您好，{$displayName}：<br><br>您的預約申請（單號：{$reservationId}）已經成功送出，目前狀態為<b>「審核中」</b>。<br><br>系統管理員將會儘速處理您的申請，審核結果出爐後會再次以 Email 通知您。<br><br>感謝您的使用！";
+                                $mail->AltBody = "您好，{$displayName}：\n\n您的預約申請（單號：{$reservationId}）已經成功送出，目前狀態為「審核中」。\n\n系統管理員將會儘速處理您的申請，審核結果出爐後會再次以 Email 通知您。\n\n感謝您的使用！";
+                                $mail->send();
+                            } catch (Exception $e) {
+                                error_log("預約成功信件寄送失敗: " . $mail->ErrorInfo);
+                            }
+                        }
+                    }
+                    mysqli_stmt_close($userEmailStmt);
+                }
+                // ------------------------------
                 $formData = [
                     'resource_type' => 'equipment',
                     'equipment_code' => '',

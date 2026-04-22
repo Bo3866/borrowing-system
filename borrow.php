@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 declare(strict_types=1);
 
 session_start();
@@ -32,7 +32,7 @@ $periodSlots = [
 ];
 $periodOrder = array_keys($periodSlots);
 
-$link = mysqli_connect('localhost', 'root', '', 'borrowing_system',3307);
+$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
 $dbError = '';
 if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();

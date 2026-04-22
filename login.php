@@ -24,11 +24,7 @@ $loginError = '';
 $userId = '';
 $password = '';
 
-<<<<<<< HEAD
 $link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system',3306);
-=======
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
->>>>>>> 267baf0e6c439e9840e40d1205e543a3ab65e285
 
 if (!$link) {
     $loginError = '資料庫連線失敗：' . mysqli_connect_error();

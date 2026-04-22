@@ -17,11 +17,7 @@ if (!isset($_SESSION['user_id'])) {
 
 $currentUserId = (string)$_SESSION['user_id'];
 
-<<<<<<< HEAD
 $link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system',3306);
-=======
-$link = mysqli_connect('localhost', 'root', '', 'borrowing_system',3307);
->>>>>>> 7fd4ca3754cc1cfe32da961ce8ad09c98821ff1a
 $dbError = '';
 if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();

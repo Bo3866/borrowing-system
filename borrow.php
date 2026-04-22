@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 declare(strict_types=1);
 
 session_start();
@@ -123,9 +123,15 @@ $formData = [
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['resource_type'] = trim((string)($_POST['resource_type'] ?? 'equipment'));
-    $formData['equipment_code'] = trim((string)($_POST['equipment_code'] ?? ''));
+    $cartItemsRaw = trim((string)($_POST['cart_items'] ?? '[]'));
+    $cartItems = json_decode($cartItemsRaw, true);
+    if (!is_array($cartItems)) {
+        $cartItems = [];
+    }
+    // We override equipment_code and borrow_quantity since cart_items processes multiple
+    $formData['equipment_code'] = 'unused';
     $formData['space_id'] = trim((string)($_POST['space_id'] ?? ''));
-    $formData['borrow_quantity'] = trim((string)($_POST['borrow_quantity'] ?? '1'));
+    $formData['borrow_quantity'] = '1';
     $formData['borrow_date'] = trim((string)($_POST['borrow_date'] ?? ''));
     $formData['start_period_code'] = trim((string)($_POST['start_period_code'] ?? ''));
     $formData['end_period_code'] = trim((string)($_POST['end_period_code'] ?? ''));
@@ -161,13 +167,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $borrowQuantity = 1;
 
         if ($formData['resource_type'] === 'equipment') {
-            if (!isset($equipmentMap[$formData['equipment_code']])) {
-                $borrowError = '請選擇有效的器材項目。';
+            if (empty($cartItems)) {
+                $borrowError = '請選擇至少一項器材且填寫數量。';
             } else {
-                $selectedEquipment = $equipmentMap[$formData['equipment_code']];
-                $borrowQuantity = (int)$formData['borrow_quantity'];
-
-                // 檢查證照
                 $certificateCheckSql = "
                     SELECT 1
                     FROM equipment_certificates
@@ -183,48 +185,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 mysqli_stmt_close($certStmt);
 
                 if (!$hasValidCertificate) {
-                    $borrowError = '您沒有有效的器材證照，無法借用此器材。';
-                }
-                // 原有的數量檢查
-                elseif ($borrowQuantity <= 0) {
-                    $borrowError = '借用數量必須大於 0。';
-                } elseif ($selectedEquipment['borrow_limit_quantity'] !== null && $borrowQuantity > (int)$selectedEquipment['borrow_limit_quantity']) {
-                    $borrowError = '借用數量超過限借數量。';
-                } elseif ($borrowQuantity > (int)$selectedEquipment['available_quantity']) {
-                    $borrowError = '借用數量超過目前可借用數量。';
+                    $borrowError = '您沒有有效的器材證照，無法借用器材。';
                 } else {
-                    // 檢查該使用者對此器材類別所有未拒絕預約的總借用數量
-                    if ($selectedEquipment['borrow_limit_quantity'] !== null && $borrowError === '') {
-                        $reservApplicantCol = $reservationApplicantColumn;
-                        $totalQuantitySql = sprintf(
-                            'SELECT COALESCE(SUM(eri.borrow_quantity), 0) AS total_quantity
-                             FROM reservations r
-                             JOIN equipment_reservation_items eri ON r.reservation_id = eri.reservation_id
-                             JOIN equipments e ON eri.equipment_id = e.equipment_id
-                             WHERE r.%s = ?
-                               AND r.approval_status IN ("pending", "approved")
-                               AND e.equipment_code = ?'
-                            , $reservApplicantCol
-                        );
-                        $totalQuantityStmt = mysqli_prepare($link, $totalQuantitySql);
-                        if ($totalQuantityStmt) {
-                            mysqli_stmt_bind_param($totalQuantityStmt, 'ss', $userId, $formData['equipment_code']);
-                            mysqli_stmt_execute($totalQuantityStmt);
-                            $totalQuantityResult = mysqli_stmt_get_result($totalQuantityStmt);
-                            $totalQuantityRow = $totalQuantityResult ? mysqli_fetch_assoc($totalQuantityResult) : null;
-                            mysqli_stmt_close($totalQuantityStmt);
-
-                            $currentTotalQuantity = $totalQuantityRow ? (int)$totalQuantityRow['total_quantity'] : 0;
-                            $nextTotalQuantity = $currentTotalQuantity + $borrowQuantity;
-
-                            if ($nextTotalQuantity > (int)$selectedEquipment['borrow_limit_quantity']) {
-                                $borrowError = sprintf(
-                                    '您對該器材的所有未完成預約共 %d 個，加上本次申請 %d 個共 %d 個，已超過限借數量 %d 個，無法申請。',
-                                    $currentTotalQuantity,
-                                    $borrowQuantity,
-                                    $nextTotalQuantity,
-                                    (int)$selectedEquipment['borrow_limit_quantity']
-                                );
+                    foreach ($cartItems as $item) {
+                        $cCode = $item['code'] ?? '';
+                        $cQty = (int)($item['quantity'] ?? 0);
+                        if (!isset($equipmentMap[$cCode])) {
+                            $borrowError = "找不到器材：{$cCode}。";
+                            break;
+                        }
+                        $selectedE = $equipmentMap[$cCode];
+                        $selectedEquipment = $selectedE;
+                        
+                        if ($cQty <= 0) {
+                            $borrowError = "{$selectedE['equipment_name']} 借用數量須大於 0。";
+                            break;
+                        }
+                        if ($selectedE['borrow_limit_quantity'] !== null && $cQty > (int)$selectedE['borrow_limit_quantity']) {
+                            $borrowError = "{$selectedE['equipment_name']} 借用數量超過限借數量。";
+                            break;
+                        }
+                        if ($cQty > (int)$selectedE['available_quantity']) {
+                            $borrowError = "{$selectedE['equipment_name']} 借用數量超過目前可借用數量。";
+                            break;
+                        }
+                        
+                        if ($selectedE['borrow_limit_quantity'] !== null) {
+                            $reservApplicantCol = $reservationApplicantColumn;
+                            $tqSql = sprintf(
+                                'SELECT COALESCE(SUM(eri.borrow_quantity), 0) AS total_quantity
+                                 FROM reservations r
+                                 JOIN equipment_reservation_items eri ON r.reservation_id = eri.reservation_id
+                                 JOIN equipments e ON eri.equipment_id = e.equipment_id
+                                 WHERE r.%s = ?
+                                   AND r.approval_status IN ("pending", "approved")
+                                   AND e.equipment_code = ?'
+                                , $reservApplicantCol
+                            );
+                            $tqStmt = mysqli_prepare($link, $tqSql);
+                            if ($tqStmt) {
+                                mysqli_stmt_bind_param($tqStmt, 'ss', $userId, $cCode);
+                                mysqli_stmt_execute($tqStmt);
+                                $tqRes = mysqli_stmt_get_result($tqStmt);
+                                $tqRow = $tqRes ? mysqli_fetch_assoc($tqRes) : null;
+                                mysqli_stmt_close($tqStmt);
+                                
+                                $cTotal = $tqRow ? (int)$tqRow['total_quantity'] : 0;
+                                $nTotal = $cTotal + $cQty;
+                                if ($nTotal > (int)$selectedE['borrow_limit_quantity']) {
+                                    $borrowError = sprintf(
+                                        '%s 未完成預約共 %d 個，加上本次申請 %d 個共 %d 個，超過限借數量 %d 個。',
+                                        $selectedE['equipment_name'],
+                                        $cTotal,
+                                        $cQty,
+                                        $nTotal,
+                                        (int)$selectedE['borrow_limit_quantity']
+                                    );
+                                    break;
+                                }
                             }
                         }
                     }
@@ -408,76 +426,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $link,
                         'SELECT COUNT(*) AS available_count FROM equipments WHERE equipment_code = ? AND operation_status = 1 FOR UPDATE'
                     );
-                    if (!$stockCheckStmt) {
-                        throw new RuntimeException('檢查器材庫存失敗：' . mysqli_error($link));
-                    }
-                    mysqli_stmt_bind_param($stockCheckStmt, 's', $formData['equipment_code']);
-                    mysqli_stmt_execute($stockCheckStmt);
-                    $stockCheckResult = mysqli_stmt_get_result($stockCheckStmt);
-                    $stockRow = $stockCheckResult ? mysqli_fetch_assoc($stockCheckResult) : null;
-                    mysqli_stmt_close($stockCheckStmt);
-
-                    $availableCountInTransaction = $stockRow ? (int)$stockRow['available_count'] : 0;
-                    if ($availableCountInTransaction <= 0) {
-                        throw new RuntimeException('目前可借用數量為 0，無法送出申請。');
-                    }
-                    if ($availableCountInTransaction < $borrowQuantity) {
-                        throw new RuntimeException('目前可借用數量不足，請調整借用數量。');
-                    }
-
                     $selectEquipmentStmt = mysqli_prepare(
                         $link,
                         'SELECT equipment_id FROM equipments WHERE equipment_code = ? AND operation_status = 1 ORDER BY equipment_id ASC LIMIT ?'
                     );
-                    if (!$selectEquipmentStmt) {
-                        throw new RuntimeException('讀取可借器材失敗：' . mysqli_error($link));
-                    }
-                    mysqli_stmt_bind_param($selectEquipmentStmt, 'si', $formData['equipment_code'], $borrowQuantity);
-                    mysqli_stmt_execute($selectEquipmentStmt);
-                    $availableEquipmentResult = mysqli_stmt_get_result($selectEquipmentStmt);
-
-                    $equipmentIds = [];
-                    while ($equipmentRow = mysqli_fetch_assoc($availableEquipmentResult)) {
-                        $equipmentIds[] = (int)$equipmentRow['equipment_id'];
-                    }
-                    mysqli_stmt_close($selectEquipmentStmt);
-
-                    if (count($equipmentIds) < $borrowQuantity) {
-                        throw new RuntimeException('目前可借器材不足，請調整借用數量。');
-                    }
-
                     $reservationItemStmt = mysqli_prepare(
                         $link,
                         'INSERT INTO equipment_reservation_items (reservation_id, equipment_id, borrow_quantity) VALUES (?, ?, 1)'
                     );
-                    if (!$reservationItemStmt) {
-                        throw new RuntimeException('建立器材預約明細失敗：' . mysqli_error($link));
-                    }
-
-                    foreach ($equipmentIds as $equipmentId) {
-                        mysqli_stmt_bind_param($reservationItemStmt, 'ii', $reservationId, $equipmentId);
-                        mysqli_stmt_execute($reservationItemStmt);
-                    }
-                    mysqli_stmt_close($reservationItemStmt);
-
                     $updateEquipmentStatusStmt = mysqli_prepare(
                         $link,
                         'UPDATE equipments SET operation_status = 2 WHERE equipment_id = ? AND operation_status = 1 AND ? <= NOW()'
                     );
-                    if (!$updateEquipmentStatusStmt) {
-                        throw new RuntimeException('更新器材可借狀態失敗：' . mysqli_error($link));
+                    if (!$stockCheckStmt || !$selectEquipmentStmt || !$reservationItemStmt || !$updateEquipmentStatusStmt) {
+                        throw new RuntimeException('建立器材預約明細指令失敗：' . mysqli_error($link));
                     }
 
-                    foreach ($equipmentIds as $equipmentId) {
-                        mysqli_stmt_bind_param($updateEquipmentStatusStmt, 'is', $equipmentId, $borrowStartAtSql);
-                        mysqli_stmt_execute($updateEquipmentStatusStmt);
+                    foreach ($cartItems as $item) {
+                        $cCode = $item['code'];
+                        $cQty = (int)$item['quantity'];
 
-                        // 如果是未來預約，不會更新，所以affected_rows可能為0，但不拋錯
-                        // if (mysqli_stmt_affected_rows($updateEquipmentStatusStmt) !== 1) {
-                        //     throw new RuntimeException('器材狀態更新異常，請重新送出申請。');
-                        // }
+                        mysqli_stmt_bind_param($stockCheckStmt, 's', $cCode);
+                        mysqli_stmt_execute($stockCheckStmt);
+                        $stockCheckResult = mysqli_stmt_get_result($stockCheckStmt);
+                        $stockRow = $stockCheckResult ? mysqli_fetch_assoc($stockCheckResult) : null;
+
+                        $availableCountInTransaction = $stockRow ? (int)$stockRow['available_count'] : 0;
+                        if ($availableCountInTransaction < $cQty) {
+                            throw new RuntimeException("器材 {$cCode} 目前可借用數量不足，無法送出申請。");
+                        }
+
+                        mysqli_stmt_bind_param($selectEquipmentStmt, 'si', $cCode, $cQty);
+                        mysqli_stmt_execute($selectEquipmentStmt);
+                        $availableEquipmentResult = mysqli_stmt_get_result($selectEquipmentStmt);
+
+                        $equipmentIds = [];
+                        while ($equipmentRow = mysqli_fetch_assoc($availableEquipmentResult)) {
+                            $equipmentIds[] = (int)$equipmentRow['equipment_id'];
+                        }
+
+                        if (count($equipmentIds) < $cQty) {
+                            throw new RuntimeException("器材 {$cCode} 實際可取得數量不足。");
+                        }
+
+                        foreach ($equipmentIds as $equipmentId) {
+                            mysqli_stmt_bind_param($reservationItemStmt, 'ii', $reservationId, $equipmentId);
+                            mysqli_stmt_execute($reservationItemStmt);
+                            
+                            mysqli_stmt_bind_param($updateEquipmentStatusStmt, 'is', $equipmentId, $borrowStartAtSql);
+                            mysqli_stmt_execute($updateEquipmentStatusStmt);
+                        }
                     }
+                    mysqli_stmt_close($stockCheckStmt);
+                    mysqli_stmt_close($selectEquipmentStmt);
+                    mysqli_stmt_close($reservationItemStmt);
                     mysqli_stmt_close($updateEquipmentStatusStmt);
+                
                     // 嘗試建立器材核簽紀錄（若申請人有有效證照）
                     $certificateId = null;
                     $certSelectStmt = mysqli_prepare(
@@ -799,16 +803,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 </select>
                             </div>
 
-                            <div class="borrow-hint-box" id="equipmentHintBox">
-                                <div>目前可借用數量：<strong id="availableQuantityHint">-</strong></div>
-                                <div>限借數量：<strong id="borrowLimitHint">-</strong></div>
-                            </div>
-
-                            <div class="form-group" id="borrowQuantityGroup">
-                                <label for="borrow_quantity">借用數量</label>
-                                <input type="number" id="borrow_quantity" name="borrow_quantity" min="1" value="<?php echo htmlspecialchars($formData['borrow_quantity'], ENT_QUOTES, 'UTF-8'); ?>" required>
-                            </div>
-
                             <div class="form-group">
                                 <label for="borrow_date">借用日期</label>
                                 <input type="date" id="borrow_date" name="borrow_date" value="<?php echo htmlspecialchars($formData['borrow_date'], ENT_QUOTES, 'UTF-8'); ?>" required>
@@ -897,57 +891,106 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const proposalFileInput = document.getElementById('proposal_file');
             const proposalGroup = document.getElementById('proposalGroup');
 
-            function ensureSelectableEquipment() {
-                const selectedOption = equipmentSelect.options[equipmentSelect.selectedIndex];
-                if (selectedOption && selectedOption.value && !selectedOption.disabled) {
-                    return;
+            // --- Missing cart logic re-added ---
+            const esEquipmentList = document.getElementById('esEquipmentList');
+            const esSelectedList = document.getElementById('esSelectedList');
+            const esSearchInput = document.getElementById('esSearchInput');
+            
+            // cartItemsInput needs to be dynamically added if missing
+            let cartItemsInput = document.querySelector('input[name="cart_items"]');
+            if(!cartItemsInput) {
+                const f = document.querySelector('form.borrow-form');
+                if(f) {
+                    cartItemsInput = document.createElement('input');
+                    cartItemsInput.type = 'hidden';
+                    cartItemsInput.name = 'cart_items';
+                    f.appendChild(cartItemsInput);
                 }
+            }
+            
+            const items = esEquipmentList ? esEquipmentList.querySelectorAll('.es-item') : [];
+            let cartItems = [];
 
-                // Toggle & Add
-                items.forEach(li => {
-                    const inviteBtn = li.querySelector('.es-btn-invite');
-                    const body = li.querySelector('.es-item-body');
-                    const addBtn = li.querySelector('.es-btn-add');
-                    const qtyInput = li.querySelector('.es-qty-input');
-                    const name = li.dataset.name;
-                    const code = li.dataset.code;
-
-                    if(inviteBtn) {
-                        inviteBtn.addEventListener('click', function(e) {
-                            e.stopPropagation();
-                            const isActive = body.classList.contains('active');
-                            // Close everyone else first to make it clean
-                            items.forEach(o => {
-                                const ob = o.querySelector('.es-item-body');
-                                if (ob) ob.classList.remove('active');
-                            });
-                            
-                            if(!isActive) {
-                                body.classList.add('active');
-                            }
-                        });
-                    }
-
-                    if(addBtn) {
-                        addBtn.addEventListener('click', function() {
-                            const qty = parseInt(qtyInput.value, 10);
-                            if (isNaN(qty) || qty <= 0) {
-                                alert('請輸入大於0的借用數量。');
-                                return;
-                            }
-                            const existing = cartItems.find(i => i.code === code);
-                            if (existing) {
-                                existing.quantity += qty;
-                            } else {
-                                cartItems.push({ code: code, name: name, quantity: qty });
-                            }
-                            cartItemsInput.value = JSON.stringify(cartItems);
-                            renderCart();
-                            body.classList.remove('active');
-                        });
-                    }
+            function renderCart() {
+                if(!esSelectedList) return;
+                esSelectedList.innerHTML = '';
+                cartItems.forEach((c, index) => {
+                    const li = document.createElement('li');
+                    li.className = 'es-right-item';
+                    li.innerHTML = `
+                        <span class="es-right-item-text">${c.name} x${c.quantity}</span>
+                        <button type="button" class="es-btn-remove" data-index="${index}">移除</button>
+                    `;
+                    esSelectedList.appendChild(li);
+                });
+                const removes = esSelectedList.querySelectorAll('.es-btn-remove');
+                removes.forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        const idx = parseInt(this.dataset.index, 10);
+                        cartItems.splice(idx, 1);
+                        cartItemsInput.value = JSON.stringify(cartItems);
+                        renderCart();
+                    });
                 });
             }
+
+            if(esSearchInput) {
+                esSearchInput.addEventListener('input', function() {
+                    const q = this.value.toLowerCase().trim();
+                    items.forEach(li => {
+                        const txt = li.textContent.toLowerCase();
+                        li.style.display = txt.includes(q) ? '' : 'none';
+                    });
+                });
+            }
+            // -----------------------------------
+
+            // Toggle & Add
+            items.forEach(li => {
+                const inviteBtn = li.querySelector('.es-btn-invite');
+                const body = li.querySelector('.es-item-body');
+                const addBtn = li.querySelector('.es-btn-add');
+                const qtyInput = li.querySelector('.es-qty-input');
+                const name = li.dataset.name;
+                const code = li.dataset.code;
+
+                if(inviteBtn) {
+                    inviteBtn.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        const isActive = body.classList.contains('active');
+                        // Close everyone else first to make it clean
+                        items.forEach(o => {
+                            const ob = o.querySelector('.es-item-body');
+                            if (ob) ob.classList.remove('active');
+                        });
+                        
+                        if(!isActive) {
+                            body.classList.add('active');
+                        }
+                    });
+                }
+
+                if(addBtn) {
+                    addBtn.addEventListener('click', function() {
+                        const qty = parseInt(qtyInput.value, 10);
+                        if (isNaN(qty) || qty <= 0) {
+                            alert('請輸入大於0的借用數量。');
+                            return;
+                        }
+                        const existing = cartItems.find(i => i.code === code);
+                        if (existing) {
+                            existing.quantity += qty;
+                        } else {
+                            cartItems.push({ code: code, name: name, quantity: qty });
+                        }
+                        if(cartItemsInput) {
+                            cartItemsInput.value = JSON.stringify(cartItems);
+                        }
+                        renderCart();
+                        body.classList.remove('active');
+                    });
+                }
+            });
 
             function refreshModeUI() {
                 const mode = resourceTypeSelect.value;
@@ -1025,8 +1068,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             resourceTypeSelect.addEventListener('change', function () { refreshModeUI(); refreshSpaceTableFilter(); });
-            equipmentSelect.addEventListener('change', refreshBorrowHints);
-            spaceSelect.addEventListener('change', function () { refreshModeUI(); refreshSpaceTableFilter(); });
+            if (typeof equipmentSelect !== 'undefined' && equipmentSelect) equipmentSelect.addEventListener('change', refreshBorrowHints);
+            if (spaceSelect) spaceSelect.addEventListener('change', function () { refreshModeUI(); refreshSpaceTableFilter(); });
             refreshModeUI();
             refreshSpaceTableFilter();
             renderCart();

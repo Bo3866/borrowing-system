@@ -25,7 +25,7 @@ if (!in_array($currentRole, ['2', '3'], true)) {
     exit;
 }
 
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
+$link = mysqli_connect('localhost', 'root', '', 'borrowing_system',3307);
 if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();
 } else {
@@ -94,34 +94,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
                         mysqli_stmt_bind_param($restoreStmt, 'i', $reservationId);
                         mysqli_stmt_execute($restoreStmt);
                         mysqli_stmt_close($restoreStmt);
-                        // 若為拒絕，將該申請所關聯的空間還原為可借狀態 (space_status = '1')
-                        $restoreSpaceStmt = mysqli_prepare(
-                            $link,
-                            'UPDATE spaces s JOIN space_reservation_items sri ON s.space_id = sri.space_id SET s.space_status = ? WHERE sri.reservation_id = ? AND s.space_status = ?'
-                        );
-                        if ($restoreSpaceStmt) {
-                            $avail = '1';
-                            $currentBorrowed = '2';
-                            mysqli_stmt_bind_param($restoreSpaceStmt, 'sis', $avail, $reservationId, $currentBorrowed);
-                            mysqli_stmt_execute($restoreSpaceStmt);
-                            mysqli_stmt_close($restoreSpaceStmt);
-                        }
+                        
                     }
-                    // 若為核准，將該申請所關聯的空間標示為已借出 (space_status = '2' 或 'borrowed')
-                    if ($action === 'approved') {
-                        $markBorrowedStmt = mysqli_prepare(
-                            $link,
-                            'UPDATE spaces s JOIN space_reservation_items sri ON s.space_id = sri.space_id SET s.space_status = IF(s.space_status REGEXP "^[0-9]+$", ?, ?) WHERE sri.reservation_id = ?'
-                        );
-                        if ($markBorrowedStmt) {
-                            $numBorrowed = '2';
-                            $strBorrowed = 'borrowed';
-                            mysqli_stmt_bind_param($markBorrowedStmt, 'ssi', $numBorrowed, $strBorrowed, $reservationId);
-                            mysqli_stmt_execute($markBorrowedStmt);
-                            mysqli_stmt_close($markBorrowedStmt);
-                        }
-                    }
-        
+
                     // 取得申請人資訊以寄送郵件
                     $userQuery = mysqli_prepare($link, 'SELECT u.email, u.full_name FROM users u JOIN reservations r ON u.user_id = r.user_id WHERE r.reservation_id = ?');
                     if ($userQuery) {

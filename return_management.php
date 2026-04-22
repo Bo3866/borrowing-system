@@ -3,6 +3,13 @@ declare(strict_types=1);
 
 session_start();
 
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+
+require 'lib/PHPMailer/PHPMailer.php';
+require 'lib/PHPMailer/SMTP.php';
+require 'lib/PHPMailer/Exception.php';
+
 if (!isset($_SESSION['user_id'])) {
     header('Location: login.php?next=return_management.php');
     exit;
@@ -10,7 +17,7 @@ if (!isset($_SESSION['user_id'])) {
 
 $currentUserId = (string)$_SESSION['user_id'];
 
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
+$link = mysqli_connect('localhost', 'root', '', 'borrowing_system',3307);
 $dbError = '';
 if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();
@@ -140,10 +147,70 @@ if ($dbError === '') {
                     mysqli_stmt_execute($restoreStmt);
                     mysqli_stmt_close($restoreStmt);
 
+                    // 還原場地狀態（若原先標為 2 已借出，則改回 1 可借用）
+                    $restoreSpaceStmt = mysqli_prepare(
+                        $link,
+                        'UPDATE spaces s
+                         JOIN space_reservation_items sri ON s.space_id = sri.space_id
+                         SET s.space_status = "1"
+                         WHERE sri.reservation_id = ? AND s.space_status = "2"'
+                    );
+                    if (!$restoreSpaceStmt) {
+                        throw new RuntimeException('還原場地可借狀態失敗：' . mysqli_error($link));
+                    }
+                    mysqli_stmt_bind_param($restoreSpaceStmt, 'i', $reservationId);
+                    mysqli_stmt_execute($restoreSpaceStmt);
+                    mysqli_stmt_close($restoreSpaceStmt);
+
                     $actionMsg = '已確認歸還／離場。';
                 }
 
                 mysqli_commit($link);
+
+                    // 寄送歸還通知信給申請人（非必要失敗不回滾）
+                    try {
+                        $emailStmt = mysqli_prepare(
+                            $link,
+                            'SELECT u.email, u.full_name FROM reservations r JOIN users u ON u.user_id = r.user_id WHERE r.reservation_id = ? LIMIT 1'
+                        );
+                        if ($emailStmt) {
+                            mysqli_stmt_bind_param($emailStmt, 'i', $reservationId);
+                            mysqli_stmt_execute($emailStmt);
+                            $emailRes = mysqli_stmt_get_result($emailStmt);
+                            $userRow = $emailRes ? mysqli_fetch_assoc($emailRes) : null;
+                            mysqli_stmt_close($emailStmt);
+
+                            if ($userRow && !empty($userRow['email'])) {
+                                $mail = new PHPMailer(true);
+                                try {
+                                    $mail->isSMTP();
+                                    $mail->Host       = 'smtp.gmail.com';
+                                    $mail->SMTPAuth   = true;
+                                    $mail->Username   = 'sasass041919@gmail.com';
+                                    $mail->Password   = 'xogusuplsoapxayc';
+                                    $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+                                    $mail->Port       = 465;
+                                    $mail->CharSet    = 'UTF-8';
+
+                                    $mail->setFrom('sasass041919@gmail.com', '器材借用系統');
+                                    $mail->addAddress($userRow['email'], $userRow['full_name']);
+
+                                    $mail->isHTML(true);
+                                    $mail->Subject = '已確認歸還／離場';
+                                    $mail->Body    = "您好：<br><br>您的借用申請（編號：{$reservationId}）已確認歸還／離場。<br><br>感謝您！";
+                                    $mail->AltBody = "您好：\n\n您的借用申請（編號：{$reservationId}）已確認歸還／離場。\n\n感謝您！";
+
+                                    $mail->send();
+                                    $actionMsg .= ' 已寄出歸還通知信。';
+                                } catch (Exception $e) {
+                                    $actionMsg .= " 但歸還通知信寄送失敗： {$mail->ErrorInfo}";
+                                }
+                            }
+                        }
+                    } catch (Throwable $e) {
+                        // 不要因為通知失敗而回滾主要交易
+                        $actionMsg .= '（歸還通知信處理時發生錯誤）';
+                    }
             }
         } catch (Throwable $e) {
             mysqli_rollback($link);
@@ -170,7 +237,6 @@ if ($dbError === '') {
                 r.approval_status,
                 (cl.checked_in_at IS NOT NULL) AS pickup_confirmed,
                 cl.checked_in_at AS pickup_confirmed_at,
-                cl.checked_in_space_id,
                 (r.returned_at IS NOT NULL) AS return_confirmed,
                 r.returned_at AS return_confirmed_at,
                 (
@@ -283,14 +349,12 @@ if ($dbError === '') {
                                                 <?php
                                                     $isPickup = (int)$row['pickup_confirmed'] === 1;
                                                     $checkinTime = $row['pickup_confirmed_at'];
-                                                    $checkinSpace = $row['checked_in_space_id'];
                                                 ?>
                                                 <span class="return-status <?php echo $isPickup ? 'return-status-ok' : 'return-status-pending'; ?>">
                                                     <?php echo $isPickup ? '已報到' : '未報到'; ?>
                                                 </span>
                                                 <?php if ($isPickup) { ?>
                                                     <br><small>時間: <?php echo htmlspecialchars((string)$checkinTime, ENT_QUOTES, 'UTF-8'); ?></small>
-                                                    <br><small>位置: <?php echo htmlspecialchars((string)$checkinSpace, ENT_QUOTES, 'UTF-8'); ?></small>
                                                 <?php } ?>
                                             </td>
                                             <td>

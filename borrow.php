@@ -666,7 +666,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>借用申請｜校園資源租借系統</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=<?php echo time(); ?>">
+    <style>
+        /* 避免快取問題，在此處再次宣告必要的樣式 */
+        .equipment-selector-container {
+            display: flex; gap: 20px; border: 1px solid #ddd;
+            border-radius: 8px; padding: 20px; background: #f2f4f6;
+            align-items: flex-start; margin-bottom: 20px;
+        }
+        @media (max-width: 900px) {
+            .equipment-selector-container { flex-direction: column; }
+        }
+        .es-left, .es-right {
+            flex: 1; background: transparent; border: none;
+            min-height: 480px; display: flex; flex-direction: column; width: 100%;
+        }
+        .es-title { padding: 15px; font-weight: bold; border-bottom: 1px solid #eee; color: #333; display: flex; align-items: center; gap: 10px; }
+        .es-search { padding: 10px 15px; border-bottom: 1px solid #eee; }
+        .es-search input { width: 100%; padding: 10px 15px; border: 1px solid #ccc; border-radius: 20px; outline: none; font-size: 14px; }
+        .es-list { flex: 1; overflow-y: auto; max-height: 380px; margin: 0; padding: 0; list-style: none; }
+        .es-item { border-bottom: 1px solid #f5f5f5; }
+        .es-item-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; transition: background 0.2s; }
+        .es-item-header:hover { background: #fafafa; }
+        .es-item-name { font-size: 15px; color: #444; }
+        .es-btn-invite { background: #e2e8f0; color: #334155; border: 1px solid #cbd5e1; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; transition: all 0.2s; }
+        .es-btn-invite:hover:not(:disabled) { background: #cbd5e1; }
+        .es-btn-invite:disabled { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; border-color: #e2e8f0; }
+        .es-item-body { display: none; padding: 15px; background: #f8f9fa; border-top: 1px dashed #eee; font-size: 14px; }
+        .es-item-body.active { display: block; animation: fadeIn 0.2s ease-in-out; }
+        .es-item-details { display: flex; justify-content: space-between; margin-bottom: 15px; color: #666; font-weight: bold; }
+        .es-item-action { display: flex; gap: 10px; align-items: center; }
+        .es-item-action input[type="number"] { width: 70px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
+        .es-btn-add { background: #10b981; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: normal; font-size: 13px; transition: background 0.2s; }
+        .es-btn-add:hover { background: #059669; }
+        .es-right-item { display: flex; justify-content: space-between; align-items: center; padding: 15px; border-bottom: 1px solid #eee; }
+        .es-right-item-text { font-size: 15px; color: #333; }
+        .es-btn-remove { color: #e74c3c; background: none; border: none; cursor: pointer; font-size: 14px; padding: 5px 10px; }
+        .es-btn-remove:hover { text-decoration: underline; }
+        
+        .full-width-layout {
+            grid-template-columns: 1fr !important;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -699,7 +740,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="borrow-success"><?php echo htmlspecialchars($borrowSuccess, ENT_QUOTES, 'UTF-8'); ?></div>
                 <?php } ?>
 
-                <div class="borrow-layout">
+                <div class="borrow-layout" id="mainBorrowLayout">
                     <section class="card borrow-form-card">
                         <h3>申請資料</h3>
                         <form method="post" enctype="multipart/form-data" class="borrow-form" action="borrow.php">
@@ -720,22 +761,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <input type="text" id="applicant_user_id" value="<?php echo htmlspecialchars($userId, ENT_QUOTES, 'UTF-8'); ?>" readonly>
                             </div>
 
-                            <div class="form-group" id="equipmentGroup">
-                                <label for="equipment_code">器材項目</label>
-                                <select id="equipment_code" name="equipment_code">
-                                    <option value="">請選擇</option>
-                                    <?php foreach ($equipmentMap as $equipment) { ?>
-                                        <option
-                                            value="<?php echo htmlspecialchars($equipment['equipment_code'], ENT_QUOTES, 'UTF-8'); ?>"
-                                            data-available="<?php echo (int)$equipment['available_quantity']; ?>"
-                                            data-limit="<?php echo $equipment['borrow_limit_quantity'] === null ? '' : (int)$equipment['borrow_limit_quantity']; ?>"
-                                            <?php echo (int)$equipment['available_quantity'] <= 0 ? 'disabled' : ''; ?>
-                                            <?php echo $formData['equipment_code'] === $equipment['equipment_code'] ? 'selected' : ''; ?>
-                                        >
-                                            <?php echo htmlspecialchars($equipment['equipment_code'] . ' - ' . $equipment['equipment_name'] . ((int)$equipment['available_quantity'] <= 0 ? '（已借完）' : ''), ENT_QUOTES, 'UTF-8'); ?>
-                                        </option>
-                                    <?php } ?>
-                                </select>
+                            <div id="equipmentSelectorContainer" class="equipment-selector-container">
+                                <div class="es-left">
+                                    <div class="es-title">
+                                        <span style="color: #3b82f6; margin-right: 8px;">
+                                            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                                                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                                            </svg>
+                                        </span>
+                                        選擇器材
+                                    </div>
+                                    <div class="es-search">
+                                        <input type="text" id="esSearchInput" placeholder="搜尋器材名稱...">
+                                    </div>
+                                    <ul class="es-list" id="esEquipmentList" style="background:#fff; border-radius:8px; border:1px solid #e0e0e0;">
+                                        <?php foreach ($equipmentMap as $equipment) { 
+                                            $avail = (int)$equipment['available_quantity'];
+                                            $limitRaw = $equipment['borrow_limit_quantity'];
+                                            $limit = $limitRaw === null ? '不限' : (int)$limitRaw;
+                                            $maxInput = $limitRaw !== null ? min($avail, (int)$limitRaw) : $avail;
+                                            $isAvail = $avail > 0;
+                                        ?>
+                                            <li class="es-item" data-name="<?php echo htmlspecialchars($equipment['equipment_name'], ENT_QUOTES, 'UTF-8'); ?>" data-code="<?php echo htmlspecialchars($equipment['equipment_code'], ENT_QUOTES, 'UTF-8'); ?>" style="<?php echo $isAvail ? '' : 'opacity: 0.6;'; ?>">
+                                                <div class="es-item-header">
+                                                    <span class="es-item-name"><?php echo htmlspecialchars($equipment['equipment_name'], ENT_QUOTES, 'UTF-8'); ?> (<?php echo htmlspecialchars($equipment['equipment_code'], ENT_QUOTES, 'UTF-8'); ?>)</span>
+                                                    <button type="button" class="es-btn-invite" <?php echo $isAvail ? '' : 'disabled'; ?>><?php echo $isAvail ? '選擇' : '已借完'; ?></button>
+                                                </div>
+                                                <div class="es-item-body">
+                                                    <div class="es-item-details">
+                                                        <span>目前可借用數量：<?php echo $avail; ?></span>
+                                                        <span>限借數量：<?php echo $limit; ?></span>
+                                                    </div>
+                                                    <div class="es-item-action">
+                                                        <label>選擇借幾個：</label>
+                                                        <input type="number" class="es-qty-input" min="1" max="<?php echo $maxInput; ?>" value="1">
+                                                        <button type="button" class="es-btn-add">加入清單</button>
+                                                    </div>
+                                                </div>
+                                            </li>
+                                        <?php } ?>
+                                    </ul>
+                                </div>
+                                <div class="es-right">
+                                    <div class="es-title" style="color: #333;">
+                                        <span style="color: #f59e0b; margin-right: 8px;">
+                                            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                                                <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/>
+                                            </svg>
+                                        </span>
+                                        已選取器材
+                                    </div>
+                                    <ul class="es-list" id="esSelectedList" style="background:#fff; border-radius:8px; padding: 10px; border:1px solid #e0e0e0;">
+                                    </ul>
+                                </div>
                             </div>
 
                             <div class="form-group" id="spaceGroup">
@@ -752,36 +830,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <?php } ?>
                                 </select>
                             </div>
-
-                            <div class="borrow-hint-box" id="equipmentHintBox">
-                                <div>目前可借用數量：<strong id="availableQuantityHint">-</strong></div>
-                                <div>限借數量：<strong id="borrowLimitHint">-</strong></div>
-                            </div>
-
-                            <div class="form-group" id="borrowQuantityGroup">
-                                <label for="borrow_quantity">借用數量</label>
-                                <div style="display: flex; gap: 0.5rem; align-items: center;">
-                                    <input type="number" id="borrow_quantity" name="borrow_quantity" min="1" value="1" style="flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; width: 100%;">
-                                    <button type="button" class="btn-secondary" id="addToCartBtn" style="white-space: nowrap; height: 100%;">加入清單</button>
-                                </div>
-                            </div>
                             
                             <input type="hidden" id="cart_items" name="cart_items" value="<?php echo htmlspecialchars($formData['cart_items'], ENT_QUOTES, 'UTF-8'); ?>">
-                            
-                            <div class="form-group" id="cartGroup" style="display:none; margin-top:1rem;">
-                                <label>借用清單 (購物車)</label>
-                                <table class="management-table">
-                                    <thead>
-                                        <tr>
-                                            <th>器材代碼</th>
-                                            <th>數量</th>
-                                            <th>操作</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="cartTableBody">
-                                    </tbody>
-                                </table>
-                            </div>
 
                             <div class="form-group">
                                 <label for="borrow_date">借用日期</label>
@@ -829,38 +879,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </form>
                     </section>
 
-                    <section class="card borrow-stock-card">
-                        <div id="equipmentStockSection">
-                        <h3>器材可借狀態</h3>
-                        <p class="borrow-table-note">以下為即時可借用數量與限借數量。</p>
-                        <div class="borrow-table-wrapper">
-                            <div id="equipmentStockWrapper">
-                            <table class="management-table borrow-table">
-                                <thead>
-                                    <tr>
-                                        <th>代碼</th>
-                                        <th>器材名稱</th>
-                                        <th>目前可借</th>
-                                        <th>限借</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ($equipmentMap as $equipment) { ?>
-                                        <tr>
-                                            <td><?php echo htmlspecialchars($equipment['equipment_code'], ENT_QUOTES, 'UTF-8'); ?></td>
-                                            <td><?php echo htmlspecialchars($equipment['equipment_name'], ENT_QUOTES, 'UTF-8'); ?></td>
-                                            <td><?php echo (int)$equipment['available_quantity']; ?></td>
-                                            <td><?php echo $equipment['borrow_limit_quantity'] === null ? '不限' : (int)$equipment['borrow_limit_quantity']; ?></td>
-                                        </tr>
-                                    <?php } ?>
-                                </tbody>
-                            </table>
-                            </div>
-                        </div>
-
-                        </div>
-                        <div id="spaceStockSection">
-                        <h3 style="margin-top: 1.2rem;">空間可借狀態</h3>
+                    <section class="card borrow-stock-card" id="spaceStockSection" style="margin-top: 2rem;">
+                        <h3>空間可借狀態</h3>
                         <div class="borrow-table-wrapper">
                             <div id="spaceStockWrapper">
                             <table class="management-table borrow-table">
@@ -885,7 +905,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </table>
                             </div>
                         </div>
-                        </div>
                     </section>
                 </div>
             </section>
@@ -894,24 +913,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <script>
         (function () {
-            const equipmentSelect = document.getElementById('equipment_code');
             const spaceSelect = document.getElementById('space_id');
             const resourceTypeSelect = document.getElementById('resource_type');
-            const quantityInput = document.getElementById('borrow_quantity');
             const submitButton = document.getElementById('borrowSubmitBtn');
-            const availableQuantityHint = document.getElementById('availableQuantityHint');
-            const borrowLimitHint = document.getElementById('borrowLimitHint');
-            const equipmentGroup = document.getElementById('equipmentGroup');
             const spaceGroup = document.getElementById('spaceGroup');
-            const equipmentHintBox = document.getElementById('equipmentHintBox');
-            const borrowQuantityGroup = document.getElementById('borrowQuantityGroup');
+            const equipmentSelectorContainer = document.getElementById('equipmentSelectorContainer');
             const proposalFileInput = document.getElementById('proposal_file');
             const proposalGroup = document.getElementById('proposalGroup');
-            const addToCartBtn = document.getElementById('addToCartBtn');
             const cartItemsInput = document.getElementById('cart_items');
-            const cartGroup = document.getElementById('cartGroup');
-            const cartTableBody = document.getElementById('cartTableBody');
             
+            const esSearchInput = document.getElementById('esSearchInput');
+            const esEquipmentList = document.getElementById('esEquipmentList');
+            const esSelectedList = document.getElementById('esSelectedList');
+
             let cartItems = [];
             try {
                 const parsed = JSON.parse(cartItemsInput.value);
@@ -919,23 +933,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } catch(e) {}
             
             function renderCart() {
-                cartTableBody.innerHTML = '';
-                if (cartItems.length === 0) {
-                    cartGroup.style.display = 'none';
-                    return;
-                }
-                cartGroup.style.display = 'block';
+                esSelectedList.innerHTML = '';
                 cartItems.forEach((item, index) => {
-                    const tr = document.createElement('tr');
-                    const displayName = item.name ? `${item.code} - ${item.name}` : item.code;
-                    tr.innerHTML = `
-                        <td>${displayName}</td>
-                        <td>${item.quantity}</td>
-                        <td><button type="button" class="btn-secondary btn-sm remove-cart-btn" data-index="${index}">移除</button></td>
+                    const li = document.createElement('li');
+                    li.className = 'es-right-item';
+                    const displayName = item.name ? `${item.name} (${item.code})` : item.code;
+                    li.innerHTML = `
+                        <span class="es-right-item-text">${displayName} <span style="color:#666; font-size:13px; margin-left:8px;">x ${item.quantity}</span></span>
+                        <button type="button" class="es-btn-remove" data-index="${index}">取消</button>
                     `;
-                    cartTableBody.appendChild(tr);
+                    esSelectedList.appendChild(li);
                 });
-                document.querySelectorAll('.remove-cart-btn').forEach(btn => {
+                document.querySelectorAll('.es-btn-remove').forEach(btn => {
                     btn.addEventListener('click', function() {
                         const idx = parseInt(this.dataset.index);
                         cartItems.splice(idx, 1);
@@ -945,120 +954,103 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 });
             }
 
-            addToCartBtn.addEventListener('click', function() {
-                const option = equipmentSelect.options[equipmentSelect.selectedIndex];
-                const code = equipmentSelect.value;
-                const name = option ? option.text.split(' - ')[1]?.split('（')[0] || code : code;
-                const qty = parseInt(quantityInput.value, 10);
-                if (!code || isNaN(qty) || qty <= 0) {
-                    alert('請選擇有效的器材及數量。');
-                    return;
-                }
+            // Init Equipment UI events
+            if(esEquipmentList) {
+                const items = esEquipmentList.querySelectorAll('.es-item');
                 
-                const existing = cartItems.find(i => i.code === code);
-                if (existing) {
-                    existing.quantity += qty;
-                } else {
-                    cartItems.push({ code: code, name: name, quantity: qty });
+                // Search
+                if(esSearchInput) {
+                    esSearchInput.addEventListener('input', function() {
+                        const q = this.value.trim().toLowerCase();
+                        items.forEach(li => {
+                            const name = li.dataset.name.toLowerCase();
+                            const code = li.dataset.code.toLowerCase();
+                            if (name.includes(q) || code.includes(q)) {
+                                li.style.display = '';
+                            } else {
+                                li.style.display = 'none';
+                            }
+                        });
+                    });
                 }
-                cartItemsInput.value = JSON.stringify(cartItems);
-                renderCart();
-            });
 
-            function ensureSelectableEquipment() {
-                const selectedOption = equipmentSelect.options[equipmentSelect.selectedIndex];
-                if (selectedOption && selectedOption.value && !selectedOption.disabled) {
-                    return;
-                }
+                // Toggle & Add
+                items.forEach(li => {
+                    const inviteBtn = li.querySelector('.es-btn-invite');
+                    const body = li.querySelector('.es-item-body');
+                    const addBtn = li.querySelector('.es-btn-add');
+                    const qtyInput = li.querySelector('.es-qty-input');
+                    const name = li.dataset.name;
+                    const code = li.dataset.code;
 
-                for (const option of equipmentSelect.options) {
-                    if (option.value && !option.disabled) {
-                        equipmentSelect.value = option.value;
-                        return;
+                    if(inviteBtn) {
+                        inviteBtn.addEventListener('click', function(e) {
+                            e.stopPropagation();
+                            const isActive = body.classList.contains('active');
+                            // Close everyone else first to make it clean
+                            items.forEach(o => {
+                                const ob = o.querySelector('.es-item-body');
+                                if (ob) ob.classList.remove('active');
+                            });
+                            
+                            if(!isActive) {
+                                body.classList.add('active');
+                            }
+                        });
                     }
-                }
 
-                equipmentSelect.value = '';
+                    if(addBtn) {
+                        addBtn.addEventListener('click', function() {
+                            const qty = parseInt(qtyInput.value, 10);
+                            if (isNaN(qty) || qty <= 0) {
+                                alert('請輸入大於0的借用數量。');
+                                return;
+                            }
+                            const existing = cartItems.find(i => i.code === code);
+                            if (existing) {
+                                existing.quantity += qty;
+                            } else {
+                                cartItems.push({ code: code, name: name, quantity: qty });
+                            }
+                            cartItemsInput.value = JSON.stringify(cartItems);
+                            renderCart();
+                            body.classList.remove('active');
+                        });
+                    }
+                });
             }
 
             function refreshModeUI() {
                 const mode = resourceTypeSelect.value;
                 const isEquipment = mode === 'equipment';
+                
+                const mainLayout = document.getElementById('mainBorrowLayout');
 
-                equipmentGroup.style.display = isEquipment ? '' : 'none';
-                equipmentHintBox.style.display = isEquipment ? '' : 'none';
-                borrowQuantityGroup.style.display = isEquipment ? '' : 'none';
-                spaceGroup.style.display = isEquipment ? 'none' : '';
-                const equipmentStockWrapper = document.getElementById('equipmentStockWrapper');
+                if (equipmentSelectorContainer) equipmentSelectorContainer.style.display = isEquipment ? 'flex' : 'none';
+                if (spaceGroup) spaceGroup.style.display = isEquipment ? 'none' : '';
+                
                 const spaceStockWrapper = document.getElementById('spaceStockWrapper');
-                const equipmentStockSection = document.getElementById('equipmentStockSection');
                 const spaceStockSection = document.getElementById('spaceStockSection');
-                if (equipmentStockWrapper) equipmentStockWrapper.style.display = isEquipment ? '' : 'none';
+                
                 if (spaceStockWrapper) spaceStockWrapper.style.display = isEquipment ? 'none' : '';
-                if (equipmentStockSection) equipmentStockSection.style.display = isEquipment ? '' : 'none';
-                if (spaceStockSection) spaceStockSection.style.display = isEquipment ? 'none' : '';
+                if (spaceStockSection) {
+                    spaceStockSection.style.display = isEquipment ? 'none' : '';
+                }
+                if (mainLayout) {
+                    if (isEquipment) {
+                        mainLayout.classList.add('full-width-layout');
+                    } else {
+                        mainLayout.classList.remove('full-width-layout');
+                    }
+                }
 
-                equipmentSelect.required = isEquipment;
-                quantityInput.required = isEquipment;
-                spaceSelect.required = !isEquipment;
+                if (spaceSelect) spaceSelect.required = !isEquipment;
 
                 if (proposalFileInput) {
                     proposalFileInput.required = !isEquipment;
                 }
                 if (proposalGroup) {
                     proposalGroup.style.display = isEquipment ? 'none' : '';
-                }
-
-                if (!isEquipment) {
-                    quantityInput.value = '1';
-                    submitButton.disabled = false;
-                    quantityInput.removeAttribute('max');
-                    availableQuantityHint.textContent = '-';
-                    borrowLimitHint.textContent = '-';
-                } else {
-                    ensureSelectableEquipment();
-                    refreshBorrowHints();
-                }
-            }
-
-            function refreshBorrowHints() {
-                const option = equipmentSelect.options[equipmentSelect.selectedIndex];
-                if (!option || !option.value) {
-                    availableQuantityHint.textContent = '-';
-                    borrowLimitHint.textContent = '-';
-                    quantityInput.removeAttribute('max');
-                    submitButton.disabled = true;
-                    return;
-                }
-
-                if (option.disabled) {
-                    availableQuantityHint.textContent = '0';
-                    borrowLimitHint.textContent = option.dataset.limit !== '' ? String(option.dataset.limit) : '不限';
-                    quantityInput.max = '0';
-                    quantityInput.value = '0';
-                    submitButton.disabled = true;
-                    return;
-                }
-
-                const available = Number(option.dataset.available || 0);
-                const limitRaw = option.dataset.limit;
-                const hasLimit = limitRaw !== '';
-                const limit = hasLimit ? Number(limitRaw) : null;
-
-                availableQuantityHint.textContent = String(available);
-                borrowLimitHint.textContent = hasLimit ? String(limit) : '不限';
-
-                const maxValue = hasLimit ? Math.min(available, limit) : available;
-                if (maxValue > 0) {
-                    quantityInput.max = String(maxValue);
-                    submitButton.disabled = false;
-                    if (Number(quantityInput.value) > maxValue) {
-                        quantityInput.value = String(maxValue);
-                    }
-                } else {
-                    quantityInput.max = '0';
-                    quantityInput.value = '0';
-                    submitButton.disabled = true;
                 }
             }
 
@@ -1085,7 +1077,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             function refreshSpaceTableFilter() {
                 const rows = document.querySelectorAll('table.borrow-table tbody tr[data-space-id]');
                 const mode = resourceTypeSelect.value;
-                const selected = spaceSelect.value;
+                const selected = spaceSelect ? spaceSelect.value : '';
                 rows.forEach(row => {
                     const raw = row.dataset.spaceStatus || '';
                     const statusCell = row.querySelector('.space-status-cell');
@@ -1103,32 +1095,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 });
             }
 
-            resourceTypeSelect.addEventListener('change', function () { refreshModeUI(); refreshSpaceTableFilter(); });
-            equipmentSelect.addEventListener('change', refreshBorrowHints);
-            spaceSelect.addEventListener('change', function () { refreshModeUI(); refreshSpaceTableFilter(); });
+            if (resourceTypeSelect) {
+                resourceTypeSelect.addEventListener('change', function () {
+                    refreshModeUI();
+                    refreshSpaceTableFilter();
+                });
+            }
+
+            if (spaceSelect) {
+                spaceSelect.addEventListener('change', refreshSpaceTableFilter);
+            }
             
-            document.querySelector('.borrow-form').addEventListener('submit', function(e) {
-                const mode = resourceTypeSelect.value;
-                if (mode === 'equipment' && cartItems.length === 0) {
-                    const code = equipmentSelect.value;
-                    const qty = parseInt(quantityInput.value, 10);
-                    if (code && !isNaN(qty) && qty > 0) {
-                        cartItems.push({ code: code, quantity: qty });
-                        cartItemsInput.value = JSON.stringify(cartItems);
-                    } else {
+            const borrowForm = document.querySelector('.borrow-form');
+            if (borrowForm) {
+                borrowForm.addEventListener('submit', function(e) {
+                    const mode = resourceTypeSelect.value;
+                    if (mode === 'equipment' && cartItems.length === 0) {
                         e.preventDefault();
-                        alert('請先將器材加入借用清單。');
+                        alert('請將器材加入借用清單。');
                         return;
                     }
-                }
-            });
+                });
+            }
 
             refreshModeUI();
-            renderCart();
             refreshSpaceTableFilter();
-            if (resourceTypeSelect.value === 'equipment') {
-                refreshBorrowHints();
-            }
+            renderCart();
         })();
     </script>
 </body>

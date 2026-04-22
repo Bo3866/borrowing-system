@@ -263,6 +263,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($borrowError !== '') {
             // Keep the first validation error.
+            @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " VALIDATION ERROR: " . $borrowError . "\nPOST:" . json_encode($_POST) . "\nFILES:" . json_encode(array_map(function($f){ return is_array($f)?array_merge($f,['tmp_name'=>'...']):$f; }, $_FILES)) . "\n\n", FILE_APPEND | LOCK_EX);
         } elseif (
             $formData['borrow_date'] === '' ||
             $formData['start_period_code'] === '' ||
@@ -626,6 +627,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     @unlink($uploadedProposalPath);
                 }
                 $borrowError = $exception->getMessage();
+                @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " EXCEPTION: " . $exception->getMessage() . "\nTRACE:" . $exception->getTraceAsString() . "\nPOST:" . json_encode($_POST) . "\nFILES:" . json_encode(array_map(function($f){ return is_array($f)?array_merge($f,['tmp_name'=>'...']):$f; }, $_FILES)) . "\n\n", FILE_APPEND | LOCK_EX);
             }
         }
     }

@@ -1,0 +1,8 @@
+2026-04-22T11:12:15+00:00 POST handler invoked
+POST:{"resource_type":"equipment","space_id":"","borrow_date":"2026-04-22","start_period_code":"D3","end_period_code":"E3","phone":"","purpose":"9663\r\n","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1},{\"code\":\"A2\",\"name\":\"\u6709\u7dda\u9ea5\u514b\u98a8\",\"quantity\":1}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-04-22T11:15:54+00:00 POST handler invoked
+POST:{"resource_type":"space","space_id":"EZ008","borrow_date":"2026-04-23","start_period_code":"D1","end_period_code":"E2","phone":"","purpose":"55","cart_items":"[]"}
+FILES:{"proposal_file":{"name":"Lecture4 List.pdf","type":"application\/pdf","tmp_name":"...","error":0,"size":310196}}
+

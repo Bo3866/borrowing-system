@@ -1,5 +1,4 @@
-<?php declare(strict_types=1);
-
+﻿<?php
 session_start();
 
 if (!isset($_SESSION['user_id'])) {
@@ -31,7 +30,7 @@ $periodSlots = [
 ];
 $periodOrder = array_keys($periodSlots);
 
-$link = mysqli_connect('localhost', 'root', '', 'borrowing_system',3307);
+$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
 $dbError = '';
 if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();
@@ -41,6 +40,7 @@ if (!$link) {
 
 $equipmentMap = [];
 $spaceMap = [];
+$existingSpaceReservations = [];
 if ($dbError === '') {
     $equipmentSql = "
         SELECT
@@ -101,6 +101,33 @@ if ($dbError === '') {
         } else {
             $dbError = '讀取空間資料失敗：' . mysqli_error($link);
         }
+
+        // 讀取既有空間預約，提供前端節次衝突提示使用
+        // 若資料表尚未建立，維持空陣列即可，不中斷頁面。
+        $spaceItemsTableRes = mysqli_query($link, "SHOW TABLES LIKE 'space_reservation_items'");
+        if ($spaceItemsTableRes && mysqli_num_rows($spaceItemsTableRes) > 0) {
+            $existingReservationsSql = "
+                SELECT
+                    sri.space_id,
+                    DATE(r.borrow_start_at) AS reserve_date,
+                    TIME(r.borrow_start_at) AS reserve_start,
+                    TIME(r.borrow_end_at) AS reserve_end
+                FROM space_reservation_items sri
+                JOIN reservations r ON r.reservation_id = sri.reservation_id
+                WHERE r.approval_status IN ('pending', 'approved')
+            ";
+            $existingReservationsResult = mysqli_query($link, $existingReservationsSql);
+            if ($existingReservationsResult) {
+                while ($existingRow = mysqli_fetch_assoc($existingReservationsResult)) {
+                    $existingSpaceReservations[] = [
+                        'space_id' => (string)$existingRow['space_id'],
+                        'date' => (string)$existingRow['reserve_date'],
+                        'start' => (string)$existingRow['reserve_start'],
+                        'end' => (string)$existingRow['reserve_end'],
+                    ];
+                }
+            }
+        }
     }
 }
 
@@ -121,6 +148,7 @@ $formData = [
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " POST handler invoked\nPOST:" . json_encode($_POST) . "\nFILES:" . json_encode(array_map(function($f){ return is_array($f)?array_merge($f,['tmp_name'=>'...']):$f; }, $_FILES)) . "\n\n", FILE_APPEND | LOCK_EX);
     $formData['resource_type'] = trim((string)($_POST['resource_type'] ?? 'equipment'));
     $cartItemsRaw = trim((string)($_POST['cart_items'] ?? '[]'));
     $cartItems = json_decode($cartItemsRaw, true);
@@ -287,23 +315,102 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($borrowError === '') {
 
-            mysqli_begin_transaction($link);
+                        // Ensure essential reservation-related tables exist so inserts won't fail
+                        // (uses safe CREATE TABLE IF NOT EXISTS statements copied from schema)
+                        $createReservationsSql = <<<SQL
+CREATE TABLE IF NOT EXISTS reservations (
+    reservation_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    user_id VARCHAR(10) NOT NULL,
+    proposal_file VARCHAR(255) NULL,
+    proposal_uploaded_at DATETIME NULL,
+    submitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    borrow_start_at DATETIME NOT NULL,
+    borrow_end_at DATETIME NOT NULL,
+    approval_status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+    returned_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (reservation_id)
+) ENGINE=InnoDB;
+SQL;
+
+                        $createEquipItemsSql = <<<SQL
+CREATE TABLE IF NOT EXISTS equipment_reservation_items (
+    equipment_item_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    reservation_id BIGINT UNSIGNED NOT NULL,
+    equipment_id BIGINT UNSIGNED NOT NULL,
+    borrow_quantity INT NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (equipment_item_id)
+) ENGINE=InnoDB;
+SQL;
+
+                        $createSpaceItemsSql = <<<SQL
+CREATE TABLE IF NOT EXISTS space_reservation_items (
+    space_item_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    reservation_id BIGINT UNSIGNED NOT NULL,
+    space_id VARCHAR(30) NOT NULL,
+    proposal_file VARCHAR(255) NULL,
+    proposal_uploaded_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (space_item_id)
+) ENGINE=InnoDB;
+SQL;
+
+                        $createSignoffsSql = <<<SQL
+CREATE TABLE IF NOT EXISTS equipment_signoffs (
+    signoff_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    reservation_id BIGINT UNSIGNED NOT NULL,
+    certificate_id BIGINT UNSIGNED NULL,
+    reviewer_id VARCHAR(10) NOT NULL,
+    signoff_status ENUM('approved','rejected','pending') NOT NULL DEFAULT 'pending',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (signoff_id)
+) ENGINE=InnoDB;
+SQL;
+
+                        // Run creates but do not fail the whole flow on DDL error; log instead
+                        if ($link) {
+                                if (!mysqli_query($link, $createReservationsSql)) {
+                                        @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " CREATE reservations failed: " . mysqli_error($link) . "\n", FILE_APPEND | LOCK_EX);
+                                }
+                                if (!mysqli_query($link, $createEquipItemsSql)) {
+                                        @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " CREATE equipment_reservation_items failed: " . mysqli_error($link) . "\n", FILE_APPEND | LOCK_EX);
+                                }
+                                if (!mysqli_query($link, $createSpaceItemsSql)) {
+                                        @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " CREATE space_reservation_items failed: " . mysqli_error($link) . "\n", FILE_APPEND | LOCK_EX);
+                                }
+                                if (!mysqli_query($link, $createSignoffsSql)) {
+                                        @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " CREATE equipment_signoffs failed: " . mysqli_error($link) . "\n", FILE_APPEND | LOCK_EX);
+                                }
+                        }
+
+                        mysqli_begin_transaction($link);
 
             try {
                 $uploadedProposalPath = null;
 
                 // 確保 space_reservation_items 表有 proposal_file 和 proposal_uploaded_at 欄位
-                $proposalFileColumnResult = mysqli_query($link, "SHOW COLUMNS FROM space_reservation_items LIKE 'proposal_file'");
-                if (!($proposalFileColumnResult && mysqli_num_rows($proposalFileColumnResult) > 0)) {
-                    if (!mysqli_query($link, "ALTER TABLE space_reservation_items ADD COLUMN proposal_file VARCHAR(255) NULL COMMENT '上傳之活動企劃書檔案路徑' AFTER space_id")) {
-                        throw new RuntimeException('無法建立 space_reservation_items.proposal_file 欄位：' . mysqli_error($link));
+                // NOTE: 如果整個表不存在，跳過 ALTER TABLE 以避免造成所有申請皆失敗。
+                $tableExistsRes = mysqli_query($link, "SHOW TABLES LIKE 'space_reservation_items'");
+                if ($tableExistsRes && mysqli_num_rows($tableExistsRes) > 0) {
+                    $proposalFileColumnResult = mysqli_query($link, "SHOW COLUMNS FROM space_reservation_items LIKE 'proposal_file'");
+                    if (!($proposalFileColumnResult && mysqli_num_rows($proposalFileColumnResult) > 0)) {
+                        if (!mysqli_query($link, "ALTER TABLE space_reservation_items ADD COLUMN proposal_file VARCHAR(255) NULL COMMENT '上傳之活動企劃書檔案路徑' AFTER space_id")) {
+                            throw new RuntimeException('無法建立 space_reservation_items.proposal_file 欄位：' . mysqli_error($link));
+                        }
                     }
-                }
-                $proposalUploadedAtColumnResult = mysqli_query($link, "SHOW COLUMNS FROM space_reservation_items LIKE 'proposal_uploaded_at'");
-                if (!($proposalUploadedAtColumnResult && mysqli_num_rows($proposalUploadedAtColumnResult) > 0)) {
-                    if (!mysqli_query($link, "ALTER TABLE space_reservation_items ADD COLUMN proposal_uploaded_at DATETIME NULL COMMENT '活動企劃書上傳時間' AFTER proposal_file")) {
-                        throw new RuntimeException('無法建立 space_reservation_items.proposal_uploaded_at 欄位：' . mysqli_error($link));
+                    $proposalUploadedAtColumnResult = mysqli_query($link, "SHOW COLUMNS FROM space_reservation_items LIKE 'proposal_uploaded_at'");
+                    if (!($proposalUploadedAtColumnResult && mysqli_num_rows($proposalUploadedAtColumnResult) > 0)) {
+                        if (!mysqli_query($link, "ALTER TABLE space_reservation_items ADD COLUMN proposal_uploaded_at DATETIME NULL COMMENT '活動企劃書上傳時間' AFTER proposal_file")) {
+                            throw new RuntimeException('無法建立 space_reservation_items.proposal_uploaded_at 欄位：' . mysqli_error($link));
+                        }
                     }
+                } else {
+                    @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " SKIP ALTER: space_reservation_items table not found, skipping ALTER TABLE checks.\n", FILE_APPEND | LOCK_EX);
                 }
 
                 if ($formData['phone'] !== '') {
@@ -716,7 +823,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="borrow-layout" id="mainBorrowLayout">
                     <section class="card borrow-form-card">
                         <h3>申請資料</h3>
-                        <form method="post" enctype="multipart/form-data" class="borrow-form" action="borrow.php">
+                        <form method="post" enctype="multipart/form-data" class="borrow-form" action="borrow.php" novalidate>
                             <div class="form-group">
                                 <label for="resource_type">借用類型</label>
                                 <select id="resource_type" name="resource_type">
@@ -847,6 +954,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <button type="submit" class="btn-primary" id="borrowSubmitBtn">送出借用申請</button>
                                 <button type="button" class="btn-secondary" onclick="location.href='index.php'">取消</button>
                             </div>
+                            <div id="submitDebugMsg" style="margin-top:8px; font-size:13px; color:#64748b;"></div>
                         </form>
                     </section>
 
@@ -884,6 +992,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <script>
         (function () {
+            const borrowForm = document.querySelector('form.borrow-form');
             const spaceSelect = document.getElementById('space_id');
             const resourceTypeSelect = document.getElementById('resource_type');
             const submitButton = document.getElementById('borrowSubmitBtn');
@@ -891,6 +1000,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const equipmentSelectorContainer = document.getElementById('equipmentSelectorContainer');
             const proposalFileInput = document.getElementById('proposal_file');
             const proposalGroup = document.getElementById('proposalGroup');
+            const submitDebugMsg = document.getElementById('submitDebugMsg');
 
             // --- Missing cart logic re-added ---
             const esEquipmentList = document.getElementById('esEquipmentList');
@@ -1068,9 +1178,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 });
             }
 
+            function handleFormSubmit() {
+                if (submitDebugMsg) {
+                    submitDebugMsg.textContent = '已觸發送出，正在提交資料...';
+                }
+                if (cartItemsInput) {
+                    cartItemsInput.value = JSON.stringify(cartItems);
+                }
+                if (submitButton) {
+                    submitButton.disabled = true;
+                    submitButton.textContent = '送出中...';
+                }
+            }
+
+            if (submitButton) {
+                submitButton.addEventListener('click', function () {
+                    if (submitDebugMsg) {
+                        submitDebugMsg.textContent = '已按下送出按鈕，準備驗證欄位...';
+                    }
+                });
+            }
+
             resourceTypeSelect.addEventListener('change', function () { refreshModeUI(); refreshSpaceTableFilter(); });
-            if (typeof equipmentSelect !== 'undefined' && equipmentSelect) equipmentSelect.addEventListener('change', refreshBorrowHints);
             if (spaceSelect) spaceSelect.addEventListener('change', function () { refreshModeUI(); refreshSpaceTableFilter(); });
+            if (borrowForm) borrowForm.addEventListener('submit', handleFormSubmit);
             refreshModeUI();
             refreshSpaceTableFilter();
             renderCart();
@@ -1078,7 +1209,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </script>
 
 <script>
-const existingSpaceReservations = <?= json_encode($existingSpaceReservations); ?>;
+const existingSpaceReservations = <?= json_encode($existingSpaceReservations ?? []); ?>;
 const periodSlotsMap = <?= json_encode($periodSlots); ?>;
 
 document.addEventListener('DOMContentLoaded', () => {

@@ -328,14 +328,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $hasPurposeCol = in_array('purpose', $reservationCols, true);
                 $hasCertificateIdCol = in_array('certificate_id', $reservationCols, true);
 
+                $hasSubmittedAtCol = in_array('submitted_at', $reservationCols, true);
+                
+                $submittedAtVal = date('Y-m-d H:i:s'); // 保證同一批次提交時間一致
                 $insertCols = [$applicantColumn, 'borrow_start_at', 'borrow_end_at'];
-                $bindValues = [$userId, $borrowStartAtSql, $borrowEndAtSql];
-                $bindTypes = 'sss';
+                $bindValuesTemplate = [$userId, $borrowStartAtSql, $borrowEndAtSql];
+                $bindTypesTemplate = 'sss';
 
                 if ($hasPurposeCol) {
                     $insertCols[] = 'purpose';
-                    $bindValues[] = $formData['purpose'];
-                    $bindTypes .= 's';
+                    $bindValuesTemplate[] = $formData['purpose'];
+                    $bindTypesTemplate .= 's';
+                }
+                
+                if ($hasSubmittedAtCol) {
+                    $insertCols[] = 'submitted_at';
+                    $bindValuesTemplate[] = $submittedAtVal;
+                    $bindTypesTemplate .= 's';
                 }
 
                 $colsSql = implode(", ", $insertCols) . ", approval_status, created_at";
@@ -344,82 +353,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $placeholders = implode(', ', array_fill(0, count($insertCols), '?')) . ', "pending", NOW()' . ($hasCertificateIdCol ? ', NULL' : '');
-
                 $insertReservationSql = sprintf("INSERT INTO reservations ( %s ) VALUES (%s)", $colsSql, $placeholders);
 
-                $reservationStmt = mysqli_prepare($link, $insertReservationSql);
-                if (!$reservationStmt) {
-                    throw new RuntimeException('建立預約主檔失敗：' . mysqli_error($link));
-                }
-
-                mysqli_stmt_bind_param($reservationStmt, $bindTypes, ...$bindValues);
-                mysqli_stmt_execute($reservationStmt);
-                $reservationId = (int)mysqli_insert_id($link);
-                mysqli_stmt_close($reservationStmt);
+                $createdReservationIds = [];
 
                 // 企劃書相關變數
                 $proposalFileForSpace = null;
                 $proposalUploadedAtForSpace = null;
-
-                // 若為申請空間且有上傳企劃書，處理上傳並更新 reservations
-                if ($formData['resource_type'] === 'space') {
-                    if (!isset($_FILES['proposal_file']) || $_FILES['proposal_file']['error'] === UPLOAD_ERR_NO_FILE) {
-                        throw new RuntimeException('申請場地需上傳活動企劃書。');
-                    }
-
-                    $file = $_FILES['proposal_file'];
-                    if ($file['error'] !== UPLOAD_ERR_OK) {
-                        throw new RuntimeException('企劃書上傳失敗（錯誤碼：' . (int)$file['error'] . '）。');
-                    }
-
-                    $maxBytes = 5 * 1024 * 1024; // 5MB
-                    if ($file['size'] > $maxBytes) {
-                        throw new RuntimeException('企劃書大小超過 5MB 限制。');
-                    }
-
-                    if (class_exists('finfo')) {
-                        $finfo = new finfo(FILEINFO_MIME_TYPE);
-                        $mime = (string)$finfo->file($file['tmp_name']);
-                    } elseif (function_exists('mime_content_type')) {
-                        $mime = (string)mime_content_type($file['tmp_name']);
-                    } else {
-                        // 臨時備援：若 server 真的無法使用 fileinfo 或 mime_content_type，
-                        // 以檔案副檔名當作最後判斷 (僅接受 .pdf)。注意：此作法有安全風險，
-                        // 建議盡快重啟 Web 伺服器以啟用 fileinfo。
-                        $ext = strtolower(pathinfo((string)$file['name'], PATHINFO_EXTENSION));
-                        if ($ext === 'pdf') {
-                            $mime = 'application/pdf';
-                        } else {
-                            throw new RuntimeException('伺服器未啟用 fileinfo 擴充套件，且無法使用 mime_content_type 判別檔案，請上傳副檔名為 .pdf 的檔案，或聯絡系統管理員以啟用 php_fileinfo。');
-                        }
-                    }
-                    // 僅允許 PDF
-                    $allowed = [
-                        'application/pdf' => 'pdf',
-                    ];
-                    if (!array_key_exists($mime, $allowed)) {
-                        throw new RuntimeException('企劃書格式不支援，僅接受 PDF。');
-                    }
-
-                    $uploadDir = __DIR__ . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'proposals';
-                    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
-                        throw new RuntimeException('建立上傳目錄失敗。');
-                    }
-
-                    $ext = $allowed[$mime];
-                    $safeBasename = preg_replace('/[^a-zA-Z0-9_-]/', '_', pathinfo((string)$file['name'], PATHINFO_FILENAME));
-                    $targetName = sprintf('%d_%s.%s', $reservationId, $safeBasename, $ext);
-                    $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $targetName;
-
-                    if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
-                        throw new RuntimeException('企劃書儲存失敗。');
-                    }
-
-                    // 儲存相對路徑到資料庫
-                    $proposalFileForSpace = 'uploads/proposals/' . $targetName;
-                    $proposalUploadedAtForSpace = date('Y-m-d H:i:s');
-                    $uploadedProposalPath = $targetPath;
-                }
 
                 if ($formData['resource_type'] === 'equipment') {
                     $stockCheckStmt = mysqli_prepare(
@@ -442,6 +382,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         throw new RuntimeException('建立器材預約明細指令失敗：' . mysqli_error($link));
                     }
 
+                    // 嘗試取得有效證照（供器材核簽用）
+                    $certificateId = null;
+                    $certSelectStmt = mysqli_prepare(
+                        $link,
+                        'SELECT certificate_id FROM equipment_certificates WHERE holder_id = ? AND validity_status = "valid" ORDER BY issue_date DESC LIMIT 1'
+                    );
+                    if ($certSelectStmt) {
+                        mysqli_stmt_bind_param($certSelectStmt, 's', $userId);
+                        mysqli_stmt_execute($certSelectStmt);
+                        $certSelectResult = mysqli_stmt_get_result($certSelectStmt);
+                        $certRow = $certSelectResult ? mysqli_fetch_assoc($certSelectResult) : null;
+                        mysqli_stmt_close($certSelectStmt);
+                        if ($certRow && isset($certRow['certificate_id'])) {
+                            $certificateId = (int)$certRow['certificate_id'];
+                        }
+                    }
+
+                    // 針對購物車內【每一個器材項目】建立各自獨立的預約單 (reservation)
                     foreach ($cartItems as $item) {
                         $cCode = $item['code'];
                         $cQty = (int)$item['quantity'];
@@ -469,61 +427,126 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             throw new RuntimeException("器材 {$cCode} 實際可取得數量不足。");
                         }
 
+                        // 新增 Reservations (每一款器材一張預約單，但 submitted_at 完全一樣)
+                        $reservationStmt = mysqli_prepare($link, $insertReservationSql);
+                        if (!$reservationStmt) {
+                            throw new RuntimeException('建立預約主檔失敗：' . mysqli_error($link));
+                        }
+                        mysqli_stmt_bind_param($reservationStmt, $bindTypesTemplate, ...$bindValuesTemplate);
+                        mysqli_stmt_execute($reservationStmt);
+                        $itemReservationId = (int)mysqli_insert_id($link);
+                        mysqli_stmt_close($reservationStmt);
+
+                        $createdReservationIds[] = $itemReservationId;
+
+                        // 將實體器材加入該預約單
                         foreach ($equipmentIds as $equipmentId) {
-                            mysqli_stmt_bind_param($reservationItemStmt, 'ii', $reservationId, $equipmentId);
+                            mysqli_stmt_bind_param($reservationItemStmt, 'ii', $itemReservationId, $equipmentId);
                             mysqli_stmt_execute($reservationItemStmt);
                             
                             mysqli_stmt_bind_param($updateEquipmentStatusStmt, 'is', $equipmentId, $borrowStartAtSql);
                             mysqli_stmt_execute($updateEquipmentStatusStmt);
                         }
+
+                        // 建立器材核簽紀錄
+                        if ($certificateId !== null) {
+                            $insertSignoffStmt = mysqli_prepare(
+                                $link,
+                                'INSERT INTO equipment_signoffs (reservation_id, certificate_id, reviewer_id, signoff_status) VALUES (?, ?, ?, "pending")'
+                            );
+                            if (!$insertSignoffStmt) {
+                                throw new RuntimeException('建立器材核簽紀錄失敗：' . mysqli_error($link));
+                            }
+                            mysqli_stmt_bind_param($insertSignoffStmt, 'iis', $itemReservationId, $certificateId, $userId);
+                            mysqli_stmt_execute($insertSignoffStmt);
+                            mysqli_stmt_close($insertSignoffStmt);
+                        } else {
+                            $insertSignoffStmt = mysqli_prepare(
+                                $link,
+                                'INSERT INTO equipment_signoffs (reservation_id, certificate_id, reviewer_id, signoff_status) VALUES (?, NULL, ?, "pending")'
+                            );
+                            if (!$insertSignoffStmt) {
+                                throw new RuntimeException('建立器材核簽紀錄失敗：' . mysqli_error($link));
+                            }
+                            mysqli_stmt_bind_param($insertSignoffStmt, 'is', $itemReservationId, $userId);
+                            mysqli_stmt_execute($insertSignoffStmt);
+                            mysqli_stmt_close($insertSignoffStmt);
+                        }
                     }
+
                     mysqli_stmt_close($stockCheckStmt);
                     mysqli_stmt_close($selectEquipmentStmt);
                     mysqli_stmt_close($reservationItemStmt);
                     mysqli_stmt_close($updateEquipmentStatusStmt);
-                
-                    // 嘗試建立器材核簽紀錄（若申請人有有效證照）
-                    $certificateId = null;
-                    $certSelectStmt = mysqli_prepare(
-                        $link,
-                        'SELECT certificate_id FROM equipment_certificates WHERE holder_id = ? AND validity_status = "valid" ORDER BY issue_date DESC LIMIT 1'
-                    );
-                    if ($certSelectStmt) {
-                        mysqli_stmt_bind_param($certSelectStmt, 's', $userId);
-                        mysqli_stmt_execute($certSelectStmt);
-                        $certSelectResult = mysqli_stmt_get_result($certSelectStmt);
-                        $certRow = $certSelectResult ? mysqli_fetch_assoc($certSelectResult) : null;
-                        mysqli_stmt_close($certSelectStmt);
-                        if ($certRow && isset($certRow['certificate_id'])) {
-                            $certificateId = (int)$certRow['certificate_id'];
-                        }
+
+                } else {
+                    // 若為申請空間且有上傳企劃書，處理上傳並更新 reservations
+                    if (!isset($_FILES['proposal_file']) || $_FILES['proposal_file']['error'] === UPLOAD_ERR_NO_FILE) {
+                        throw new RuntimeException('申請場地需上傳活動企劃書。');
                     }
 
-                    // 建立器材核簽紀錄（若無證照則以 NULL 儲存 certificate_id）
-                    if ($certificateId !== null) {
-                        $insertSignoffStmt = mysqli_prepare(
-                            $link,
-                            'INSERT INTO equipment_signoffs (reservation_id, certificate_id, reviewer_id, signoff_status) VALUES (?, ?, ?, "pending")'
-                        );
-                        if (!$insertSignoffStmt) {
-                            throw new RuntimeException('建立器材核簽紀錄失敗：' . mysqli_error($link));
-                        }
-                        mysqli_stmt_bind_param($insertSignoffStmt, 'iis', $reservationId, $certificateId, $userId);
-                        mysqli_stmt_execute($insertSignoffStmt);
-                        mysqli_stmt_close($insertSignoffStmt);
-                    } else {
-                        $insertSignoffStmt = mysqli_prepare(
-                            $link,
-                            'INSERT INTO equipment_signoffs (reservation_id, certificate_id, reviewer_id, signoff_status) VALUES (?, NULL, ?, "pending")'
-                        );
-                        if (!$insertSignoffStmt) {
-                            throw new RuntimeException('建立器材核簽紀錄失敗：' . mysqli_error($link));
-                        }
-                        mysqli_stmt_bind_param($insertSignoffStmt, 'is', $reservationId, $userId);
-                        mysqli_stmt_execute($insertSignoffStmt);
-                        mysqli_stmt_close($insertSignoffStmt);
+                    $file = $_FILES['proposal_file'];
+                    if ($file['error'] !== UPLOAD_ERR_OK) {
+                        throw new RuntimeException('企劃書上傳失敗（錯誤碼：' . (int)$file['error'] . '）。');
                     }
-                } else {
+
+                    $maxBytes = 5 * 1024 * 1024; // 5MB
+                    if ($file['size'] > $maxBytes) {
+                        throw new RuntimeException('企劃書大小超過 5MB 限制。');
+                    }
+
+                    if (class_exists('finfo')) {
+                        $finfo = new finfo(FILEINFO_MIME_TYPE);
+                        $mime = (string)$finfo->file($file['tmp_name']);
+                    } elseif (function_exists('mime_content_type')) {
+                        $mime = (string)mime_content_type($file['tmp_name']);
+                    } else {
+                        $ext = strtolower(pathinfo((string)$file['name'], PATHINFO_EXTENSION));
+                        if ($ext === 'pdf') {
+                            $mime = 'application/pdf';
+                        } else {
+                            throw new RuntimeException('伺服器未啟用 fileinfo 擴充套件，請上傳副檔名為 .pdf 的檔案。');
+                        }
+                    }
+                    // 僅允許 PDF
+                    $allowed = [
+                        'application/pdf' => 'pdf',
+                    ];
+                    if (!array_key_exists($mime, $allowed)) {
+                        throw new RuntimeException('企劃書格式不支援，僅接受 PDF。');
+                    }
+
+                    $uploadDir = __DIR__ . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'proposals';
+                    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+                        throw new RuntimeException('建立上傳目錄失敗。');
+                    }
+
+                    $ext = $allowed[$mime];
+                    $safeBasename = preg_replace('/[^a-zA-Z0-9_-]/', '_', pathinfo((string)$file['name'], PATHINFO_FILENAME));
+                    $timestampLabel = time();
+                    $targetName = sprintf('%s_%s.%s', $timestampLabel, $safeBasename, $ext);
+                    $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $targetName;
+
+                    if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
+                        throw new RuntimeException('企劃書儲存失敗。');
+                    }
+
+                    $proposalFileForSpace = 'uploads/proposals/' . $targetName;
+                    $proposalUploadedAtForSpace = date('Y-m-d H:i:s');
+                    $uploadedProposalPath = $targetPath;
+
+                    // Space 共用 1 張預約單
+                    $reservationStmt = mysqli_prepare($link, $insertReservationSql);
+                    if (!$reservationStmt) {
+                        throw new RuntimeException('建立預約主檔失敗：' . mysqli_error($link));
+                    }
+                    mysqli_stmt_bind_param($reservationStmt, $bindTypesTemplate, ...$bindValuesTemplate);
+                    mysqli_stmt_execute($reservationStmt);
+                    $reservationId = (int)mysqli_insert_id($link);
+                    mysqli_stmt_close($reservationStmt);
+
+                    $createdReservationIds[] = $reservationId;
+
                     $spaceConflictStmt = mysqli_prepare(
                             $link,
                             'SELECT COUNT(*) AS conflict_count
@@ -553,14 +576,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (!$spaceItemStmt) {
                         throw new RuntimeException('建立空間預約明細失敗：' . mysqli_error($link));
                     }
-                    mysqli_stmt_bind_param($spaceItemStmt, 'isss', $reservationId, $formData['space_id'], $proposalFileForSpace, $proposalUploadedAtForSpace);
+                    mysqli_stmt_bind_param($spaceItemStmt, 'isss', $createdReservationIds[0], $formData['space_id'], $proposalFileForSpace, $proposalUploadedAtForSpace);
                     mysqli_stmt_execute($spaceItemStmt);
                     mysqli_stmt_close($spaceItemStmt);
                     // 不再更新 spaces 表的營運狀態，因為我們通過查詢衝突來檢查可用性
                 }
 
                 mysqli_commit($link);
-                $borrowSuccess = '申請已送出，申請編號：' . $reservationId . '。';
+                $idsStr = implode(', ', $createdReservationIds);
+                $borrowSuccess = '申請已送出，申請編號：' . $idsStr . '。';
                 // ----- 寄送預約成功通知信 -----
                 $userEmailStmt = mysqli_prepare($link, 'SELECT email FROM users WHERE user_id = ?');
                 if ($userEmailStmt) {
@@ -589,8 +613,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $mail->addAddress($userEmail, $displayName);
                                 $mail->isHTML(true);
                                 $mail->Subject = '【系統通知】預約申請已成功送出';
-                                $mail->Body    = "您好，{$displayName}：<br><br>您的預約申請（單號：{$reservationId}）已經成功送出，目前狀態為<b>「審核中」</b>。<br><br>系統管理員將會儘速處理您的申請，審核結果出爐後會再次以 Email 通知您。<br><br>感謝您的使用！";
-                                $mail->AltBody = "您好，{$displayName}：\n\n您的預約申請（單號：{$reservationId}）已經成功送出，目前狀態為「審核中」。\n\n系統管理員將會儘速處理您的申請，審核結果出爐後會再次以 Email 通知您。\n\n感謝您的使用！";
+                                $mail->Body    = "您好，{$displayName}：<br><br>您的預約申請（單號：{$idsStr}）已經成功送出，目前狀態為<b>「審核中」</b>。<br><br>系統管理員將會儘速處理您的申請，審核結果出爐後會再次以 Email 通知您。<br><br>感謝您的使用！";
+                                $mail->AltBody = "您好，{$displayName}：\n\n您的預約申請（單號：{$idsStr}）已經成功送出，目前狀態為「審核中」。\n\n系統管理員將會儘速處理您的申請，審核結果出爐後會再次以 Email 通知您。\n\n感謝您的使用！";
                                 $mail->send();
                             } catch (Exception $e) {
                                 error_log("預約成功信件寄送失敗: " . $mail->ErrorInfo);

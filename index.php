@@ -10,7 +10,11 @@ $displayName = (string)($_SESSION['full_name'] ?? '訪客');
 $currentRole = (string)($_SESSION['role_name'] ?? '');
 $isManager = in_array($currentRole, ['2', '3'], true);
 
+<<<<<<< HEAD
 $link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system', 3306);
+=======
+$link = mysqli_connect('localhost', 'root', '', 'borrowing_system', 3307);
+>>>>>>> 7fd4ca3754cc1cfe32da961ce8ad09c98821ff1a
 
 if ($link) {
     $dbConnected = true;

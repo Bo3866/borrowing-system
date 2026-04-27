@@ -30,12 +30,29 @@ $periodSlots = [
 ];
 $periodOrder = array_keys($periodSlots);
 
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
+$link = mysqli_connect('localhost', 'root', '', 'borrowing_system', 3307);
 $dbError = '';
 if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();
 } else {
     mysqli_set_charset($link, 'utf8mb4');
+}
+
+$userPhone = '';
+if ($dbError === '') {
+    $phoneStmt = mysqli_prepare($link, 'SELECT phone FROM users WHERE user_id = ? LIMIT 1');
+    if ($phoneStmt) {
+        mysqli_stmt_bind_param($phoneStmt, 's', $userId);
+        mysqli_stmt_execute($phoneStmt);
+        $phoneResult = mysqli_stmt_get_result($phoneStmt);
+        if ($phoneResult) {
+            $phoneRow = mysqli_fetch_assoc($phoneResult);
+            if ($phoneRow && isset($phoneRow['phone'])) {
+                $userPhone = trim((string)$phoneRow['phone']);
+            }
+        }
+        mysqli_stmt_close($phoneStmt);
+    }
 }
 
 $equipmentMap = [];
@@ -144,7 +161,7 @@ $formData = [
     'start_period_code' => '',
     'end_period_code' => '',
     'purpose' => '',
-    'phone' => '',
+    'phone' => $userPhone,
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -668,6 +685,7 @@ SQL;
 
                 mysqli_commit($link);
                 $borrowSuccess = '申請已送出，申請編號：' . $reservationId . '。';
+                $userPhone = $formData['phone'];
                 // ----- 寄送預約成功通知信 -----
                 $userEmailStmt = mysqli_prepare($link, 'SELECT email FROM users WHERE user_id = ?');
                 if ($userEmailStmt) {
@@ -716,7 +734,7 @@ SQL;
                     'start_period_code' => '',
                     'end_period_code' => '',
                     'purpose' => '',
-                    'phone' => '',
+                    'phone' => $userPhone,
                 ];
 
                 if ($submittedResourceType === 'equipment' && $selectedEquipment !== null) {

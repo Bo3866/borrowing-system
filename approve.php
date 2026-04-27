@@ -25,7 +25,7 @@ if (!in_array($currentRole, ['2', '3'], true)) {
     exit;
 }
 
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
+$link = mysqli_connect('localhost', 'root', '', 'borrowing_system', 3307);
 if (!$link) {
     $dbError = '資料庫連線失敗：' . mysqli_connect_error();
 } else {
@@ -230,18 +230,42 @@ if (isset($dbError) && $dbError !== '') {
 function fetchItems(mysqli $link, int $reservationId): array
 {
     $items = [];
-    $stmt = mysqli_prepare($link, 'SELECT eri.equipment_item_id, e.equipment_id, e.equipment_code, ec.equipment_name FROM equipment_reservation_items eri JOIN equipments e ON eri.equipment_id = e.equipment_id JOIN equipment_categories ec ON e.equipment_code = ec.equipment_code WHERE eri.reservation_id = ?');
+    $stmt = mysqli_prepare($link, 'SELECT eri.equipment_item_id, e.equipment_id, e.equipment_code, ec.equipment_name, eri.borrow_quantity FROM equipment_reservation_items eri JOIN equipments e ON eri.equipment_id = e.equipment_id JOIN equipment_categories ec ON e.equipment_code = ec.equipment_code WHERE eri.reservation_id = ?');
     if ($stmt) {
         mysqli_stmt_bind_param($stmt, 'i', $reservationId);
         mysqli_stmt_execute($stmt);
         $r = mysqli_stmt_get_result($stmt);
         if ($r) {
             while ($it = mysqli_fetch_assoc($r)) {
-                $items[] = $it;
+                $items[] = [
+                    'item_type' => 'equipment',
+                    'item_code' => (string)$it['equipment_code'],
+                    'item_name' => (string)$it['equipment_name'],
+                    'borrow_quantity' => (int)($it['borrow_quantity'] ?? 1)
+                ];
             }
         }
         mysqli_stmt_close($stmt);
     }
+
+    $spaceStmt = mysqli_prepare($link, 'SELECT sri.space_item_id, s.space_id, s.space_name FROM space_reservation_items sri JOIN spaces s ON sri.space_id = s.space_id WHERE sri.reservation_id = ?');
+    if ($spaceStmt) {
+        mysqli_stmt_bind_param($spaceStmt, 'i', $reservationId);
+        mysqli_stmt_execute($spaceStmt);
+        $spaceResult = mysqli_stmt_get_result($spaceStmt);
+        if ($spaceResult) {
+            while ($space = mysqli_fetch_assoc($spaceResult)) {
+                $items[] = [
+                    'item_type' => 'space',
+                    'item_code' => (string)$space['space_id'],
+                    'item_name' => (string)$space['space_name'],
+                    'borrow_quantity' => null
+                ];
+            }
+        }
+        mysqli_stmt_close($spaceStmt);
+    }
+
     return $items;
 }
 
@@ -300,7 +324,21 @@ function fetchItems(mysqli $link, int $reservationId): array
                                     <strong>申請項目：</strong>
                                     <ul>
                                         <?php foreach ($p['items'] as $it) { ?>
-                                            <li><?php echo htmlspecialchars($it['equipment_code'] . ' - ' . $it['equipment_name'], ENT_QUOTES, 'UTF-8'); ?></li>
+                                            <?php
+                                                $itemType = (string)($it['item_type'] ?? 'equipment');
+                                                $itemCode = (string)($it['item_code'] ?? ($it['equipment_code'] ?? ''));
+                                                $itemName = (string)($it['item_name'] ?? ($it['equipment_name'] ?? ''));
+                                                if ($itemType === 'space') {
+                                                    $itemText = '【空間】' . $itemCode . ' - ' . $itemName;
+                                                } else {
+                                                    $qtyText = '';
+                                                    if (isset($it['borrow_quantity']) && $it['borrow_quantity'] !== null) {
+                                                        $qtyText = '（數量：' . (int)$it['borrow_quantity'] . '）';
+                                                    }
+                                                    $itemText = '【器材】' . $itemCode . ' - ' . $itemName . $qtyText;
+                                                }
+                                            ?>
+                                            <li><?php echo htmlspecialchars($itemText, ENT_QUOTES, 'UTF-8'); ?></li>
                                         <?php } ?>
                                     </ul>
                                 </div>

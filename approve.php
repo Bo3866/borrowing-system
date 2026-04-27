@@ -7,6 +7,7 @@ use PHPMailer\PHPMailer\Exception;
 require 'lib/PHPMailer/PHPMailer.php';
 require 'lib/PHPMailer/SMTP.php';
 require 'lib/PHPMailer/Exception.php';
+require_once __DIR__ . '/config/database.php';
 
 session_start();
 
@@ -25,12 +26,8 @@ if (!in_array($currentRole, ['2', '3'], true)) {
     exit;
 }
 
-$link = mysqli_connect('localhost', 'root', '', 'borrowing_system', 3307);
-if (!$link) {
-    $dbError = '資料庫連線失敗：' . mysqli_connect_error();
-} else {
-    mysqli_set_charset($link, 'utf8mb4');
-}
+$dbError = '';
+$link = getMysqliConnection($dbError);
 
 function pickExistingColumn(array $columns, array $candidates): ?string
 {

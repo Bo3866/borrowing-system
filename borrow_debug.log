@@ -6,3 +6,36 @@ FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}
 POST:{"resource_type":"space","space_id":"EZ008","borrow_date":"2026-04-23","start_period_code":"D1","end_period_code":"E2","phone":"","purpose":"55","cart_items":"[]"}
 FILES:{"proposal_file":{"name":"Lecture4 List.pdf","type":"application\/pdf","tmp_name":"...","error":0,"size":310196}}
 
+2026-04-22T13:21:50+02:00 POST handler invoked
+POST:{"resource_type":"equipment","space_id":"","borrow_date":"2026-04-23","start_period_code":"D1","end_period_code":"D4","phone":"0970634016","purpose":"11","cart_items":"[{\"code\":\"A10\",\"name\":\"\u96fb\u92fc\u7434\",\"quantity\":1},{\"code\":\"A2\",\"name\":\"\u6709\u7dda\u9ea5\u514b\u98a8\",\"quantity\":1}]"}
+FILES:{"proposal_file":{"name":"","full_path":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-04-22T14:32:20+02:00 POST handler invoked
+POST:{"resource_type":"space","space_id":"ES001","borrow_date":"2026-04-22","start_period_code":"D1","end_period_code":"D4","phone":"0970634016","purpose":"11","cart_items":"[]"}
+FILES:{"proposal_file":{"name":"W2 Assignment _260304_101950.pdf","full_path":"W2 Assignment _260304_101950.pdf","type":"application\/pdf","tmp_name":"...","error":0,"size":294265}}
+
+2026-04-22T14:42:44+02:00 POST handler invoked
+POST:{"resource_type":"equipment","space_id":"","borrow_date":"2026-04-21","start_period_code":"D1","end_period_code":"D3","phone":"","purpose":"11","cart_items":"[{\"code\":\"A2\",\"name\":\"\u6709\u7dda\u9ea5\u514b\u98a8\",\"quantity\":1}]"}
+FILES:{"proposal_file":{"name":"","full_path":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-04-22T14:49:15+02:00 POST handler invoked
+POST:{"resource_type":"equipment","space_id":"","borrow_date":"2026-04-21","start_period_code":"DN","end_period_code":"D6","phone":"","purpose":"11","cart_items":"[{\"code\":\"A3\",\"name\":\"\u77ed\u9ea5\u514b\u98a8\u67b6\",\"quantity\":1}]"}
+FILES:{"proposal_file":{"name":"","full_path":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-04-22T14:59:18+02:00 POST handler invoked
+POST:{"resource_type":"equipment","space_id":"","borrow_date":"2026-04-22","start_period_code":"D6","end_period_code":"D8","phone":"","purpose":"11","cart_items":"[{\"code\":\"C2\",\"name\":\"\u73cd\u73e0\u6905\",\"quantity\":3}]"}
+FILES:{"proposal_file":{"name":"","full_path":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-04-27T15:25:50+02:00 POST handler invoked
+POST:{"resource_type":"space","space_id":"ES001","borrow_date":"2026-04-27","start_period_code":"D1","end_period_code":"E4","phone":"0970634016","purpose":"11","cart_items":"[]"}
+FILES:{"proposal_file":{"name":"\u65b0\u5a92\u9ad4\u5831\u544a.pdf","full_path":"\u65b0\u5a92\u9ad4\u5831\u544a.pdf","type":"application\/pdf","tmp_name":"...","error":0,"size":38634855}}
+
+2026-04-27T15:25:50+02:00 EXCEPTION: 企劃書大小超過 5MB 限制。
+TRACE:#0 {main}
+POST:{"resource_type":"space","space_id":"ES001","borrow_date":"2026-04-27","start_period_code":"D1","end_period_code":"E4","phone":"0970634016","purpose":"11","cart_items":"[]"}
+FILES:{"proposal_file":{"name":"\u65b0\u5a92\u9ad4\u5831\u544a.pdf","full_path":"\u65b0\u5a92\u9ad4\u5831\u544a.pdf","type":"application\/pdf","tmp_name":"...","error":0,"size":38634855}}
+
+2026-04-27T15:25:58+02:00 POST handler invoked
+POST:{"resource_type":"space","space_id":"ES001","borrow_date":"2026-04-27","start_period_code":"D1","end_period_code":"E4","phone":"0970634016","purpose":"11","cart_items":"[]"}
+FILES:{"proposal_file":{"name":"\u8ab2\u6307\u7d44\u5834\u5730\u6536\u8cbb\u4e00\u89bd\u8868 (1).pdf","full_path":"\u8ab2\u6307\u7d44\u5834\u5730\u6536\u8cbb\u4e00\u89bd\u8868 (1).pdf","type":"application\/pdf","tmp_name":"...","error":0,"size":105184}}
+

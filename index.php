@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 session_start();
 
+require_once __DIR__ . '/config/database.php';
+
 $dbConnected = false;
 $dbStatusText = '連線失敗';
 $isLoggedIn = isset($_SESSION['user_id']);
@@ -10,14 +12,14 @@ $displayName = (string)($_SESSION['full_name'] ?? '訪客');
 $currentRole = (string)($_SESSION['role_name'] ?? '');
 $isManager = in_array($currentRole, ['2', '3'], true);
 
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
+$dbError = '';
+$link = getMysqliConnection($dbError);
 
 if ($link) {
     $dbConnected = true;
     $dbStatusText = '已連線';
-    mysqli_set_charset($link, 'utf8mb4');
 } else {
-    error_log('Database connection failed: ' . mysqli_connect_error());
+    error_log('Database connection failed: ' . $dbError);
 }
 ?>
 <!DOCTYPE html>

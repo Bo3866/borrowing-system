@@ -30,3 +30,11 @@ FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}
 POST:{"resource_type":"equipment","space_id":"","borrow_date":"2026-04-28","start_period_code":"D7","end_period_code":"E1","phone":"","purpose":"123","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1},{\"code\":\"A10\",\"name\":\"\u96fb\u92fc\u7434\",\"quantity\":1}]"}
 FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
 
+2026-04-28T05:47:49+00:00 POST handler invoked
+POST:{"resource_type":"space","space_id":"ES003","borrow_date":"2026-04-28","start_period_code":"D7","end_period_code":"E0","phone":"0912345678","purpose":"123","cart_items":"[]"}
+FILES:{"proposal_file":{"name":"Good.docx.pdf","type":"application\/pdf","tmp_name":"...","error":0,"size":52258}}
+
+2026-04-28T05:48:34+00:00 POST handler invoked
+POST:{"resource_type":"equipment","space_id":"","borrow_date":"2026-04-28","start_period_code":"D7","end_period_code":"E0","phone":"0912345678","purpose":"123","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1},{\"code\":\"A10\",\"name\":\"\u96fb\u92fc\u7434\",\"quantity\":1}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+

@@ -1,6 +1,8 @@
 ﻿<?php
 session_start();
 
+require_once __DIR__ . '/config/database.php';
+
 if (!isset($_SESSION['user_id'])) {
     header('Location: login.php?next=borrow.php');
     exit;
@@ -32,10 +34,23 @@ $periodOrder = array_keys($periodSlots);
 
 $link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system',3306);
 $dbError = '';
-if (!$link) {
-    $dbError = '資料庫連線失敗：' . mysqli_connect_error();
-} else {
-    mysqli_set_charset($link, 'utf8mb4');
+$link = getMysqliConnection($dbError);
+
+$userPhone = '';
+if ($dbError === '') {
+    $phoneStmt = mysqli_prepare($link, 'SELECT phone FROM users WHERE user_id = ? LIMIT 1');
+    if ($phoneStmt) {
+        mysqli_stmt_bind_param($phoneStmt, 's', $userId);
+        mysqli_stmt_execute($phoneStmt);
+        $phoneResult = mysqli_stmt_get_result($phoneStmt);
+        if ($phoneResult) {
+            $phoneRow = mysqli_fetch_assoc($phoneResult);
+            if ($phoneRow && isset($phoneRow['phone'])) {
+                $userPhone = trim((string)$phoneRow['phone']);
+            }
+        }
+        mysqli_stmt_close($phoneStmt);
+    }
 }
 
 $equipmentMap = [];
@@ -144,7 +159,7 @@ $formData = [
     'start_period_code' => '',
     'end_period_code' => '',
     'purpose' => '',
-    'phone' => '',
+    'phone' => $userPhone,
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -740,7 +755,7 @@ SQL;
                     'start_period_code' => '',
                     'end_period_code' => '',
                     'purpose' => '',
-                    'phone' => '',
+                    'phone' => $userPhone,
                 ];
 
                 if ($submittedResourceType === 'equipment' && $selectedEquipment !== null) {

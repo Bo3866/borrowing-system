@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 session_start();
 
+require_once __DIR__ . '/config/database.php';
+
 function getSafeRedirectTarget(?string $next): string
 {
     $allowedTargets = ['index.php', 'borrow.php', 'approve.php', 'return_management.php', 'checkin.php', 'qr_admin.php'];
@@ -25,12 +27,12 @@ $userId = '';
 $password = '';
 
 $link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system',3306);
+$dbError = '';
+$link = getMysqliConnection($dbError);
 
 if (!$link) {
-    $loginError = '資料庫連線失敗：' . mysqli_connect_error();
+    $loginError = '資料庫連線失敗：' . $dbError;
 } else {
-    mysqli_set_charset($link, 'utf8mb4');
-
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $userId = trim((string)($_POST['user_id'] ?? ''));
         $password = (string)($_POST['password'] ?? '');

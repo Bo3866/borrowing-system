@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 session_start();
 
+require_once __DIR__ . '/config/database.php';
+
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
@@ -19,11 +21,7 @@ $currentUserId = (string)$_SESSION['user_id'];
 
 $link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system',3306);
 $dbError = '';
-if (!$link) {
-    $dbError = '資料庫連線失敗：' . mysqli_connect_error();
-} else {
-    mysqli_set_charset($link, 'utf8mb4');
-}
+$link = getMysqliConnection($dbError);
 
 function pickExistingColumn(array $columns, array $candidates): ?string
 {

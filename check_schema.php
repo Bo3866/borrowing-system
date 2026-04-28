@@ -1,10 +1,12 @@
 <?php
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
+require_once __DIR__ . '/config/database.php';
+
+$dbError = '';
+$link = getMysqliConnection($dbError);
 if (!$link) {
-    echo '資料庫連線失敗：' . mysqli_connect_error() . "\n";
+    echo '資料庫連線失敗：' . $dbError . "\n";
     exit;
 }
-mysqli_set_charset($link, 'utf8mb4');
 
 // 檢查 space_reservation_items 結構
 $result = mysqli_query($link, "DESCRIBE space_reservation_items");

@@ -39,6 +39,7 @@ if ($link) {
                 <button class="nav-btn" onclick="navigateTo('dashboard')">首頁</button>
                 <button class="nav-btn" onclick="handleBorrowClick(event)">我要租借</button>
                 <button class="nav-btn" onclick="location.href='return_management.php'">我的申請</button>
+                
                 <?php if ($isManager) { ?>
                     <button class="nav-btn" onclick="location.href='approve.php'">審核面板</button>
                 <?php } ?>
@@ -47,7 +48,6 @@ if ($link) {
                 <?php if ($currentRole === '3') { ?>
                     <button class="nav-btn" onclick="location.href='qr_admin.php'">生成報到 QR</button>
                 <?php } ?>
-
                 <?php if ($isLoggedIn) { ?>
                     <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8'); ?></button>
                     <button class="nav-btn" onclick="location.href='logout.php'">登出</button>

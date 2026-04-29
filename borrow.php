@@ -56,6 +56,7 @@ if ($dbError === '') {
 $equipmentMap = [];
 $spaceMap = [];
 $existingSpaceReservations = [];
+$existingEquipmentReservations = [];
 if ($dbError === '') {
     $equipmentSql = "
         SELECT
@@ -143,6 +144,28 @@ if ($dbError === '') {
                 }
             }
         }
+        // 讀取既有器材預約（按日），提供前端當日是否已借出判定
+        $equipItemsTableRes = mysqli_query($link, "SHOW TABLES LIKE 'equipment_reservation_items'");
+        if ($equipItemsTableRes && mysqli_num_rows($equipItemsTableRes) > 0) {
+            $existingEquipSql = "
+                SELECT
+                    e.equipment_code,
+                    DATE(r.borrow_start_at) AS reserve_date
+                FROM equipment_reservation_items eri
+                JOIN reservations r ON r.reservation_id = eri.reservation_id
+                JOIN equipments e ON eri.equipment_id = e.equipment_id
+                WHERE r.approval_status IN ('pending', 'approved')
+            ";
+            $existingEquipResult = mysqli_query($link, $existingEquipSql);
+            if ($existingEquipResult) {
+                while ($erow = mysqli_fetch_assoc($existingEquipResult)) {
+                    $existingEquipmentReservations[] = [
+                        'equipment_code' => (string)$erow['equipment_code'],
+                        'date' => (string)$erow['reserve_date'],
+                    ];
+                }
+            }
+        }
     }
 }
 
@@ -202,6 +225,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $borrowEndAtSql = $formData['borrow_date'] . ' ' . $periodSlots[$formData['end_period_code']]['end'];
                 }
             }
+                    // 若選到的借用開始時間已落在過去，視為無效
+                    if ($borrowStartAtSql !== '' && strtotime($borrowStartAtSql) < time()) {
+                        $borrowError = '借用開始時間不可為過去時間。';
+                    }
         }
 
         $selectedEquipment = null;
@@ -237,6 +264,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             break;
                         }
                         $selectedE = $equipmentMap[$cCode];
+                        // 檢查該器材於同日是否已有預約（包含已歸還），若有則不可再次借用
+                        if ($formData['borrow_date'] !== '') {
+                            $sameDaySql = '
+                                SELECT 1
+                                FROM reservations r
+                                JOIN equipment_reservation_items eri ON r.reservation_id = eri.reservation_id
+                                JOIN equipments e ON eri.equipment_id = e.equipment_id
+                                WHERE e.equipment_code = ?
+                                  AND DATE(r.borrow_start_at) = ?
+                                  AND r.approval_status IN ("pending", "approved")
+                                LIMIT 1
+                            ';
+                            $sdStmt = mysqli_prepare($link, $sameDaySql);
+                            if ($sdStmt) {
+                                mysqli_stmt_bind_param($sdStmt, 'ss', $cCode, $formData['borrow_date']);
+                                mysqli_stmt_execute($sdStmt);
+                                $sdRes = mysqli_stmt_get_result($sdStmt);
+                                if ($sdRes && mysqli_num_rows($sdRes) > 0) {
+                                    $borrowError = sprintf('%s 已於當日借出，無法再次借用。', $selectedE['equipment_name']);
+                                    mysqli_stmt_close($sdStmt);
+                                    break;
+                                }
+                                mysqli_stmt_close($sdStmt);
+                            }
+                        }
                         $selectedEquipment = $selectedE;
                         
                         if ($cQty <= 0) {
@@ -669,15 +721,15 @@ SQL;
 
                     $createdReservationIds[] = $reservationId;
 
-                    $spaceConflictStmt = mysqli_prepare(
-                            $link,
-                            'SELECT COUNT(*) AS conflict_count
-                             FROM space_reservation_items sri
-                             JOIN reservations r ON r.reservation_id = sri.reservation_id
-                             WHERE sri.space_id = ?
-                               AND r.approval_status IN ("pending", "approved")
-                               AND NOT (r.borrow_end_at <= ? OR r.borrow_start_at >= ?)'
-                        );
+                                                $spaceConflictStmt = mysqli_prepare(
+                                                                $link,
+                                                                'SELECT COUNT(*) AS conflict_count
+                                                         FROM space_reservation_items sri
+                                                         JOIN reservations r ON r.reservation_id = sri.reservation_id
+                                                         WHERE sri.space_id = ?
+                                                             AND r.approval_status IN ("pending", "approved")
+                                                             AND NOT (r.borrow_end_at < ? OR r.borrow_start_at > ?)'
+                                                );
                         if (!$spaceConflictStmt) {
                             throw new RuntimeException('檢查空間時段衝突失敗：' . mysqli_error($link));
                         }
@@ -901,7 +953,7 @@ SQL;
                                             $maxInput = $limitRaw !== null ? min($avail, (int)$limitRaw) : $avail;
                                             $isAvail = $avail > 0;
                                         ?>
-                                            <li class="es-item" data-name="<?php echo htmlspecialchars($equipment['equipment_name'], ENT_QUOTES, 'UTF-8'); ?>" data-code="<?php echo htmlspecialchars($equipment['equipment_code'], ENT_QUOTES, 'UTF-8'); ?>" style="<?php echo $isAvail ? '' : 'opacity: 0.6;'; ?>">
+                                            <li class="es-item" data-name="<?php echo htmlspecialchars($equipment['equipment_name'], ENT_QUOTES, 'UTF-8'); ?>" data-code="<?php echo htmlspecialchars($equipment['equipment_code'], ENT_QUOTES, 'UTF-8'); ?>" data-original-disabled="<?php echo $isAvail ? '0' : '1'; ?>" style="<?php echo $isAvail ? '' : 'opacity: 0.6;'; ?>">
                                                 <div class="es-item-header">
                                                     <span class="es-item-name"><?php echo htmlspecialchars($equipment['equipment_name'], ENT_QUOTES, 'UTF-8'); ?> (<?php echo htmlspecialchars($equipment['equipment_code'], ENT_QUOTES, 'UTF-8'); ?>)</span>
                                                     <button type="button" class="es-btn-invite" <?php echo $isAvail ? '' : 'disabled'; ?>><?php echo $isAvail ? '選擇' : '已借完'; ?></button>
@@ -952,7 +1004,7 @@ SQL;
 
                             <div class="form-group">
                                 <label for="borrow_date">借用日期</label>
-                                <input type="date" id="borrow_date" name="borrow_date" value="<?php echo htmlspecialchars($formData['borrow_date'], ENT_QUOTES, 'UTF-8'); ?>" required>
+                                <input type="date" id="borrow_date" name="borrow_date" value="<?php echo htmlspecialchars($formData['borrow_date'], ENT_QUOTES, 'UTF-8'); ?>" min="<?php echo date('Y-m-d'); ?>" required>
                             </div>
 
                             <div class="form-group">
@@ -1249,6 +1301,7 @@ SQL;
 
 <script>
 const existingSpaceReservations = <?= json_encode($existingSpaceReservations ?? []); ?>;
+const existingEquipmentReservations = <?= json_encode($existingEquipmentReservations ?? []); ?>;
 const periodSlotsMap = <?= json_encode($periodSlots); ?>;
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1259,56 +1312,257 @@ document.addEventListener('DOMContentLoaded', () => {
     const resTypeEl = document.getElementById('resource_type');
 
     function updatePeriodOptions() {
-        if (!resTypeEl || resTypeEl.value !== 'space') return;
+        if (!resTypeEl) return;
 
-        const selSpace = spaceIdEl.value;
-        const selDate = borrowDateEl.value;
+        const mode = resTypeEl.value; // 'space' or 'equipment'
+        const selSpace = spaceIdEl ? spaceIdEl.value : '';
+        const selDate = borrowDateEl ? borrowDateEl.value : '';
+        const now = new Date();
+        console.log('updatePeriodOptions called', { mode: resTypeEl.value, selSpace, selDate, now: now.toString() });
         
         // Reset all options
         if (startPeriodEl) Array.from(startPeriodEl.options).forEach(opt => { 
             if(opt.value) {
                 opt.disabled = false; 
-                opt.innerHTML = opt.innerHTML.replace(' (���i�ɥ�)', '');
+                opt.innerHTML = opt.innerHTML.replace(' (���i�ɥ�)', '')
+                                           .replace(' (過去時段)', '')
+                                           .replace(' (已被預約)', '')
+                                           .replace(' (緊鄰保留)', '')
+                                           .replace(' (不可選)', '');
             }
         });
         if (endPeriodEl) Array.from(endPeriodEl.options).forEach(opt => { 
             if(opt.value) {
                 opt.disabled = false;
-                opt.innerHTML = opt.innerHTML.replace(' (���i�ɥ�)', '');
+                opt.innerHTML = opt.innerHTML.replace(' (���i�ɥ�)', '')
+                                           .replace(' (過去時段)', '')
+                                           .replace(' (已被預約)', '')
+                                           .replace(' (緊鄰保留)', '')
+                                           .replace(' (不可選)', '');
             }
         });
 
         if (!selSpace || !selDate) return;
 
-        // Find conflicts
-        const conflicts = existingSpaceReservations.filter(r => r.space_id === selSpace && r.date === selDate);
-        
+        // Find conflicts (only relevant for space mode)
+        const conflicts = (mode === 'space' && selSpace && selDate) ? existingSpaceReservations.filter(r => r.space_id === selSpace && r.date === selDate) : [];
+
         conflicts.forEach(c => {
             for (const [code, times] of Object.entries(periodSlotsMap)) {
+                // overlapping periods (existing behavior)
                 if (times.start < c.end && times.end > c.start) {
                     if (startPeriodEl) {
                         const opt1 = startPeriodEl.querySelector(`option[value="${code}"]`);
                         if (opt1) {
                             opt1.disabled = true;
-                            if(!opt1.innerHTML.includes('���i�ɥ�')) opt1.innerHTML += ' (���i�ɥ�)';
+                            if(!opt1.innerHTML.includes('已被預約')) opt1.innerHTML += ' (已被預約)';
                         }
                     }
                     if (endPeriodEl) {
                         const opt2 = endPeriodEl.querySelector(`option[value="${code}"]`);
                         if (opt2) {
                             opt2.disabled = true;
-                            if(!opt2.innerHTML.includes('���i�ɥ�')) opt2.innerHTML += ' (���i�ɥ�)';
+                            if(!opt2.innerHTML.includes('已被預約')) opt2.innerHTML += ' (已被預約)';
+                        }
+                    }
+                }
+
+                // 處理緊鄰保留：找到結束時間小於等於 c.end 的最後一個節次，並停用其下一節
+                try {
+                    function timeToSec(t) {
+                        const p = (t||'00:00:00').split(':').map(x=>parseInt(x,10)||0);
+                        return p[0]*3600 + p[1]*60 + p[2];
+                    }
+                    const cEndSec = timeToSec(c.end);
+                    // 建立 periodEndSeconds 陣列
+                    const periodCodes = Object.keys(periodSlotsMap);
+                    const periodEndSecs = periodCodes.map(cd => timeToSec(periodSlotsMap[cd].end));
+                    // 找最後一個 endSec <= cEndSec (或最接近)
+                    let lastIdx = -1;
+                    for (let idx = 0; idx < periodEndSecs.length; idx++) {
+                        if (periodEndSecs[idx] <= cEndSec + 1) {
+                            lastIdx = idx;
+                        } else {
+                            break;
+                        }
+                    }
+                    const nextIdx = lastIdx + 1;
+                    if (nextIdx >= 0 && nextIdx < periodCodes.length) {
+                        const nextCode = periodCodes[nextIdx];
+                        if (startPeriodEl) {
+                            const opt1n = startPeriodEl.querySelector(`option[value="${nextCode}"]`);
+                            if (opt1n) {
+                                opt1n.disabled = true;
+                                if(!opt1n.innerHTML.includes(' (緊鄰保留)')) opt1n.innerHTML += ' (緊鄰保留)';
+                                console.log('disable adjacent next start', nextCode, 'for reservation ending at', c.end);
+                            }
+                        }
+                        if (endPeriodEl) {
+                            const opt2n = endPeriodEl.querySelector(`option[value="${nextCode}"]`);
+                            if (opt2n) {
+                                opt2n.disabled = true;
+                                if(!opt2n.innerHTML.includes(' (緊鄰保留)')) opt2n.innerHTML += ' (緊鄰保留)';
+                                console.log('disable adjacent next end', nextCode, 'for reservation ending at', c.end);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error('adjacent disable error', e);
+                }
+            }
+        });
+
+        // 若選擇的是今天，停用已過的節次（包含已開始或已結束的節次）
+        try {
+            const now = new Date();
+            const todayStr = now.toISOString().slice(0,10);
+            const currentTimeStr = now.toTimeString().split(' ')[0]; // HH:MM:SS
+            const periodOrder = Object.keys(periodSlotsMap);
+
+            if (selDate === todayStr) {
+                // helper to build Date from YYYY-MM-DD and HH:MM:SS parts (local time)
+                function makeDateFromYMDTime(ymd, timeStr) {
+                    const [y, m, d] = (ymd || '').split('-').map(s => parseInt(s, 10));
+                    const parts = (timeStr || '00:00:00').split(':').map(s => parseInt(s, 10));
+                    const hh = parts[0] || 0;
+                    const mm = parts[1] || 0;
+                    const ss = parts[2] || 0;
+                    return new Date(y, (m || 1) - 1, d || 1, hh, mm, ss);
+                }
+
+                for (const [code, times] of Object.entries(periodSlotsMap)) {
+                    const startDt = makeDateFromYMDTime(selDate, times.start);
+                    const endDt = makeDateFromYMDTime(selDate, times.end);
+                    if (startDt <= now) {
+                        if (startPeriodEl) {
+                            const opt1 = startPeriodEl.querySelector(`option[value="${code}"]`);
+                            if (opt1) {
+                                opt1.disabled = true;
+                                if (!opt1.innerHTML.includes('過去時段')) opt1.innerHTML += ' (過去時段)';
+                                console.log('disable start option due to past', code, startDt.toString(), now.toString());
+                            }
+                        }
+                        if (endPeriodEl) {
+                            const opt2 = endPeriodEl.querySelector(`option[value="${code}"]`);
+                            if (opt2) {
+                                opt2.disabled = true;
+                                if (!opt2.innerHTML.includes('過去時段')) opt2.innerHTML += ' (過去時段)';
+                                console.log('disable end option due to past', code, endDt.toString(), now.toString());
+                            }
                         }
                     }
                 }
             }
-        });
+
+            // 如果已選開始節次，限制結束節次不得早於開始節次，且若為今天也不可選已過的結束節次
+            if (startPeriodEl && endPeriodEl && startPeriodEl.value) {
+                const startVal = startPeriodEl.value;
+                const startIndex = periodOrder.indexOf(startVal);
+                if (startIndex !== -1) {
+                    Array.from(endPeriodEl.options).forEach(opt => {
+                        if (!opt.value) return;
+                        const optIndex = periodOrder.indexOf(opt.value);
+                        let shouldDisable = optIndex < startIndex;
+                        // 當選擇的是今天，若該節次的結束時間已在過去也不可選
+                        if (selDate === todayStr) {
+                            const optTimes = periodSlotsMap[opt.value];
+                            if (optTimes) {
+                                const endDt = makeDateFromYMDTime(selDate, optTimes.end);
+                                if (endDt <= now) shouldDisable = true;
+                            }
+                        }
+                        opt.disabled = shouldDisable;
+                        // 加上提示文字
+                        if (shouldDisable) {
+                            if (!opt.innerHTML.includes(' (不可選)') && !opt.innerHTML.includes('過去時段')) {
+                                opt.innerHTML += ' (不可選)';
+                            }
+                        } else {
+                            opt.innerHTML = opt.innerHTML.replace(' (不可選)', '').replace(' (過去時段)', '');
+                        }
+                    });
+                }
+            }
+        } catch (e) {
+            // ignore any unexpected errors in client-side time-checking
+            console.error(e);
+        }
     }
 
-    if (spaceIdEl && borrowDateEl) {
+        if (spaceIdEl && borrowDateEl) {
         spaceIdEl.addEventListener('change', updatePeriodOptions);
         borrowDateEl.addEventListener('change', updatePeriodOptions);
         resTypeEl.addEventListener('change', updatePeriodOptions);
+        if (startPeriodEl) startPeriodEl.addEventListener('change', updatePeriodOptions);
+
+        // Update equipment availability based on selected date (prevent re-borrow same day)
+        function updateEquipmentAvailability() {
+            const mode = resTypeEl ? resTypeEl.value : 'equipment';
+            const selDateLocal = borrowDateEl ? borrowDateEl.value : '';
+            const items = document.querySelectorAll('.es-item');
+            items.forEach(li => {
+                const code = li.dataset.code;
+                const origDisabled = li.dataset.originalDisabled === '1';
+                const inviteBtn = li.querySelector('.es-btn-invite');
+                const header = li.querySelector('.es-item-header');
+                const existingLabel = header ? header.querySelector('.day-used') : null;
+
+                if (!inviteBtn) return;
+
+                // base: if originally disabled, keep disabled
+                let shouldDisable = origDisabled;
+
+                if (mode === 'equipment' && selDateLocal) {
+                    const used = (existingEquipmentReservations || []).some(r => r.equipment_code === code && r.date === selDateLocal);
+                    if (used) shouldDisable = true;
+                }
+
+                if (shouldDisable) {
+                    inviteBtn.disabled = true;
+                    li.style.opacity = 0.6;
+                    if (!existingLabel && header) {
+                        const span = document.createElement('span');
+                        span.className = 'day-used';
+                        span.style.marginLeft = '8px';
+                        span.style.color = '#e11d48';
+                        span.textContent = ' (當日已借出)';
+                        header.appendChild(span);
+                    }
+                } else {
+                    inviteBtn.disabled = false;
+                    li.style.opacity = '';
+                    if (existingLabel && existingLabel.parentNode) existingLabel.parentNode.removeChild(existingLabel);
+                }
+            });
+        }
+
+        borrowDateEl.addEventListener('change', function(){ updatePeriodOptions(); updateEquipmentAvailability(); });
+        resTypeEl.addEventListener('change', function(){ updatePeriodOptions(); updateEquipmentAvailability(); });
+        // also run once on load
+        updateEquipmentAvailability();
+
+        // Prevent user from selecting a disabled option (some browsers/clients may bypass)
+        if (startPeriodEl) {
+            startPeriodEl.addEventListener('change', function () {
+                const opt = startPeriodEl.options[startPeriodEl.selectedIndex];
+                if (opt && opt.disabled) {
+                    alert('所選開始節次不可選，請選擇其他節次。');
+                    startPeriodEl.value = '';
+                    updatePeriodOptions();
+                }
+            });
+        }
+        if (endPeriodEl) {
+            endPeriodEl.addEventListener('change', function () {
+                const opt = endPeriodEl.options[endPeriodEl.selectedIndex];
+                if (opt && opt.disabled) {
+                    alert('所選結束節次不可選，請選擇其他節次。');
+                    endPeriodEl.value = '';
+                    updatePeriodOptions();
+                }
+            });
+        }
+
         updatePeriodOptions();
     }
 });

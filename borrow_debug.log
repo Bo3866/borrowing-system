@@ -88,3 +88,35 @@ TRACE:#0 {main}
 POST:{"resource_type":"space","space_id":"EZ003","borrow_date":"2026-04-28","start_period_code":"D2","end_period_code":"D2","phone":"0912345678","purpose":"123","cart_items":"[]"}
 FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
 
+2026-04-29T07:16:32+00:00 POST handler invoked
+POST:{"resource_type":"equipment","space_id":"","borrow_date":"2026-04-29","start_period_code":"DN","end_period_code":"","phone":"0912345678","purpose":"","cart_items":"[]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-04-29T07:16:32+00:00 VALIDATION ERROR: 請選擇至少一項器材且填寫數量。
+POST:{"resource_type":"equipment","space_id":"","borrow_date":"2026-04-29","start_period_code":"DN","end_period_code":"","phone":"0912345678","purpose":"","cart_items":"[]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-04-29T07:16:46+00:00 POST handler invoked
+POST:{"resource_type":"equipment","space_id":"","borrow_date":"2026-04-29","start_period_code":"DN","end_period_code":"D5","phone":"0912345678","purpose":"","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-04-29T07:16:58+00:00 POST handler invoked
+POST:{"resource_type":"equipment","space_id":"","borrow_date":"2026-04-29","start_period_code":"DN","end_period_code":"D5","phone":"0912345678","purpose":"123","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-04-29T07:19:06+00:00 POST handler invoked
+POST:{"resource_type":"equipment","space_id":"","borrow_date":"2026-04-29","start_period_code":"DN","end_period_code":"D5","phone":"0912345678","purpose":"123","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-04-29T07:19:06+00:00 VALIDATION ERROR: 喊話器(充電電池*1) 借用數量超過目前可借用數量。
+POST:{"resource_type":"equipment","space_id":"","borrow_date":"2026-04-29","start_period_code":"DN","end_period_code":"D5","phone":"0912345678","purpose":"123","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-04-29T07:30:11+00:00 POST handler invoked
+POST:{"resource_type":"equipment","space_id":"204","borrow_date":"2026-04-29","start_period_code":"D7","end_period_code":"D8","phone":"0912345678","purpose":"123","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1}]"}
+FILES:{"proposal_file":{"name":"Good.docx.pdf","type":"application\/pdf","tmp_name":"...","error":0,"size":52258}}
+
+2026-04-29T07:30:35+00:00 POST handler invoked
+POST:{"resource_type":"space","space_id":"204","borrow_date":"2026-04-29","start_period_code":"D7","end_period_code":"D8","phone":"0912345678","purpose":"123","cart_items":"[]"}
+FILES:{"proposal_file":{"name":"Good.docx.pdf","type":"application\/pdf","tmp_name":"...","error":0,"size":52258}}
+

@@ -38,3 +38,53 @@ FILES:{"proposal_file":{"name":"Good.docx.pdf","type":"application\/pdf","tmp_na
 POST:{"resource_type":"equipment","space_id":"","borrow_date":"2026-04-28","start_period_code":"D7","end_period_code":"E0","phone":"0912345678","purpose":"123","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1},{\"code\":\"A10\",\"name\":\"\u96fb\u92fc\u7434\",\"quantity\":1}]"}
 FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
 
+2026-04-28T06:02:18+00:00 POST handler invoked
+POST:{"resource_type":"space","space_id":"EZ015","borrow_date":"2026-04-28","start_period_code":"D8","end_period_code":"E2","phone":"0912345678","purpose":"","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1},{\"code\":\"A10\",\"name\":\"\u96fb\u92fc\u7434\",\"quantity\":1}]"}
+FILES:{"proposal_file":{"name":"Good.docx.pdf","type":"application\/pdf","tmp_name":"...","error":0,"size":52258}}
+
+2026-04-28T06:02:21+00:00 POST handler invoked
+POST:{"resource_type":"space","space_id":"EZ015","borrow_date":"2026-04-28","start_period_code":"D8","end_period_code":"E2","phone":"0912345678","purpose":"123","cart_items":"[]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-04-28T06:02:21+00:00 EXCEPTION: 申請場地需上傳活動企劃書。
+TRACE:#0 {main}
+POST:{"resource_type":"space","space_id":"EZ015","borrow_date":"2026-04-28","start_period_code":"D8","end_period_code":"E2","phone":"0912345678","purpose":"123","cart_items":"[]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-04-28T06:02:28+00:00 POST handler invoked
+POST:{"resource_type":"space","space_id":"EZ015","borrow_date":"2026-04-28","start_period_code":"D8","end_period_code":"E2","phone":"0912345678","purpose":"123","cart_items":"[]"}
+FILES:{"proposal_file":{"name":"Good.docx.pdf","type":"application\/pdf","tmp_name":"...","error":0,"size":52258}}
+
+2026-04-28T06:07:35+00:00 POST handler invoked
+POST:{"resource_type":"equipment","space_id":"","borrow_date":"2026-04-28","start_period_code":"D6","end_period_code":"E1","phone":"0912345678","purpose":"123","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-04-28T06:09:19+00:00 POST handler invoked
+POST:{"resource_type":"space","space_id":"RA1H","borrow_date":"2026-04-28","start_period_code":"E1","end_period_code":"E2","phone":"0912345678","purpose":"123","cart_items":"[]"}
+FILES:{"proposal_file":{"name":"Good.docx.pdf","type":"application\/pdf","tmp_name":"...","error":0,"size":52258}}
+
+2026-04-28T06:14:37+00:00 POST handler invoked
+POST:{"resource_type":"equipment","space_id":"","borrow_date":"2026-04-28","start_period_code":"D6","end_period_code":"D8","phone":"0912345678","purpose":"123","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-04-28T06:15:01+00:00 POST handler invoked
+POST:{"resource_type":"space","space_id":"LE-B1-R","borrow_date":"2026-04-28","start_period_code":"E1","end_period_code":"E3","phone":"0912345678","purpose":"123","cart_items":"[]"}
+FILES:{"proposal_file":{"name":"Good.docx.pdf","type":"application\/pdf","tmp_name":"...","error":0,"size":52258}}
+
+2026-04-28T06:21:30+00:00 POST handler invoked
+POST:{"resource_type":"equipment","space_id":"","borrow_date":"2026-04-28","start_period_code":"DN","end_period_code":"E2","phone":"0912345678","purpose":"123","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1},{\"code\":\"A10\",\"name\":\"\u96fb\u92fc\u7434\",\"quantity\":1}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-04-28T06:22:00+00:00 POST handler invoked
+POST:{"resource_type":"space","space_id":"EZ003","borrow_date":"2026-04-28","start_period_code":"DN","end_period_code":"D7","phone":"0912345678","purpose":"123","cart_items":"[]"}
+FILES:{"proposal_file":{"name":"Good.docx.pdf","type":"application\/pdf","tmp_name":"...","error":0,"size":52258}}
+
+2026-04-28T06:27:14+00:00 POST handler invoked
+POST:{"resource_type":"space","space_id":"EZ003","borrow_date":"2026-04-28","start_period_code":"D2","end_period_code":"D2","phone":"0912345678","purpose":"123","cart_items":"[]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-04-28T06:27:14+00:00 EXCEPTION: 申請場地需上傳活動企劃書。
+TRACE:#0 {main}
+POST:{"resource_type":"space","space_id":"EZ003","borrow_date":"2026-04-28","start_period_code":"D2","end_period_code":"D2","phone":"0912345678","purpose":"123","cart_items":"[]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+

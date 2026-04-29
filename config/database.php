@@ -36,7 +36,7 @@ function getDatabaseConnectionCandidates(): array
     if ($envHost !== null || $envPort !== null || $envDatabase !== null || $envUser !== null || $envPassword !== null) {
         $candidates[] = [
             'host' => $envHost ?? '127.0.0.1',
-            'port' => $envPort !== null ? (int)$envPort : 3307,
+            'port' => $envPort !== null ? (int)$envPort : 3306,
             'database' => $envDatabase ?? 'borrowing_system',
             'username' => $envUser ?? 'root',
             'password' => $envPassword ?? '',
@@ -45,7 +45,7 @@ function getDatabaseConnectionCandidates(): array
 
     $candidates[] = [
         'host' => '127.0.0.1',
-        'port' => 3307,
+        'port' => 3306,
         'database' => 'borrowing_system',
         'username' => 'root',
         'password' => '',
@@ -61,7 +61,7 @@ function getDatabaseConnectionCandidates(): array
 
     $candidates[] = [
         'host' => 'localhost',
-        'port' => 3307,
+        'port' => 3306,
         'database' => 'borrowing_system',
         'username' => 'root',
         'password' => '',

@@ -867,9 +867,53 @@ SQL;
     <link rel="stylesheet" href="styles.css?v=<?php echo time(); ?>">
     <style>
         /* 避免快取問題，在此處再次宣告必要的樣式 */
+        
+        /* 增強互動性與動態效果 */
+        *:not(i):not(svg) { transition: color 0.15s, background-color 0.15s, border-color 0.15s, box-shadow 0.15s !important; }
+        .card.borrow-form-card {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03); 
+            transition: transform 0.3s ease, box-shadow 0.3s ease !important;
+        }
+        .card.borrow-form-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        
+        /* 表單元素焦點效果 */
+        input[type="text"], input[type="date"], input[type="number"], select, textarea {
+            transition: all 0.2s ease !important;
+        }
+        input[type="text"]:focus, input[type="date"]:focus, input[type="number"]:focus, select:focus, textarea:focus {
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3) !important;
+            border-color: #3b82f6 !important;
+            transform: translateY(-1px);
+        }
+        
+        /* 按鈕互動 */
+        .btn-primary, .btn-secondary {
+            transition: all 0.2s ease !important;
+            position: relative;
+            overflow: hidden;
+        }
+        .btn-primary:hover, .btn-secondary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .btn-primary:active, .btn-secondary:active {
+            transform: translateY(0);
+        }
+
+        .nav-btn {
+            transition: all 0.2s ease !important;
+        }
+        .nav-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            color: #3b82f6;
+        }
+
         .equipment-selector-container {
             display: flex; gap: 20px; border: 1px solid #ddd;
-            border-radius: 8px; padding: 20px; background: #f2f4f6;
+            border-radius: 8px; padding: 20px; background: #f8fafc;
             align-items: stretch; margin-bottom: 20px;
         }
         @media (max-width: 900px) {
@@ -877,20 +921,31 @@ SQL;
             .es-left, .es-right { height: auto !important; min-height: 400px; }
         }
         .es-left {
-            flex: 1.6; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
-            height: 600px; display: flex; flex-direction: column; width: 100%; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            flex: 1.6; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+            height: 600px; display: flex; flex-direction: column; width: 100%; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+            transition: box-shadow 0.3s ease !important;
         }
+        .es-left:hover { box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+        
         .es-right {
-            flex: 1; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
-            height: 600px; display: flex; flex-direction: column; width: 100%; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            flex: 1; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+            height: 600px; display: flex; flex-direction: column; width: 100%; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+            transition: box-shadow 0.3s ease !important;
         }
+        .es-right:hover { box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+        
         .es-title { padding: 15px; font-weight: bold; border-bottom: 1px solid #e2e8f0; background: #fff; color: #333; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
         .es-search { padding: 10px 15px; border-bottom: 1px solid #e2e8f0; background: #fff; flex-shrink: 0; }
-        .es-search input { width: 100%; padding: 10px 15px; border: 1px solid #ccc; border-radius: 20px; outline: none; font-size: 14px; }
-        .es-list { flex: 1; overflow-y: auto; margin: 0; padding: 15px; list-style: none; background: #f8fafc !important; }
-        .es-item { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-        .es-item-header { display: flex; align-items: center; justify-content: space-between; padding: 15px; cursor: pointer; transition: background 0.2s; min-height: 70px; }
-        .es-item-header:hover { background: #f8fafc; }
+        .es-search input { width: 100%; padding: 10px 15px; border: 1px solid #ccc; border-radius: 20px; outline: none; font-size: 14px; transition: box-shadow 0.2s, border-color 0.2s !important; }
+        .es-search input:focus { box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2) !important; border-color: #3b82f6; }
+        
+        .es-list { flex: 1; overflow-y: auto; margin: 0; padding: 15px; list-style: none; background: #f8fafc !important; scroll-behavior: smooth; }
+        
+        .es-item { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: transform 0.2s ease, box-shadow 0.2s ease !important; }
+        .es-item:hover { transform: translateY(-3px); box-shadow: 0 8px 12px -3px rgba(0,0,0,0.1); border-color: #cbd5e1; }
+        
+        .es-item-header { display: flex; align-items: center; justify-content: space-between; padding: 15px; cursor: pointer; transition: background 0.2s; min-height: 70px; border-radius: 10px; }
+        .es-item-header:hover { background: #f1f5f9; }
         .es-item-info { display: flex; align-items: flex-start; gap: 15px; flex: 1; min-width: 0; }
         .es-item-icon { width: 40px; height: 40px; border-radius: 8px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 20px; flex-shrink: 0; }
         .es-item-name-block { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
@@ -900,15 +955,25 @@ SQL;
         .es-btn-invite:hover:not(:disabled) { background: #dbeafe; }
         .es-btn-invite:disabled { background: #f8fafc; color: #94a3b8; cursor: not-allowed; border-color: #e2e8f0; }
         .es-item-body { display: none; padding: 15px; background: #f8f9fa; border-top: 1px dashed #eee; font-size: 14px; }
-        .es-item-body.active { display: block; animation: fadeIn 0.2s ease-in-out; }
+        .es-item-body.active { display: block; animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1); border-radius: 0 0 10px 10px; }
+        
+        @keyframes slideDown {
+            0% { opacity: 0; transform: translateY(-10px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeIn {
+            0% { opacity: 0; }
+            100% { opacity: 1; }
+        }
         .es-item-details { display: flex; justify-content: space-between; margin-bottom: 15px; color: #666; font-weight: bold; }
         .es-item-action { display: flex; gap: 10px; align-items: center; }
         .es-item-action input[type="number"] { width: 70px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
         button.es-btn-add { background: #3b82f6; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 500; font-size: 14px; transition: background 0.2s; width: 100% !important; margin-left: 0; }
         button.es-btn-add:hover { background: #2563eb; }
-        .es-right-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid #eee; }
-        button.es-btn-remove { color: #ef4444; background: none; border: none; cursor: pointer; font-size: 14px; padding: 5px 10px; width: auto !important; }
-        button.es-btn-remove:hover { text-decoration: underline; color: #b91c1c; }
+        .es-right-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid #eee; transition: all 0.2s ease !important; border-radius: 8px; margin-bottom: 5px; }
+        .es-right-item:hover { background-color: #f1f5f9; transform: translateX(5px); }
+        button.es-btn-remove { color: #ef4444; background: none; border: none; cursor: pointer; font-size: 14px; padding: 5px 10px; width: auto !important; transition: all 0.2s ease; border-radius: 6px; }
+        button.es-btn-remove:hover { background-color: rgba(239, 68, 68, 0.1); color: #b91c1c; }
         .cart-header { display: flex; justify-content: space-between; padding: 10px 12px; font-weight: bold; color: #64748b; border-bottom: 2px solid #e2e8f0; margin-bottom: 10px; }
         .cart-row { display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 10px; }
         .cart-col-name { flex: 2; font-weight: 500; color: #333; font-size: 14px; }

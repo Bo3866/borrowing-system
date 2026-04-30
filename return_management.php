@@ -71,6 +71,19 @@ if ($dbError === '') {
         }
     }
 
+    // 自動遷移：確保 rejection_reason 欄位存在
+    if ($dbError === '') {
+        try {
+            if (!in_array('rejection_reason', $reservationColumns, true)) {
+                $migrationSql = 'ALTER TABLE reservations ADD COLUMN rejection_reason VARCHAR(500) NULL COMMENT "拒絕原因"';
+                mysqli_query($link, $migrationSql);
+                $reservationColumns[] = 'rejection_reason';
+            }
+        } catch (Throwable $e) {
+            // 忽略列已存在錯誤
+        }
+    }
+
     // 報到狀態：使用 checkin_logs（無需再查 pickup 欄位）
     // 歸還狀態：使用 returned_at 欄位
 
@@ -217,7 +230,8 @@ if ($dbError === '') {
     }
 
     if ($dbError === '') {
-        $listWhere = "r.approval_status = 'approved'";
+        // 顯示所有申請狀態（待審、已批准、已拒絕）
+        $listWhere = "r.approval_status IN ('pending', 'approved', 'rejected')";
         $safeUserId = mysqli_real_escape_string($link, $currentUserId);
         $listWhere .= " AND r.`{$applicantColumn}` = '{$safeUserId}'";
 
@@ -233,6 +247,9 @@ if ($dbError === '') {
                 r.`{$borrowStartColumn}` AS borrow_start_at,
                 r.`{$borrowEndColumn}` AS borrow_end_at,
                 r.approval_status,
+                r.rejection_reason,
+                r.submitted_at,
+                r.updated_at,
                 (cl.checked_in_at IS NOT NULL) AS pickup_confirmed,
                 cl.checked_in_at AS pickup_confirmed_at,
                 (r.returned_at IS NOT NULL) AS return_confirmed,
@@ -309,6 +326,7 @@ if ($dbError === '') {
                         <table class="management-table return-management-table">
                             <thead>
                                 <tr>
+                                    <th style="width: 30px;"></th>
                                     <th>申請人</th>
                                     <th>借用時段</th>
                                     <th>借用項目</th>
@@ -318,7 +336,7 @@ if ($dbError === '') {
                             </thead>
                             <tbody>
                                 <?php if (count($rows) === 0) { ?>
-                                    <tr><td colspan="5">目前沒有可顯示的申請資料。</td></tr>
+                                    <tr><td colspan="6">目前沒有可顯示的申請資料。</td></tr>
                                 <?php } else { ?>
                                     <?php foreach ($rows as $row) { ?>
                                         <?php
@@ -332,8 +350,29 @@ if ($dbError === '') {
                                             $resourceText = count($resourceParts) > 0 ? implode(' | ', $resourceParts) : '-';
                                             $isPickup = (int)$row['pickup_confirmed'] === 1;
                                             $isReturned = (int)$row['return_confirmed'] === 1;
+                                            $approvalStatus = (string)$row['approval_status'];
+                                            
+                                            // 根據批准狀態與報到狀態計算進度：1=申請送出 2=審核中 3=使用中 4=已歸還
+                                            if ($approvalStatus === 'rejected') {
+                                                $progressStatus = 0;  // 已拒絕
+                                            } elseif ($approvalStatus === 'pending') {
+                                                $progressStatus = 1;  // 待審核
+                                            } elseif ($approvalStatus === 'approved') {
+                                                if ($isReturned) {
+                                                    $progressStatus = 4;  // 已歸還
+                                                } elseif ($isPickup) {
+                                                    $progressStatus = 3;  // 使用中
+                                                } else {
+                                                    $progressStatus = 2;  // 審核中（已批准但未報到）
+                                                }
+                                            } else {
+                                                $progressStatus = 1;  // 預設
+                                            }
                                         ?>
-                                        <tr>
+                                        <tr class="accordion-trigger" onclick="toggleAccordion(this, <?php echo (int)$row['reservation_id']; ?>)">
+                                            <td style="text-align: center; cursor: pointer;">
+                                                <span class="accordion-icon">▶</span>
+                                            </td>
                                             <td>
                                                 <?php echo htmlspecialchars($row['full_name'] . ' (' . $row['applicant_user_id'] . ')', ENT_QUOTES, 'UTF-8'); ?><br>
                                                 <small><?php echo htmlspecialchars((string)$row['email'], ENT_QUOTES, 'UTF-8'); ?></small>
@@ -367,11 +406,76 @@ if ($dbError === '') {
                                                         <br><small>時間: <?php echo htmlspecialchars((string)$returnTime, ENT_QUOTES, 'UTF-8'); ?></small>
                                                     <?php } elseif ($isPickup) { ?>
                                                     <br>
-                                                    <form method="post" style="margin-top: 8px;">
+                                                    <form method="post" style="margin-top: 8px;" onclick="event.stopPropagation();">
                                                         <input type="hidden" name="action" value="confirm_return">
                                                         <input type="hidden" name="reservation_id" value="<?php echo (int)$row['reservation_id']; ?>">
                                                             <button type="submit" class="btn-secondary" style="font-size: 12px; padding: 4px 12px;" onclick="return confirm('確認此申請已歸還或離場？')">確認歸還／離場</button>
                                                     </form>
+                                                <?php } ?>
+                                            </td>
+                                        </tr>
+                                        <!-- 展開式進度條 -->
+                                        <tr class="accordion-content" id="accordion-<?php echo (int)$row['reservation_id']; ?>" style="display: none;">
+                                            <td colspan="6">
+                                                <div class="stepper-simple" data-status="<?php echo $progressStatus; ?>" data-approval="<?php echo htmlspecialchars($approvalStatus, ENT_QUOTES, 'UTF-8'); ?>">
+                                                    <div class="stepper-track">
+                                                        <div class="stepper-step" data-step="1">
+                                                            <div class="stepper-dot"></div>
+                                                            <div class="stepper-time">
+                                                                <span class="stepper-text">申請送出</span>
+                                                                <span class="stepper-timestamp"><?php echo htmlspecialchars((string)$row['submitted_at'], ENT_QUOTES, 'UTF-8'); ?></span>
+                                                            </div>
+                                                        </div>
+                                                        <div class="stepper-line"></div>
+                                                        
+                                                        <div class="stepper-step" data-step="2">
+                                                            <div class="stepper-dot"></div>
+                                                            <div class="stepper-time">
+                                                                <span class="stepper-text approval-text">
+                                                                    <?php 
+                                                                        if ($approvalStatus === 'pending') {
+                                                                            echo '審核中';
+                                                                        } elseif ($approvalStatus === 'approved') {
+                                                                            echo '審核通過';
+                                                                        } elseif ($approvalStatus === 'rejected') {
+                                                                            echo '審核未通過';
+                                                                        }
+                                                                    ?>
+                                                                </span>
+                                                                <span class="stepper-timestamp"><?php echo htmlspecialchars((string)$row['updated_at'], ENT_QUOTES, 'UTF-8'); ?></span>
+                                                            </div>
+                                                        </div>
+                                                        <div class="stepper-line"></div>
+                                                        
+                                                        <div class="stepper-step" data-step="3">
+                                                            <div class="stepper-dot"></div>
+                                                            <div class="stepper-time">
+                                                                <span class="stepper-text">使用中</span>
+                                                                <span class="stepper-timestamp"><?php echo $row['pickup_confirmed_at'] ? htmlspecialchars((string)$row['pickup_confirmed_at'], ENT_QUOTES, 'UTF-8') : '-'; ?></span>
+                                                            </div>
+                                                        </div>
+                                                        <div class="stepper-line"></div>
+                                                        
+                                                        <div class="stepper-step" data-step="4">
+                                                            <div class="stepper-dot"></div>
+                                                            <div class="stepper-time">
+                                                                <span class="stepper-text">已歸還</span>
+                                                                <span class="stepper-timestamp"><?php echo $row['return_confirmed_at'] ? htmlspecialchars((string)$row['return_confirmed_at'], ENT_QUOTES, 'UTF-8') : '-'; ?></span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                
+                                                <?php if ($approvalStatus === 'rejected' && !empty($row['rejection_reason'])) { ?>
+                                                    <div class="rejection-alert">
+                                                        <div class="rejection-alert-header">
+                                                            <span class="rejection-icon">⚠</span>
+                                                            <strong>拒絕原因</strong>
+                                                        </div>
+                                                        <div class="rejection-alert-content">
+                                                            <?php echo htmlspecialchars($row['rejection_reason'], ENT_QUOTES, 'UTF-8'); ?>
+                                                        </div>
+                                                    </div>
                                                 <?php } ?>
                                             </td>
                                         </tr>
@@ -384,5 +488,105 @@ if ($dbError === '') {
             </section>
         </main>
     </div>
+
+    <script>
+        /**
+         * 展開/收起 Accordion 進度條
+         */
+        function toggleAccordion(row, reservationId) {
+            const accordion = document.getElementById(`accordion-${reservationId}`);
+            const icon = row.querySelector('.accordion-icon');
+            
+            // 關閉其他已開啟的 accordion
+            document.querySelectorAll('.accordion-content').forEach(item => {
+                if (item.id !== `accordion-${reservationId}`) {
+                    item.style.display = 'none';
+                    const otherRow = item.previousElementSibling;
+                    if (otherRow && otherRow.querySelector('.accordion-icon')) {
+                        otherRow.querySelector('.accordion-icon').textContent = '▶';
+                    }
+                }
+            });
+            
+            // 切換當前 accordion
+            if (accordion.style.display === 'none') {
+                accordion.style.display = 'table-row';
+                icon.textContent = '▼';
+                accordion.classList.add('show');
+            } else {
+                accordion.style.display = 'none';
+                icon.textContent = '▶';
+                accordion.classList.remove('show');
+            }
+            
+            // 初始化進度條
+            const stepper = accordion.querySelector('.stepper-simple');
+            if (stepper) {
+                updateStepper(stepper);
+            }
+        }
+        
+        /**
+         * 更新進度條視覺狀態
+         */
+        function updateStepper(stepper) {
+            const status = parseInt(stepper.getAttribute('data-status'));
+            const approval = stepper.getAttribute('data-approval');
+            const dots = stepper.querySelectorAll('.stepper-dot');
+            const lines = stepper.querySelectorAll('.stepper-line');
+            const approvalText = stepper.querySelector('.approval-text');
+            
+            // 先清除所有樣式
+            dots.forEach(dot => {
+                dot.classList.remove('active', 'rejected', 'pending', 'approved');
+            });
+            lines.forEach(line => {
+                line.classList.remove('active', 'rejected');
+            });
+            
+            // 第1步：始終完成（藍色✓ - 申請送出）
+            dots[0].classList.add('active');
+            
+            if (approval === 'pending') {
+                // 待審核：第1步完成，第2步為藍色圓點（閃爍）
+                dots[1].classList.add('pending');
+                lines[0].classList.add('active');
+                
+                // 更新審核文字顏色為藍色
+                if (approvalText) {
+                    approvalText.style.color = '#3498db';
+                }
+            } else if (approval === 'approved') {
+                // 審核通過：第1、2步完成（綠色✓），可能往第3、4步進行
+                dots[1].classList.add('approved');
+                lines[0].classList.add('approved');
+                
+                // 根據進度繼續點亮後續節點
+                if (status >= 3) {
+                    dots[2].classList.add('active');
+                    lines[1].classList.add('active');
+                }
+                if (status >= 4) {
+                    dots[3].classList.add('active');
+                }
+                
+                // 更新審核文字顏色為綠色
+                if (approvalText) {
+                    approvalText.style.color = '#27ae60';
+                }
+            } else if (approval === 'rejected') {
+                // 審核未通過：第1步完成，第2步為紅色✕
+                dots[1].classList.add('rejected');
+                lines[0].classList.add('rejected');
+                
+                // 第3、4步保持灰色失焦
+                
+                // 更新審核文字顏色為紅色
+                if (approvalText) {
+                    approvalText.style.color = '#e74c3c';
+                }
+            }
+        }
+    </script>
 </body>
 </html>

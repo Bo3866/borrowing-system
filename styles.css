@@ -1381,4 +1381,277 @@ h3 {
     text-decoration: underline;
 }
 
+/* ===== 簡化進度條 Styles ===== */
+.accordion-trigger {
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.accordion-trigger:hover {
+    background-color: #f8fafc !important;
+}
+
+.accordion-icon {
+    display: inline-block;
+    transition: transform 0.3s ease;
+    font-size: 14px;
+    width: 20px;
+    text-align: center;
+}
+
+.accordion-content {
+    background: #fafbfc;
+    border-top: 1px solid #e8eef5;
+    border-bottom: 1px solid #e8eef5;
+    animation: slideDown 0.25s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        max-height: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        max-height: 200px;
+        transform: translateY(0);
+    }
+}
+
+/* 簡化進度條容器 */
+.stepper-simple {
+    padding: 1.2rem 1rem;
+}
+
+.stepper-track {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0;
+}
+
+.stepper-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    position: relative;
+    z-index: 2;
+}
+
+/* 進度點 */
+.stepper-dot {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background-color: #bdc3c7;
+    border: 2px solid white;
+    box-shadow: 0 0 0 1px #bdc3c7;
+    margin-bottom: 0.5rem;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: bold;
+    color: white;
+}
+
+/* 完成狀態：藍色✓ */
+.stepper-dot.active {
+    background-color: #3498db;
+    box-shadow: 0 0 0 1px #3498db;
+}
+
+.stepper-dot.active::before {
+    content: '✓';
+}
+
+/* 待審核狀態：藍色圓點 */
+.stepper-dot.pending {
+    background-color: #3498db;
+    box-shadow: 0 0 0 1px #3498db;
+    animation: pending-blink 1.5s ease-in-out infinite;
+}
+
+@keyframes pending-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* 審核通過狀態：綠色✓ */
+.stepper-dot.approved {
+    background-color: #27ae60;
+    box-shadow: 0 0 0 1px #27ae60;
+}
+
+.stepper-dot.approved::before {
+    content: '✓';
+    color: white;
+}
+
+/* 審核未通過狀態：紅色✕ */
+.stepper-dot.rejected {
+    background-color: #e74c3c !important;
+    box-shadow: 0 0 0 1px #e74c3c !important;
+    color: white !important;
+}
+
+.stepper-dot.rejected::before {
+    content: '✕';
+    font-weight: 900;
+    color: white;
+}
+
+/* 進度文字和時間 */
+.stepper-time {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.stepper-text {
+    font-size: 0.8rem;
+    color: #2c3e50;
+    font-weight: 500;
+    text-align: center;
+}
+
+.stepper-timestamp {
+    font-size: 0.7rem;
+    color: #7f8c8d;
+    margin-top: 0.2rem;
+}
+
+/* 連接線 */
+.stepper-line {
+    flex: 1;
+    height: 2px;
+    background-color: #bdc3c7;
+    margin: 0 0.3rem 1.5rem 0;
+    transition: background-color 0.3s ease;
+    position: relative;
+    top: -1rem;
+}
+
+/* 完成狀態連接線：藍色 */
+.stepper-line.active {
+    background-color: #3498db;
+}
+
+/* 審核通過狀態連接線：綠色 */
+.stepper-line.approved {
+    background-color: #27ae60;
+}
+
+/* 審核未通過狀態連接線：紅色 */
+.stepper-line.rejected {
+    background-color: #e74c3c;
+}
+
+/* 拒絕提示框 */
+.rejection-alert {
+    margin-top: 1.2rem;
+    padding: 0.9rem 1rem;
+    background-color: #fadbd8;
+    border-left: 4px solid #e74c3c;
+    border-radius: 4px;
+}
+
+.rejection-alert-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.6rem;
+    font-weight: 600;
+    color: #c0392b;
+}
+
+.rejection-icon {
+    font-size: 1.1rem;
+}
+
+.rejection-alert-content {
+    color: #922b21;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+/* 響應式設計 */
+@media (max-width: 1024px) {
+    .stepper-dot {
+        width: 22px;
+        height: 22px;
+    }
+    
+    .stepper-text {
+        font-size: 0.75rem;
+    }
+    
+    .stepper-simple {
+        padding: 1rem 0.8rem;
+    }
+}
+
+@media (max-width: 768px) {
+    .stepper-track {
+        flex-direction: column;
+        gap: 0;
+        align-items: flex-start;
+    }
+    
+    .stepper-step {
+        flex-direction: row;
+        align-items: flex-start;
+        gap: 0.75rem;
+        width: 100%;
+        margin-bottom: 0.5rem;
+    }
+    
+    .stepper-dot {
+        width: 20px;
+        height: 20px;
+        min-width: 20px;
+        margin-bottom: 0;
+        flex-shrink: 0;
+    }
+    
+    .stepper-time {
+        align-items: flex-start;
+    }
+    
+    .stepper-text {
+        text-align: left;
+        font-size: 0.75rem;
+    }
+    
+    .stepper-timestamp {
+        text-align: left;
+        font-size: 0.65rem;
+    }
+    
+    .stepper-line {
+        display: none;
+    }
+    
+    .stepper-simple {
+        padding: 1rem 0.75rem;
+    }
+    
+    .rejection-alert {
+        margin-top: 1rem;
+        padding: 0.8rem 0.9rem;
+    }
+    
+    .rejection-alert-header {
+        font-size: 0.9rem;
+    }
+    
+    .rejection-alert-content {
+        font-size: 0.85rem;
+    }
+}
+
 

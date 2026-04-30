@@ -26,12 +26,6 @@ if (!in_array($currentRole, ['2', '3'], true)) {
     exit;
 }
 
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system', 3306);
-if (!$link) {
-    $dbError = '資料庫連線失敗：' . mysqli_connect_error();
-} else {
-    mysqli_set_charset($link, 'utf8mb4');
-}
 $dbError = '';
 $link = getMysqliConnection($dbError);
 

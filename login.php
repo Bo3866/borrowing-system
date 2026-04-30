@@ -26,7 +26,6 @@ $loginError = '';
 $userId = '';
 $password = '';
 
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system',3306);
 $dbError = '';
 $link = getMysqliConnection($dbError);
 

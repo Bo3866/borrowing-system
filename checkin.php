@@ -29,15 +29,8 @@ if ($incomingQrToken === '' && isset($_SESSION['pending_checkin_qr'])) {
 }
 unset($_SESSION['pending_checkin_qr']);
 
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system',3306
-
-);
 $dbError = '';
-if (!$link) {
-    $dbError = '資料庫連線失敗：' . mysqli_connect_error();
-} else {
-    mysqli_set_charset($link, 'utf8mb4');
-}
+$link = getMysqliConnection($dbError);
 
 function pickExistingColumn(array $columns, array $candidates): ?string
 {

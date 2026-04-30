@@ -57,7 +57,6 @@ $periodSlots = [
 ];
 $periodOrder = array_keys($periodSlots);
 
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system',3306);
 $dbError = '';
 $link = getMysqliConnection($dbError);
 

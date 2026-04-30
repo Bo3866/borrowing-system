@@ -1,6 +1,31 @@
 ﻿<?php
 session_start();
 
+function getEquipmentIcon($name) {
+    if (mb_strpos($name, '麥克風') !== false) return '🎤';
+    if (mb_strpos($name, '擴音') !== false || mb_strpos($name, '音響') !== false || mb_strpos($name, '喊話器') !== false) return '🔊';
+    if (mb_strpos($name, '相機') !== false || mb_strpos($name, '攝影機') !== false) return '📷';
+    if (mb_strpos($name, '腳架') !== false) return '🔭';
+    if (mb_strpos($name, '布幕') !== false || mb_strpos($name, '投影') !== false) return '📽️';
+    if (mb_strpos($name, '鋼琴') !== false) return '🎹';
+    if (mb_strpos($name, '看板') !== false) return '📋';
+    if (mb_strpos($name, '桌') !== false) return '🪚';
+    if (mb_strpos($name, '椅') !== false) return '🪑';
+    if (mb_strpos($name, '帳') !== false) return '⛺';
+    if (mb_strpos($name, '警示') !== false || mb_strpos($name, '交通') !== false) return '🚧';
+    if (mb_strpos($name, '旗') !== false) return '🚩';
+    if (mb_strpos($name, '燈') !== false) return '💡';
+    if (mb_strpos($name, '對講機') !== false) return '📻';
+    if (mb_strpos($name, '電') !== false || mb_strpos($name, '線') !== false) return '🔌';
+    if (mb_strpos($name, '睡袋') !== false) return '🛌';
+    if (mb_strpos($name, '茶桶') !== false) return '🫖';
+    return '📦';
+}
+
+function getSpaceIcon($name) {
+    return '📍';
+}
+
 require_once __DIR__ . '/config/database.php';
 
 if (!isset($_SESSION['user_id'])) {
@@ -203,10 +228,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['purpose'] = trim((string)($_POST['purpose'] ?? ''));
     $formData['phone'] = trim((string)($_POST['phone'] ?? ''));
 
+    $cartEquipments = [];
+    $cartSpaceId = null;
+
+    foreach ($cartItems as $item) {
+        if (isset($item['type']) && $item['type'] === 'space') {
+            $cartSpaceId = trim((string)$item['code']);
+        } else {
+            $cartEquipments[] = $item;
+        }
+    }
+    $formData['cartEquipments'] = $cartEquipments;
+    $formData['space_id'] = $cartSpaceId ?? '';
+
     if ($dbError !== '') {
         $borrowError = $dbError;
-    } elseif (!in_array($formData['resource_type'], ['equipment', 'space'], true)) {
-        $borrowError = '請選擇有效的借用類型。';
+    } elseif (empty($cartEquipments) && empty($formData['space_id'])) {
+        $borrowError = '請選擇至少一項器材或一個場地。';
     } else {
         // 先計算借用時間（用於後續驗證）
         $borrowStartAtSql = '';
@@ -235,28 +273,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $selectedSpace = null;
         $borrowQuantity = 1;
 
-        if ($formData['resource_type'] === 'equipment') {
-            if (empty($cartItems)) {
-                $borrowError = '請選擇至少一項器材且填寫數量。';
-            } else {
-                $certificateCheckSql = "
-                    SELECT 1
-                    FROM equipment_certificates
-                    WHERE holder_id = ?
-                      AND validity_status = 'valid'
-                      AND CURDATE() <= valid_until
-                ";
-                $certStmt = mysqli_prepare($link, $certificateCheckSql);
-                mysqli_stmt_bind_param($certStmt, 's', $userId);
-                mysqli_stmt_execute($certStmt);
-                $certResult = mysqli_stmt_get_result($certStmt);
-                $hasValidCertificate = mysqli_num_rows($certResult) > 0;
-                mysqli_stmt_close($certStmt);
+        if (!empty($cartEquipments) && $borrowError === '') {
+            $certificateCheckSql = "
+                SELECT 1
+                FROM equipment_certificates
+                WHERE holder_id = ?
+                  AND validity_status = 'valid'
+                  AND CURDATE() <= valid_until
+            ";
+            $certStmt = mysqli_prepare($link, $certificateCheckSql);
+            mysqli_stmt_bind_param($certStmt, 's', $userId);
+            mysqli_stmt_execute($certStmt);
+            $certResult = mysqli_stmt_get_result($certStmt);
+            $hasValidCertificate = mysqli_num_rows($certResult) > 0;
+            mysqli_stmt_close($certStmt);
 
-                if (!$hasValidCertificate) {
-                    $borrowError = '您沒有有效的器材證照，無法借用器材。';
-                } else {
-                    foreach ($cartItems as $item) {
+            if (!$hasValidCertificate) {
+                $borrowError = '您沒有有效的器材證照，無法借用器材。';
+            } else {
+                foreach ($cartEquipments as $item) {
                         $cCode = $item['code'] ?? '';
                         $cQty = (int)($item['quantity'] ?? 0);
                         if (!isset($equipmentMap[$cCode])) {
@@ -342,8 +377,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
             }
-        } else {
-                if (!isset($spaceMap[$formData['space_id']])) {
+        }
+        
+        if (!empty($formData['space_id']) && $borrowError === '') {
+            if (!isset($spaceMap[$formData['space_id']])) {
                 $borrowError = '請選擇有效的空間項目。';
             } else {
                 $selectedSpace = $spaceMap[$formData['space_id']];
@@ -535,7 +572,7 @@ SQL;
                 $proposalFileForSpace = null;
                 $proposalUploadedAtForSpace = null;
 
-                if ($formData['resource_type'] === 'equipment') {
+                if (!empty($cartEquipments)) {
                     $stockCheckStmt = mysqli_prepare(
                         $link,
                         'SELECT COUNT(*) AS available_count FROM equipments WHERE equipment_code = ? AND operation_status = 1 FOR UPDATE'
@@ -574,7 +611,7 @@ SQL;
                     }
 
                     // 針對購物車內【每一個器材項目】建立各自獨立的預約單 (reservation)
-                    foreach ($cartItems as $item) {
+                    foreach ($cartEquipments as $item) {
                         $cCode = $item['code'];
                         $cQty = (int)$item['quantity'];
 
@@ -652,8 +689,9 @@ SQL;
                     mysqli_stmt_close($selectEquipmentStmt);
                     mysqli_stmt_close($reservationItemStmt);
                     mysqli_stmt_close($updateEquipmentStatusStmt);
+                }
 
-                } else {
+                if (!empty($formData['space_id'])) {
                     // 若為申請空間且有上傳企劃書，處理上傳並更新 reservations
                     if (!isset($_FILES['proposal_file']) || $_FILES['proposal_file']['error'] === UPLOAD_ERR_NO_FILE) {
                         throw new RuntimeException('申請場地需上傳活動企劃書。');
@@ -798,20 +836,11 @@ SQL;
                     mysqli_stmt_close($userEmailStmt);
                 }
                 // ------------------------------
-                $formData = [
-                    'resource_type' => 'equipment',
-                    'equipment_code' => '',
-                    'space_id' => '',
-                    'borrow_quantity' => '1',
-                    'borrow_date' => '',
-                    'start_period_code' => '',
-                    'end_period_code' => '',
-                    'purpose' => '',
-                    'phone' => $userPhone,
-                ];
+                $formData['phone'] = $userPhone;
 
-                if ($submittedResourceType === 'equipment' && $selectedEquipment !== null) {
-                    $selectedCode = (string)$selectedEquipment['equipment_code'];
+                foreach ($cartEquipments as $item) {
+                    $selectedCode = (string)$item['code'];
+                    $borrowQuantity = (int)$item['quantity'];
                     if (isset($equipmentMap[$selectedCode])) {
                         $equipmentMap[$selectedCode]['available_quantity'] -= $borrowQuantity;
                         if ($equipmentMap[$selectedCode]['available_quantity'] < 0) {
@@ -829,7 +858,6 @@ SQL;
             }
         }
     }
-}
 ?>
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -843,37 +871,50 @@ SQL;
         .equipment-selector-container {
             display: flex; gap: 20px; border: 1px solid #ddd;
             border-radius: 8px; padding: 20px; background: #f2f4f6;
-            align-items: flex-start; margin-bottom: 20px;
+            align-items: stretch; margin-bottom: 20px;
         }
         @media (max-width: 900px) {
             .equipment-selector-container { flex-direction: column; }
+            .es-left, .es-right { height: auto !important; min-height: 400px; }
         }
-        .es-left, .es-right {
-            flex: 1; background: transparent; border: none;
-            min-height: 480px; display: flex; flex-direction: column; width: 100%;
+        .es-left {
+            flex: 1.6; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+            height: 600px; display: flex; flex-direction: column; width: 100%; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }
-        .es-title { padding: 15px; font-weight: bold; border-bottom: 1px solid #eee; color: #333; display: flex; align-items: center; gap: 10px; }
-        .es-search { padding: 10px 15px; border-bottom: 1px solid #eee; }
+        .es-right {
+            flex: 1; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+            height: 600px; display: flex; flex-direction: column; width: 100%; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .es-title { padding: 15px; font-weight: bold; border-bottom: 1px solid #e2e8f0; background: #fff; color: #333; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+        .es-search { padding: 10px 15px; border-bottom: 1px solid #e2e8f0; background: #fff; flex-shrink: 0; }
         .es-search input { width: 100%; padding: 10px 15px; border: 1px solid #ccc; border-radius: 20px; outline: none; font-size: 14px; }
-        .es-list { flex: 1; overflow-y: auto; max-height: 380px; margin: 0; padding: 0; list-style: none; }
-        .es-item { border-bottom: 1px solid #f5f5f5; }
-        .es-item-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; transition: background 0.2s; }
-        .es-item-header:hover { background: #fafafa; }
-        .es-item-name { font-size: 15px; color: #444; }
-        .es-btn-invite { background: #e2e8f0; color: #334155; border: 1px solid #cbd5e1; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; transition: all 0.2s; }
-        .es-btn-invite:hover:not(:disabled) { background: #cbd5e1; }
-        .es-btn-invite:disabled { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; border-color: #e2e8f0; }
+        .es-list { flex: 1; overflow-y: auto; margin: 0; padding: 15px; list-style: none; background: #f8fafc !important; }
+        .es-item { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .es-item-header { display: flex; align-items: center; justify-content: space-between; padding: 15px; cursor: pointer; transition: background 0.2s; min-height: 70px; }
+        .es-item-header:hover { background: #f8fafc; }
+        .es-item-info { display: flex; align-items: flex-start; gap: 15px; flex: 1; min-width: 0; }
+        .es-item-icon { width: 40px; height: 40px; border-radius: 8px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 20px; flex-shrink: 0; }
+        .es-item-name-block { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+        .es-item-title { font-weight: bold; font-size: 16px; color: #1e293b; line-height: 1.3;}
+        .es-item-subtitle { font-size: 13px; color: #64748b; display: flex; flex-direction: column; gap: 4px; line-height: 1.3; }
+        button.es-btn-invite { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; padding: 6px 0; width: 75px !important; text-align: center; border-radius: 6px; font-weight: 500; font-size: 14px; transition: all 0.2s; white-space: nowrap; flex-shrink: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; margin-left: 15px; }
+        .es-btn-invite:hover:not(:disabled) { background: #dbeafe; }
+        .es-btn-invite:disabled { background: #f8fafc; color: #94a3b8; cursor: not-allowed; border-color: #e2e8f0; }
         .es-item-body { display: none; padding: 15px; background: #f8f9fa; border-top: 1px dashed #eee; font-size: 14px; }
         .es-item-body.active { display: block; animation: fadeIn 0.2s ease-in-out; }
         .es-item-details { display: flex; justify-content: space-between; margin-bottom: 15px; color: #666; font-weight: bold; }
         .es-item-action { display: flex; gap: 10px; align-items: center; }
         .es-item-action input[type="number"] { width: 70px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
-        .es-btn-add { background: #10b981; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: normal; font-size: 13px; transition: background 0.2s; }
-        .es-btn-add:hover { background: #059669; }
-        .es-right-item { display: flex; justify-content: space-between; align-items: center; padding: 15px; border-bottom: 1px solid #eee; }
-        .es-right-item-text { font-size: 15px; color: #333; }
-        .es-btn-remove { color: #e74c3c; background: none; border: none; cursor: pointer; font-size: 14px; padding: 5px 10px; }
-        .es-btn-remove:hover { text-decoration: underline; }
+        button.es-btn-add { background: #3b82f6; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 500; font-size: 14px; transition: background 0.2s; width: 100% !important; margin-left: 0; }
+        button.es-btn-add:hover { background: #2563eb; }
+        .es-right-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid #eee; }
+        button.es-btn-remove { color: #ef4444; background: none; border: none; cursor: pointer; font-size: 14px; padding: 5px 10px; width: auto !important; }
+        button.es-btn-remove:hover { text-decoration: underline; color: #b91c1c; }
+        .cart-header { display: flex; justify-content: space-between; padding: 10px 12px; font-weight: bold; color: #64748b; border-bottom: 2px solid #e2e8f0; margin-bottom: 10px; }
+        .cart-row { display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 10px; }
+        .cart-col-name { flex: 2; font-weight: 500; color: #333; font-size: 14px; }
+        .cart-col-qty { flex: 1; text-align: center; }
+        .cart-col-action { flex: 1; text-align: right; }
         
         .full-width-layout {
             grid-template-columns: 1fr !important;
@@ -911,20 +952,20 @@ SQL;
                     <div class="borrow-success"><?php echo htmlspecialchars($borrowSuccess, ENT_QUOTES, 'UTF-8'); ?></div>
                 <?php } ?>
 
-                <div class="borrow-layout" id="mainBorrowLayout">
+                <div class="borrow-layout full-width-layout" id="mainBorrowLayout">
                     <section class="card borrow-form-card">
                         <h3>申請資料</h3>
                         <form method="post" enctype="multipart/form-data" class="borrow-form" action="borrow.php" novalidate>
-                            <div class="form-group">
-                                <label for="resource_type">借用類型</label>
+                            <div class="form-group" style="display:none;">
+                                <label for="resource_type">借用類型 (已合併)</label>
                                 <select id="resource_type" name="resource_type">
-                                    <option value="equipment" <?php echo $formData['resource_type'] === 'equipment' ? 'selected' : ''; ?>>器材</option>
-                                    <option value="space" <?php echo $formData['resource_type'] === 'space' ? 'selected' : ''; ?>>空間</option>
+                                    <option value="both" selected>兩者</option>
                                 </select>
-                                <div id="proposalGroup" style="margin-top:0.6rem;">
-                                    <label for="proposal_file">活動企劃書（申請場地時必填，僅接受 PDF，限 5MB）</label>
-                                    <input type="file" id="proposal_file" name="proposal_file" accept="application/pdf">
-                                </div>
+                            </div>
+
+                            <div class="form-group" id="proposalGroup" style="display: none; margin-bottom: 20px;">
+                                <label for="proposal_file">活動企劃書（申請場地時必填，僅接受 PDF，限 5MB）</label>
+                                <input type="file" id="proposal_file" name="proposal_file" accept="application/pdf">
                             </div>
 
                             <div class="form-group">
@@ -940,12 +981,21 @@ SQL;
                                                 <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
                                             </svg>
                                         </span>
-                                        選擇器材
+                                        選擇借用項目
                                     </div>
-                                    <div class="es-search">
-                                        <input type="text" id="esSearchInput" placeholder="搜尋器材名稱...">
+                                    <div class="es-tabs" style="display:flex; background:#fff; border-bottom:1px solid #e2e8f0; flex-shrink: 0;">
+                                        <button type="button" class="es-tab-btn active" data-target="equipment" style="flex:1; padding:10px; border:none; background:none; cursor:pointer; font-weight:bold; color:#3b82f6; border-bottom:2px solid #3b82f6; transition:all 0.2s;">器材</button>
+                                        <button type="button" class="es-tab-btn" data-target="space" style="flex:1; padding:10px; border:none; background:none; cursor:pointer; font-weight:bold; color:#64748b; border-bottom:2px solid transparent; transition:all 0.2s;">空間場地</button>
                                     </div>
-                                    <ul class="es-list" id="esEquipmentList" style="background:#fff; border-radius:8px; border:1px solid #e0e0e0;">
+                                    <div class="es-search" style="display: flex; align-items: center; justify-content: space-between; gap: 15px;">
+                                        <div style="flex: 1;">
+                                            <input type="text" id="esSearchInput" placeholder="搜尋名稱...">
+                                        </div>
+                                        <div id="esItemCount" style="font-size: 13px; color: #64748b; white-space: nowrap;">
+                                            顯示所有項目
+                                        </div>
+                                    </div>
+                                    <ul class="es-list" id="esEquipmentList">
                                         <?php foreach ($equipmentMap as $equipment) { 
                                             $avail = (int)$equipment['available_quantity'];
                                             $limitRaw = $equipment['borrow_limit_quantity'];
@@ -953,9 +1003,18 @@ SQL;
                                             $maxInput = $limitRaw !== null ? min($avail, (int)$limitRaw) : $avail;
                                             $isAvail = $avail > 0;
                                         ?>
-                                            <li class="es-item" data-name="<?php echo htmlspecialchars($equipment['equipment_name'], ENT_QUOTES, 'UTF-8'); ?>" data-code="<?php echo htmlspecialchars($equipment['equipment_code'], ENT_QUOTES, 'UTF-8'); ?>" data-original-disabled="<?php echo $isAvail ? '0' : '1'; ?>" style="<?php echo $isAvail ? '' : 'opacity: 0.6;'; ?>">
+                                            <li class="es-item" data-type="equipment" data-name="<?php echo htmlspecialchars($equipment['equipment_name'], ENT_QUOTES, 'UTF-8'); ?>" data-code="<?php echo htmlspecialchars($equipment['equipment_code'], ENT_QUOTES, 'UTF-8'); ?>" data-original-disabled="<?php echo $isAvail ? '0' : '1'; ?>" style="<?php echo $isAvail ? '' : 'opacity: 0.6;'; ?>">
                                                 <div class="es-item-header">
-                                                    <span class="es-item-name"><?php echo htmlspecialchars($equipment['equipment_name'], ENT_QUOTES, 'UTF-8'); ?> (<?php echo htmlspecialchars($equipment['equipment_code'], ENT_QUOTES, 'UTF-8'); ?>)</span>
+                                                    <div class="es-item-info">
+                                                        <div class="es-item-icon"><?php echo getEquipmentIcon($equipment['equipment_name']); ?></div>
+                                                        <div class="es-item-name-block">
+                                                            <div class="es-item-title"><?php echo htmlspecialchars($equipment['equipment_name'], ENT_QUOTES, 'UTF-8'); ?></div>
+                                                            <div class="es-item-subtitle">
+                                                                <span>型號: <?php echo htmlspecialchars($equipment['equipment_code'], ENT_QUOTES, 'UTF-8'); ?></span>
+                                                                <span>可借數量: <span style="color:#2563eb; font-weight:bold;"><?php echo $avail; ?></span></span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                     <button type="button" class="es-btn-invite" <?php echo $isAvail ? '' : 'disabled'; ?>><?php echo $isAvail ? '選擇' : '已借完'; ?></button>
                                                 </div>
                                                 <div class="es-item-body">
@@ -971,6 +1030,38 @@ SQL;
                                                 </div>
                                             </li>
                                         <?php } ?>
+                                        <?php foreach ($spaceMap as $space) { 
+                                            $spaceStatusVal = (string)$space['space_status'];
+                                            $isSelectable = in_array($spaceStatusVal, ['1', 'available'], true);
+                                            $displayStatus = $isSelectable ? '可借用' : '不可借用';
+                                        ?>
+                                            <li class="es-item" data-type="space" data-name="<?php echo htmlspecialchars($space['space_name'], ENT_QUOTES, 'UTF-8'); ?>" data-code="<?php echo htmlspecialchars($space['space_id'], ENT_QUOTES, 'UTF-8'); ?>" data-original-disabled="<?php echo $isSelectable ? '0' : '1'; ?>" style="<?php echo $isSelectable ? '' : 'opacity: 0.6;'; ?>">
+                                                <div class="es-item-header">
+                                                    <div class="es-item-info">
+                                                        <div class="es-item-icon"><?php echo getSpaceIcon($space['space_name']); ?></div>
+                                                        <div class="es-item-name-block">
+                                                            <div class="es-item-title"><?php echo htmlspecialchars($space['space_name'], ENT_QUOTES, 'UTF-8'); ?></div>
+                                                            <div class="es-item-subtitle">
+                                                                <span>編號: <?php echo htmlspecialchars($space['space_id'], ENT_QUOTES, 'UTF-8'); ?></span>
+                                                                <span>容納人數: <?php echo (int)$space['capacity']; ?></span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <button type="button" class="es-btn-invite" <?php echo $isSelectable ? '' : 'disabled'; ?>><?php echo $isSelectable ? '選擇' : '不可借用'; ?></button>
+                                                </div>
+                                                <div class="es-item-body">
+                                                    <div class="es-item-details">
+                                                        <span>目前可借用狀態：<?php echo $displayStatus; ?></span>
+                                                        <span>容納人數：<?php echo (int)$space['capacity']; ?></span>
+                                                    </div>
+                                                    <div class="es-item-action">
+                                                        <label>場地僅能選擇一個</label>
+                                                        <input type="number" class="es-qty-input" min="1" max="1" value="1" style="display:none;">
+                                                        <button type="button" class="es-btn-add">加入清單</button>
+                                                    </div>
+                                                </div>
+                                            </li>
+                                        <?php } ?>
                                     </ul>
                                 </div>
                                 <div class="es-right">
@@ -980,27 +1071,20 @@ SQL;
                                                 <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/>
                                             </svg>
                                         </span>
-                                        已選取器材
+                                        已選取項目
                                     </div>
-                                    <ul class="es-list" id="esSelectedList" style="background:#fff; border-radius:8px; padding: 10px; border:1px solid #e0e0e0;">
-                                    </ul>
+                                    <div style="flex: 1; display: flex; flex-direction: column; min-height: 0; background:#f8fafc; padding: 15px;">
+                                        <div class="cart-header" style="flex-shrink: 0; background: #f8fafc;">
+                                            <div class="cart-col-name">項目名稱</div>
+                                            <div class="cart-col-qty">數量</div>
+                                            <div class="cart-col-action">操作</div>
+                                        </div>
+                                        <ul class="es-list" id="esSelectedList" style="padding: 0; background: #f8fafc !important;">
+                                        </ul>
+                                    </div>
                                 </div>
                             </div>
 
-                            <div class="form-group" id="spaceGroup">
-                                <label for="space_id">空間項目</label>
-                                <select id="space_id" name="space_id">
-                                    <option value="">請選擇</option>
-                                    <?php foreach ($spaceMap as $space) { 
-                                        $spaceStatusVal = (string)$space['space_status'];
-                                        $isSelectable = in_array($spaceStatusVal, ['1', 'available'], true);
-                                    ?>
-                                        <option value="<?php echo htmlspecialchars($space['space_id'], ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData['space_id'] === $space['space_id'] ? 'selected' : ''; ?> <?php echo $isSelectable ? '' : 'disabled'; ?>>
-                                            <?php echo htmlspecialchars($space['space_id'] . ' - ' . $space['space_name'] . ' (' . $space['space_status'] . ')', ENT_QUOTES, 'UTF-8'); ?>
-                                        </option>
-                                    <?php } ?>
-                                </select>
-                            </div>
 
                             <div class="form-group">
                                 <label for="borrow_date">借用日期</label>
@@ -1042,39 +1126,11 @@ SQL;
                             </div>
 
                             <div class="form-buttons">
-                                <button type="submit" class="btn-primary" id="borrowSubmitBtn">送出借用申請</button>
+                                <button type="submit" class="btn-primary" id="borrowSubmitBtn">確認借用</button>
                                 <button type="button" class="btn-secondary" onclick="location.href='index.php'">取消</button>
                             </div>
                             <div id="submitDebugMsg" style="margin-top:8px; font-size:13px; color:#64748b;"></div>
                         </form>
-                    </section>
-
-                    <section class="card borrow-stock-card" id="spaceStockSection" style="margin-top: 2rem;">
-                        <h3>空間可借狀態</h3>
-                        <div class="borrow-table-wrapper">
-                            <div id="spaceStockWrapper">
-                            <table class="management-table borrow-table">
-                                <thead>
-                                    <tr>
-                                        <th>空間 ID</th>
-                                        <th>空間名稱</th>
-                                        <th>容納人數</th>
-                                        <th>狀態</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ($spaceMap as $space) { ?>
-                                        <tr data-space-id="<?php echo htmlspecialchars($space['space_id'], ENT_QUOTES, 'UTF-8'); ?>" data-space-status="<?php echo htmlspecialchars((string)$space['space_status'], ENT_QUOTES, 'UTF-8'); ?>">
-                                            <td><?php echo htmlspecialchars($space['space_id'], ENT_QUOTES, 'UTF-8'); ?></td>
-                                            <td><?php echo htmlspecialchars($space['space_name'], ENT_QUOTES, 'UTF-8'); ?></td>
-                                            <td><?php echo (int)$space['capacity']; ?></td>
-                                            <td class="space-status-cell"><?php echo htmlspecialchars($space['space_status'], ENT_QUOTES, 'UTF-8'); ?></td>
-                                        </tr>
-                                    <?php } ?>
-                                </tbody>
-                            </table>
-                            </div>
-                        </div>
                     </section>
                 </div>
             </section>
@@ -1097,6 +1153,7 @@ SQL;
             const esEquipmentList = document.getElementById('esEquipmentList');
             const esSelectedList = document.getElementById('esSelectedList');
             const esSearchInput = document.getElementById('esSearchInput');
+            const esItemCount = document.getElementById('esItemCount');
             
             // cartItemsInput needs to be dynamically added if missing
             let cartItemsInput = document.querySelector('input[name="cart_items"]');
@@ -1112,6 +1169,21 @@ SQL;
             
             const items = esEquipmentList ? esEquipmentList.querySelectorAll('.es-item') : [];
             let cartItems = [];
+            let currentTab = 'equipment';
+            const tabBtns = document.querySelectorAll('.es-tab-btn');
+
+            function updateItemCount() {
+                if(!esItemCount) return;
+                let visible = 0;
+                let total = 0;
+                items.forEach(el => {
+                    if(el.dataset.type === currentTab) {
+                        total++;
+                        if(el.style.display !== 'none') visible++;
+                    }
+                });
+                esItemCount.innerHTML = `顯示 ${visible > 0 ? '1' : '0'}-${visible} / 共 ${total} 項`;
+            }
 
             function renderCart() {
                 if(!esSelectedList) return;
@@ -1120,11 +1192,40 @@ SQL;
                     const li = document.createElement('li');
                     li.className = 'es-right-item';
                     li.innerHTML = `
-                        <span class="es-right-item-text">${c.name} x${c.quantity}</span>
-                        <button type="button" class="es-btn-remove" data-index="${index}">移除</button>
+                        <div class="cart-row">
+                            <div class="cart-col-name">${c.name} (${c.code})</div>
+                            <div class="cart-col-qty">
+                                <input type="number" 
+                                    class="cart-qty-update" 
+                                    data-index="${index}" 
+                                    value="${c.quantity}" 
+                                    min="1" 
+                                    style="width: 50px; text-align: center; border: 1px solid #ccc; border-radius:4px; padding:2px;"
+                                    ${c.type === 'space' ? 'disabled title="場地僅能申請一項"' : ''}>
+                            </div>
+                            <div class="cart-col-action">
+                                <button type="button" class="es-btn-remove" data-index="${index}">移除</button>
+                            </div>
+                        </div>
                     `;
                     esSelectedList.appendChild(li);
                 });
+                
+                // Binding updates
+                const qtys = esSelectedList.querySelectorAll('.cart-qty-update');
+                qtys.forEach(input => {
+                    input.addEventListener('change', function() {
+                        const idx = parseInt(this.dataset.index, 10);
+                        const newVal = parseInt(this.value, 10);
+                        if(newVal > 0) {
+                            cartItems[idx].quantity = newVal;
+                            cartItemsInput.value = JSON.stringify(cartItems);
+                        } else {
+                            this.value = cartItems[idx].quantity;
+                        }
+                    });
+                });
+
                 const removes = esSelectedList.querySelectorAll('.es-btn-remove');
                 removes.forEach(btn => {
                     btn.addEventListener('click', function() {
@@ -1132,6 +1233,7 @@ SQL;
                         cartItems.splice(idx, 1);
                         cartItemsInput.value = JSON.stringify(cartItems);
                         renderCart();
+                        refreshModeUI();
                     });
                 });
             }
@@ -1141,24 +1243,53 @@ SQL;
                     const q = this.value.toLowerCase().trim();
                     items.forEach(li => {
                         const txt = li.textContent.toLowerCase();
-                        li.style.display = txt.includes(q) ? '' : 'none';
+                        const type = li.dataset.type;
+                        const matchType = (type === currentTab);
+                        const matchQuery = txt.includes(q);
+                        li.style.display = (matchType && matchQuery) ? '' : 'none';
                     });
+                    updateItemCount();
                 });
             }
+
+            tabBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    tabBtns.forEach(b => {
+                        b.classList.remove('active');
+                        b.style.color = '#64748b';
+                        b.style.borderBottomColor = 'transparent';
+                    });
+                    this.classList.add('active');
+                    this.style.color = '#3b82f6';
+                    this.style.borderBottomColor = '#3b82f6';
+                    currentTab = this.dataset.target;
+                    if(esSearchInput) {
+                        esSearchInput.dispatchEvent(new Event('input'));
+                    }
+                });
+            });
+
+            // Initialize display
+            if(esSearchInput) {
+                esSearchInput.dispatchEvent(new Event('input'));
+            }
+
             // -----------------------------------
 
             // Toggle & Add
             items.forEach(li => {
+                const header = li.querySelector('.es-item-header');
                 const inviteBtn = li.querySelector('.es-btn-invite');
                 const body = li.querySelector('.es-item-body');
                 const addBtn = li.querySelector('.es-btn-add');
                 const qtyInput = li.querySelector('.es-qty-input');
                 const name = li.dataset.name;
                 const code = li.dataset.code;
+                const type = li.dataset.type;
 
-                if(inviteBtn) {
-                    inviteBtn.addEventListener('click', function(e) {
-                        e.stopPropagation();
+                if(header) {
+                    header.addEventListener('click', function(e) {
+                        if (inviteBtn && inviteBtn.disabled) return;
                         const isActive = body.classList.contains('active');
                         // Close everyone else first to make it clean
                         items.forEach(o => {
@@ -1171,102 +1302,62 @@ SQL;
                         }
                     });
                 }
+                
+                if(inviteBtn) {
+                    // Stop propagation so clicking btn doesn't double-trigger if we bind header
+                    inviteBtn.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        if(header) header.click();
+                    });
+                }
 
                 if(addBtn) {
                     addBtn.addEventListener('click', function() {
                         const qty = parseInt(qtyInput.value, 10);
                         if (isNaN(qty) || qty <= 0) {
-                            alert('請輸入大於0的借用數量。');
+                            alert('請輸入大於 0 的借用數量。');
                             return;
                         }
+                        
+                        if (type === 'space') {
+                            const existingSpace = cartItems.find(i => i.type === 'space');
+                            if (existingSpace && existingSpace.code !== code) {
+                                alert('同時只能申請借用一個場地，您已選取「' + existingSpace.name + '」。如欲更換，請先移除原有的場地。');
+                                return;
+                            }
+                        }
+
                         const existing = cartItems.find(i => i.code === code);
                         if (existing) {
-                            existing.quantity += qty;
+                            if (type === 'equipment') {
+                                existing.quantity += qty;
+                            }
                         } else {
-                            cartItems.push({ code: code, name: name, quantity: qty });
+                            cartItems.push({ code: code, name: name, quantity: qty, type: type });
                         }
                         if(cartItemsInput) {
                             cartItemsInput.value = JSON.stringify(cartItems);
                         }
                         renderCart();
+                        refreshModeUI();
                         body.classList.remove('active');
                     });
                 }
             });
 
             function refreshModeUI() {
-                const mode = resourceTypeSelect.value;
-                const isEquipment = mode === 'equipment';
+                const hasSpace = cartItems.some(i => i.type === 'space');
                 
-                const mainLayout = document.getElementById('mainBorrowLayout');
-
-                if (equipmentSelectorContainer) equipmentSelectorContainer.style.display = isEquipment ? 'flex' : 'none';
-                if (spaceGroup) spaceGroup.style.display = isEquipment ? 'none' : '';
-                
-                const spaceStockWrapper = document.getElementById('spaceStockWrapper');
-                const spaceStockSection = document.getElementById('spaceStockSection');
-                
-                if (spaceStockWrapper) spaceStockWrapper.style.display = isEquipment ? 'none' : '';
-                if (spaceStockSection) {
-                    spaceStockSection.style.display = isEquipment ? 'none' : '';
-                }
-                if (mainLayout) {
-                    if (isEquipment) {
-                        mainLayout.classList.add('full-width-layout');
-                    } else {
-                        mainLayout.classList.remove('full-width-layout');
-                    }
-                }
-
-                if (spaceSelect) spaceSelect.required = !isEquipment;
-
-                if (proposalFileInput) {
-                    proposalFileInput.required = !isEquipment;
-                }
                 if (proposalGroup) {
-                    proposalGroup.style.display = isEquipment ? 'none' : '';
-                }
-            }
-
-            function mapSpaceStatusToLabel(raw) {
-                switch (String(raw)) {
-                    case '1':
-                    case 'available':
-                        return '可借';
-                    case '2':
-                    case 'borrowed':
-                    case '已借出':
-                        return '已借出';
-                    case '3':
-                        return '維修中';
-                    case '4':
-                        return '停用中';
-                    case '5':
-                        return '已淘汰';
-                    default:
-                        return raw || '';
-                }
-            }
-
-            function refreshSpaceTableFilter() {
-                const rows = document.querySelectorAll('table.borrow-table tbody tr[data-space-id]');
-                const mode = resourceTypeSelect.value;
-                const selected = spaceSelect ? spaceSelect.value : '';
-                rows.forEach(row => {
-                    const raw = row.dataset.spaceStatus || '';
-                    const statusCell = row.querySelector('.space-status-cell');
-                    if (mode === 'space') {
-                        if (statusCell) statusCell.textContent = mapSpaceStatusToLabel(raw);
-                        if (selected === '') {
-                            row.style.display = '';
-                        } else {
-                            row.style.display = row.dataset.spaceId === selected ? '' : 'none';
-                        }
-                    } else {
-                        if (statusCell) statusCell.textContent = raw;
-                        row.style.display = '';
+                    proposalGroup.style.display = hasSpace ? 'block' : 'none';
+                    if (proposalFileInput) {
+                        proposalFileInput.required = hasSpace;
                     }
-                });
+                }
+                
+                if (typeof window.updatePeriodOptions === 'function') {
+                    window.updatePeriodOptions();
+                }
             }
 
             function handleFormSubmit() {
@@ -1290,11 +1381,8 @@ SQL;
                 });
             }
 
-            resourceTypeSelect.addEventListener('change', function () { refreshModeUI(); refreshSpaceTableFilter(); });
-            if (spaceSelect) spaceSelect.addEventListener('change', function () { refreshModeUI(); refreshSpaceTableFilter(); });
             if (borrowForm) borrowForm.addEventListener('submit', handleFormSubmit);
             refreshModeUI();
-            refreshSpaceTableFilter();
             renderCart();
         })();
     </script>
@@ -1312,13 +1400,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const resTypeEl = document.getElementById('resource_type');
 
     function updatePeriodOptions() {
-        if (!resTypeEl) return;
+        const cartItemsInput = document.querySelector('input[name="cart_items"]');
+        const cartItemsStr = cartItemsInput ? cartItemsInput.value : '[]';
+        let cartItems = [];
+        try { cartItems = JSON.parse(cartItemsStr); } catch (e) {}
 
-        const mode = resTypeEl.value; // 'space' or 'equipment'
-        const selSpace = spaceIdEl ? spaceIdEl.value : '';
+        const spaceObj = cartItems.find(c => c.type === 'space');
+        const selSpace = spaceObj ? spaceObj.code : '';
         const selDate = borrowDateEl ? borrowDateEl.value : '';
         const now = new Date();
-        console.log('updatePeriodOptions called', { mode: resTypeEl.value, selSpace, selDate, now: now.toString() });
+        console.log('updatePeriodOptions called', { selSpace, selDate, now: now.toString() });
         
         // Reset all options
         if (startPeriodEl) Array.from(startPeriodEl.options).forEach(opt => { 
@@ -1342,10 +1433,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        if (!selSpace || !selDate) return;
+        if (!selDate) return;
 
         // Find conflicts (only relevant for space mode)
-        const conflicts = (mode === 'space' && selSpace && selDate) ? existingSpaceReservations.filter(r => r.space_id === selSpace && r.date === selDate) : [];
+        const conflicts = (selSpace && selDate) ? existingSpaceReservations.filter(r => r.space_id === selSpace && r.date === selDate) : [];
 
         conflicts.forEach(c => {
             for (const [code, times] of Object.entries(periodSlotsMap)) {
@@ -1489,19 +1580,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-        if (spaceIdEl && borrowDateEl) {
-        spaceIdEl.addEventListener('change', updatePeriodOptions);
+    if (borrowDateEl) {
         borrowDateEl.addEventListener('change', updatePeriodOptions);
-        resTypeEl.addEventListener('change', updatePeriodOptions);
         if (startPeriodEl) startPeriodEl.addEventListener('change', updatePeriodOptions);
+
+        // Expose function globally so cart changes can trigger this
+        window.updatePeriodOptions = updatePeriodOptions;
 
         // Update equipment availability based on selected date (prevent re-borrow same day)
         function updateEquipmentAvailability() {
-            const mode = resTypeEl ? resTypeEl.value : 'equipment';
             const selDateLocal = borrowDateEl ? borrowDateEl.value : '';
             const items = document.querySelectorAll('.es-item');
             items.forEach(li => {
                 const code = li.dataset.code;
+                const type = li.dataset.type;
                 const origDisabled = li.dataset.originalDisabled === '1';
                 const inviteBtn = li.querySelector('.es-btn-invite');
                 const header = li.querySelector('.es-item-header');
@@ -1512,7 +1604,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // base: if originally disabled, keep disabled
                 let shouldDisable = origDisabled;
 
-                if (mode === 'equipment' && selDateLocal) {
+                if (type === 'equipment' && selDateLocal) {
                     const used = (existingEquipmentReservations || []).some(r => r.equipment_code === code && r.date === selDateLocal);
                     if (used) shouldDisable = true;
                 }
@@ -1520,7 +1612,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (shouldDisable) {
                     inviteBtn.disabled = true;
                     li.style.opacity = 0.6;
-                    if (!existingLabel && header) {
+                    if (!existingLabel && header && type === 'equipment') {
                         const span = document.createElement('span');
                         span.className = 'day-used';
                         span.style.marginLeft = '8px';
@@ -1537,7 +1629,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         borrowDateEl.addEventListener('change', function(){ updatePeriodOptions(); updateEquipmentAvailability(); });
-        resTypeEl.addEventListener('change', function(){ updatePeriodOptions(); updateEquipmentAvailability(); });
         // also run once on load
         updateEquipmentAvailability();
 
@@ -1569,3 +1660,5 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 </body>
 </html>
+
+

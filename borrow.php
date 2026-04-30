@@ -1086,33 +1086,35 @@ SQL;
                             </div>
 
 
-                            <div class="form-group">
-                                <label for="borrow_date">借用日期</label>
-                                <input type="date" id="borrow_date" name="borrow_date" value="<?php echo htmlspecialchars($formData['borrow_date'], ENT_QUOTES, 'UTF-8'); ?>" min="<?php echo date('Y-m-d'); ?>" required>
-                            </div>
+                            <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+                                <div class="form-group" style="flex: 1; min-width: 150px;">
+                                    <label for="borrow_date">借用日期</label>
+                                    <input type="date" id="borrow_date" name="borrow_date" value="<?php echo htmlspecialchars($formData['borrow_date'], ENT_QUOTES, 'UTF-8'); ?>" min="<?php echo date('Y-m-d'); ?>" required>
+                                </div>
 
-                            <div class="form-group">
-                                <label for="start_period_code">開始節次代號</label>
-                                <select id="start_period_code" name="start_period_code" required>
-                                    <option value="">請選擇</option>
-                                    <?php foreach ($periodSlots as $periodCode => $periodConfig) { ?>
-                                        <option value="<?php echo htmlspecialchars($periodCode, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData['start_period_code'] === $periodCode ? 'selected' : ''; ?>>
-                                            <?php echo htmlspecialchars($periodCode . ' (' . substr($periodConfig['start'], 0, 5) . '-' . substr($periodConfig['end'], 0, 5) . ')', ENT_QUOTES, 'UTF-8'); ?>
-                                        </option>
-                                    <?php } ?>
-                                </select>
-                            </div>
+                                <div class="form-group" style="flex: 1; min-width: 150px;">
+                                    <label for="start_period_code">開始節次</label>
+                                    <select id="start_period_code" name="start_period_code" required>
+                                        <option value="">請選擇</option>
+                                        <?php foreach ($periodSlots as $periodCode => $periodConfig) { ?>
+                                            <option value="<?php echo htmlspecialchars($periodCode, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData['start_period_code'] === $periodCode ? 'selected' : ''; ?>>
+                                                <?php echo htmlspecialchars($periodCode . ' (' . substr($periodConfig['start'], 0, 5) . '-' . substr($periodConfig['end'], 0, 5) . ')', ENT_QUOTES, 'UTF-8'); ?>
+                                            </option>
+                                        <?php } ?>
+                                    </select>
+                                </div>
 
-                            <div class="form-group">
-                                <label for="end_period_code">結束節次代號</label>
-                                <select id="end_period_code" name="end_period_code" required>
-                                    <option value="">請選擇</option>
-                                    <?php foreach ($periodSlots as $periodCode => $periodConfig) { ?>
-                                        <option value="<?php echo htmlspecialchars($periodCode, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData['end_period_code'] === $periodCode ? 'selected' : ''; ?>>
-                                            <?php echo htmlspecialchars($periodCode . ' (' . substr($periodConfig['start'], 0, 5) . '-' . substr($periodConfig['end'], 0, 5) . ')', ENT_QUOTES, 'UTF-8'); ?>
-                                        </option>
-                                    <?php } ?>
-                                </select>
+                                <div class="form-group" style="flex: 1; min-width: 150px;">
+                                    <label for="end_period_code">結束節次</label>
+                                    <select id="end_period_code" name="end_period_code" required>
+                                        <option value="">請選擇</option>
+                                        <?php foreach ($periodSlots as $periodCode => $periodConfig) { ?>
+                                            <option value="<?php echo htmlspecialchars($periodCode, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData['end_period_code'] === $periodCode ? 'selected' : ''; ?>>
+                                                <?php echo htmlspecialchars($periodCode . ' (' . substr($periodConfig['start'], 0, 5) . '-' . substr($periodConfig['end'], 0, 5) . ')', ENT_QUOTES, 'UTF-8'); ?>
+                                            </option>
+                                        <?php } ?>
+                                    </select>
+                                </div>
                             </div>
 
                             <div class="form-group">

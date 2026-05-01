@@ -7,6 +7,7 @@ use PHPMailer\PHPMailer\Exception;
 require 'lib/PHPMailer/PHPMailer.php';
 require 'lib/PHPMailer/SMTP.php';
 require 'lib/PHPMailer/Exception.php';
+require_once __DIR__ . '/config/database.php';
 
 session_start();
 

@@ -983,6 +983,25 @@ SQL;
         .full-width-layout {
             grid-template-columns: 1fr !important;
         }
+
+        /* 月曆自訂樣式 */
+        .cal-grid-header { text-align:center; font-weight:bold; color:#64748b; padding:12px; background:#f1f5f9; border-radius:6px; font-size:14px; }
+        .cal-day-cell { min-height:85px; border:1px solid #e2e8f0; border-radius:8px; padding:8px; cursor:pointer; transition:all 0.2s; display:flex; flex-direction:column; background:#ffffff; box-shadow:0 1px 2px rgba(0,0,0,0.02); }
+        .cal-day-cell:hover { border-color:#3b82f6; box-shadow:0 0 0 2px rgba(59,130,246,0.15); transform:translateY(-1px); }
+        .cal-day-cell.empty { background:transparent; border:none; cursor:default; box-shadow:none; }
+        .cal-day-cell.empty:hover { transform:none; box-shadow:none; }
+        .cal-day-date { font-weight:bold; color:#334155; margin-bottom:5px; font-size:15px; }
+        
+        .cal-day-status { font-size:13px; flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; border-radius:6px; font-weight:bold; padding:4px; }
+        .status-full { background:#dcfce7; color:#166534; border:1px solid #bbf7d0;} /* 全天可借 */
+        .status-partial { background:#fef9c3; color:#854d0e; border:1px solid #fef08a;} /* 數量變少/部分可借 */
+        .status-none { background:#fee2e2; color:#991b1b; border:1px solid #fecaca;} /* 全天無法借 */
+        .status-unknown { background:#f1f5f9; color:#64748b; border:1px solid #e2e8f0;} /* 過去日期或無效 */
+        
+        .period-list { display:grid; grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); gap:10px; }
+        .period-item { padding:12px; border-radius:8px; font-size:13px; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,0.05); transition:transform 0.2s; }
+        .period-item:hover { transform:translateY(-2px); }
+        .calendar-card { width:100%; border-top:4px solid #3b82f6; }
     </style>
 </head>
 <body>
@@ -1003,6 +1022,52 @@ SQL;
             <section class="borrow-page">
                 <h2>器材借用申請</h2>
                 <p class="borrow-subtitle">角色：<?php echo htmlspecialchars($roleName, ENT_QUOTES, 'UTF-8'); ?>。填寫申請後將送出審核。</p>
+
+                <!-- ================== 即時可借狀態月曆 (On-the-fly Calculation) ================== -->
+                <section class="card calendar-card" style="margin-bottom: 20px;">
+                    <div class="cal-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; flex-wrap:wrap; gap:10px;">
+                        <div style="flex:1; min-width:250px;">
+                            <h3 style="margin:0 0 10px 0; color:var(--primary); display:flex; align-items:center; gap:8px;">
+                                📅 可用狀態查詢 (即時計算)
+                            </h3>
+                            <select id="calItemSelect" style="max-width:300px;">
+                                <option value="">-- 請選擇要查詢的項目 --</option>
+                                <optgroup label="器材">
+                                    <?php foreach($equipmentMap as $e) { echo '<option value="equipment|'.htmlspecialchars($e['equipment_code']).'">'.htmlspecialchars($e['equipment_name']).'</option>'; } ?>
+                                </optgroup>
+                                <optgroup label="場地">
+                                    <?php foreach($spaceMap as $s) { echo '<option value="space|'.htmlspecialchars($s['space_id']).'">'.htmlspecialchars($s['space_name']).'</option>'; } ?>
+                                </optgroup>
+                            </select>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:15px;">
+                            <button type="button" id="calPrevBtn" class="btn-secondary" style="padding:6px 12px; font-weight:bold;">&lt;</button>
+                            <h4 id="calMonthLabel" style="margin:0; min-width:110px; text-align:center; color:#333;">---- 年 - 月</h4>
+                            <button type="button" id="calNextBtn" class="btn-secondary" style="padding:6px 12px; font-weight:bold;">&gt;</button>
+                        </div>
+                    </div>
+                    
+                    <div id="calLoading" style="display:none; text-align:center; padding:20px; color:#64748b; font-weight:bold;">資料讀取與計算中...</div>
+                    <div id="calEmptyMsg" style="text-align:center; padding:20px; color:#64748b;">請從左上方下拉選單選擇想要查詢的項目</div>
+                    
+                    <div id="calContainer" style="display:none;">
+                        <!-- 星期標題 -->
+                        <div style="display:grid; grid-template-columns:repeat(7, 1fr); gap:5px; margin-bottom:5px;">
+                            <div class="cal-grid-header">日</div><div class="cal-grid-header">一</div><div class="cal-grid-header">二</div>
+                            <div class="cal-grid-header">三</div><div class="cal-grid-header">四</div><div class="cal-grid-header">五</div><div class="cal-grid-header">六</div>
+                        </div>
+                        <!-- 月曆格子 -->
+                        <div id="calGrid" style="display:grid; grid-template-columns:repeat(7, 1fr); gap:5px; margin-bottom:15px;">
+                        </div>
+                        <!-- 詳細資訊 -->
+                        <div id="calDetails" style="display:none; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:15px;">
+                            <h4 id="calDetailsTitle" style="margin-top:0; color:#1e293b; border-bottom:1px dashed #cbd5e1; padding-bottom:8px;"></h4>
+                            <div id="calDetailsGrid" class="period-list">
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                <!-- ========================================================================= -->
 
                 <?php if ($dbError !== '') { ?>
                     <div class="login-alert"><?php echo htmlspecialchars($dbError, ENT_QUOTES, 'UTF-8'); ?></div>
@@ -1451,6 +1516,268 @@ SQL;
             refreshModeUI();
             renderCart();
         })();
+        
+        // ================== 月曆即時計算與渲染邏輯 ==================
+        
+        const calData = {
+            currentDate: new Date(), // 當前決定顯示哪一年的哪一個月
+            selectedItemType: null,
+            selectedItemId: null,
+            selectedItemName: null,
+            totalCapacity: 0,
+            reservations: [],
+            periodSlots: <?php echo json_encode($periodSlots); ?>, // 節次設定從後端帶入
+            periodOrder: <?php echo json_encode($periodOrder); ?>  // D0, D1... 等等順序
+        };
+        
+        const calUI = {
+            select: document.getElementById('calItemSelect'),
+            prevBtn: document.getElementById('calPrevBtn'),
+            nextBtn: document.getElementById('calNextBtn'),
+            monthLabel: document.getElementById('calMonthLabel'),
+            loading: document.getElementById('calLoading'),
+            emptyMsg: document.getElementById('calEmptyMsg'),
+            container: document.getElementById('calContainer'),
+            grid: document.getElementById('calGrid'),
+            details: document.getElementById('calDetails'),
+            detailsTitle: document.getElementById('calDetailsTitle'),
+            detailsGrid: document.getElementById('calDetailsGrid')
+        };
+        
+        // 基礎設置: 設定預設月份(可以為今天)
+        calData.currentDate.setDate(1); // 固定為1號
+        
+        function updateCalendarHeader() {
+            const y = calData.currentDate.getFullYear();
+            const m = calData.currentDate.getMonth() + 1; // 0-based
+            if(calUI.monthLabel) calUI.monthLabel.textContent = `${y} 年 ${m} 月`;
+        }
+        
+        // 解析選擇的項目
+        if(calUI.select) {
+            calUI.select.addEventListener('change', function(e) {
+                const val = e.target.value;
+                if (!val) {
+                    calData.selectedItemType = null;
+                    calData.selectedItemId = null;
+                    calData.selectedItemName = null;
+                    calUI.emptyMsg.style.display = 'block';
+                    calUI.container.style.display = 'none';
+                    calUI.details.style.display = 'none';
+                    return;
+                }
+                
+                const parts = val.split('|');
+                calData.selectedItemType = parts[0];
+                calData.selectedItemId = parts[1];
+                calData.selectedItemName = e.target.options[e.target.selectedIndex].text;
+                
+                calUI.emptyMsg.style.display = 'none';
+                calUI.container.style.display = 'block';
+                fetchAvailability();
+            });
+        }
+        
+        // 月份切換
+        if(calUI.prevBtn) {
+            calUI.prevBtn.addEventListener('click', () => {
+                calData.currentDate.setMonth(calData.currentDate.getMonth() - 1);
+                updateCalendarHeader();
+                if(calData.selectedItemId) fetchAvailability();
+            });
+        }
+        
+        if(calUI.nextBtn) {
+            calUI.nextBtn.addEventListener('click', () => {
+                calData.currentDate.setMonth(calData.currentDate.getMonth() + 1);
+                updateCalendarHeader();
+                if(calData.selectedItemId) fetchAvailability();
+            });
+        }
+        
+        // 抓取線上預約紀錄
+        function fetchAvailability() {
+            calUI.loading.style.display = 'block';
+            calUI.grid.style.visibility = 'hidden';
+            calUI.details.style.display = 'none';
+            
+            const year = calData.currentDate.getFullYear();
+            const month = calData.currentDate.getMonth() + 1;
+            
+            fetch(`api_get_availability.php?type=${calData.selectedItemType}&id=${calData.selectedItemId}&year=${year}&month=${month}`)
+                .then(res => res.json())
+                .then(data => {
+                    calUI.loading.style.display = 'none';
+                    calUI.grid.style.visibility = 'visible';
+                    if (data.error) {
+                        alert('載入失敗：' + data.error);
+                        return;
+                    }
+                    calData.totalCapacity = data.total_capacity || 0;
+                    calData.reservations = data.reservations || [];
+                    renderCalendar();
+                })
+                .catch(err => {
+                    console.error('Calendar Fetch Error:', err);
+                    calUI.loading.style.display = 'none';
+                    alert('無法讀取即時狀態，請重試。');
+                });
+        }
+        
+        // 畫出月曆
+        function renderCalendar() {
+            calUI.grid.innerHTML = '';
+            
+            const y = calData.currentDate.getFullYear();
+            const m = calData.currentDate.getMonth(); // 0-based
+            const firstDayObj = new Date(y, m, 1);
+            const lastDayObj = new Date(y, m + 1, 0); // 這個月的最後一天
+            
+            let currentDayOfWeek = firstDayObj.getDay(); // 0=Sun, 1=Mon...
+            const daysInMonth = lastDayObj.getDate();
+            
+            // 補空前導格子
+            for (let i = 0; i < currentDayOfWeek; i++) {
+                const emptyCell = document.createElement('div');
+                emptyCell.className = 'cal-day-cell empty';
+                calUI.grid.appendChild(emptyCell);
+            }
+            
+            // 印出每天的格子
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dateStr = `${y}-${String(m+1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                const cell = document.createElement('div');
+                cell.className = 'cal-day-cell';
+                
+                // 計算這一天「整天」的大致狀態 (找出一天中最糟的時段狀態)
+                const dayStatus = calculateDayStatus(dateStr);
+                
+                const dateHeader = document.createElement('div');
+                dateHeader.className = 'cal-day-date';
+                dateHeader.textContent = String(d);
+                
+                const statusBox = document.createElement('div');
+                statusBox.className = `cal-day-status status-${dayStatus.color}`;
+                statusBox.innerHTML = `<span>${dayStatus.text}</span>`;
+                
+                cell.appendChild(dateHeader);
+                cell.appendChild(statusBox);
+                
+                // 點擊查看詳細
+                cell.onclick = () => showDayDetails(dateStr, dayStatus);
+                
+                calUI.grid.appendChild(cell);
+            }
+        }
+        
+        // 計算一日的大致狀態（用來標示月曆上的顏色）
+        function calculateDayStatus(dateStr) {
+            // 這個日期的 00:00 秒數，若比今天還早就顯示未知/過去
+            const targetDateObj = new Date(dateStr + 'T00:00:00');
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            if (targetDateObj < today) {
+                return { text: '已過去', color: 'unknown' };
+            }
+            
+            let minAvail = calData.totalCapacity;
+            let maxAvail = 0;
+            
+            // 迴圈算該天所有時段
+            calData.periodOrder.forEach(pCode => {
+                const pData = calData.periodSlots[pCode];
+                let avail = calculateAvailableForPeriod(dateStr, pData.start, pData.end);
+                if (avail < minAvail) minAvail = avail;
+                if (avail > maxAvail) maxAvail = avail;
+            });
+            
+            if (calData.totalCapacity === 0) {
+                return { text: '無法出借', color: 'none' };
+            }
+            
+            if (minAvail === calData.totalCapacity) {
+                return { text: '全天可借', color: 'full' };
+            } else if (minAvail === 0 && maxAvail === 0) {
+                return { text: '已借滿', color: 'none' };
+            } else {
+                return { text: '部分時段', color: 'partial' };
+            }
+        }
+        
+        // 核心數學：計算一個指定日期的特定時區，有多少物品剩餘
+        function calculateAvailableForPeriod(dateStr, startPeriodTime, endPeriodTime) {
+            // pStart, pEnd: 在那天的時間戳記
+            let pStart = new Date(`${dateStr}T${startPeriodTime}`).getTime();
+            let pEnd = new Date(`${dateStr}T${endPeriodTime}`).getTime();
+            
+            let used = 0;
+            calData.reservations.forEach(r => {
+                // r.start: "2026-05-03 08:10:00" -> 轉換成 "T" 相容 JS 解析
+                let rStart = new Date(r.start.replace(' ', 'T')).getTime();
+                let rEnd = new Date(r.end.replace(' ', 'T')).getTime();
+                
+                // 重疊條件判定 NOT (end1 <= start2 OR start1 >= end2)
+                if (!(pEnd <= rStart || pStart >= rEnd)) {
+                    used += r.qty;
+                }
+            });
+            
+            let finalAvail = calData.totalCapacity - used;
+            return Math.max(0, finalAvail);
+        }
+        
+        // 點開詳細節次清單
+        function showDayDetails(dateStr, dayStatus) {
+            calUI.details.style.display = 'block';
+            calUI.detailsTitle.textContent = `【${calData.selectedItemName}】 ${dateStr} 詳細時段狀態`;
+            calUI.detailsGrid.innerHTML = '';
+            
+            calData.periodOrder.forEach(pCode => {
+                const pData = calData.periodSlots[pCode];
+                let avail = calculateAvailableForPeriod(dateStr, pData.start, pData.end);
+                
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'period-item';
+                
+                let bgColor = '#dcfce7'; // green
+                let textColor = '#166534';
+                let text = `剩餘 ${avail}`;
+                
+                if (avail === 0) {
+                    bgColor = '#fee2e2'; // red
+                    textColor = '#991b1b';
+                    text = '已滿';
+                } else if (avail < calData.totalCapacity) {
+                    bgColor = '#fef9c3'; // yellow
+                    textColor = '#854d0e';
+                }
+                
+                // 如果是空間，顯示「可借用」、「已被約走」而不是剩餘1
+                if (calData.selectedItemType === 'space') {
+                    if (avail === 0) {
+                        text = '被約走';
+                    } else {
+                        text = '可借用';
+                    }
+                }
+
+                itemDiv.style.backgroundColor = bgColor;
+                itemDiv.style.color = textColor;
+                
+                itemDiv.innerHTML = `
+                    <div style="font-weight:bold; margin-bottom:3px;">${pData.label}</div>
+                    <div style="font-size:11px; color:#666; margin-bottom:5px;">${pData.start.substring(0,5)} ~ ${pData.end.substring(0,5)}</div>
+                    <div style="font-weight:bold; font-size:14px; border-top:1px solid rgba(0,0,0,0.1); padding-top:3px;">${text}</div>
+                `;
+                calUI.detailsGrid.appendChild(itemDiv);
+            });
+            
+            // Scroll to details
+            calUI.details.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+        
+        // 初始化月曆 header
+        updateCalendarHeader();
     </script>
 
 <script>

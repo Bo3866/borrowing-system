@@ -219,3 +219,31 @@ FILES:{"proposal_file":{"name":"\u8ab2\u6307\u7d44\u5834\u5730\u6536\u8cbb\u4e00
 POST:{"resource_type":"equipment","space_id":"","borrow_date":"2026-04-30","start_period_code":"D1","end_period_code":"D3","phone":"0900000000","purpose":"123","cart_items":"[{\"code\":\"A3\",\"name\":\"\u77ed\u9ea5\u514b\u98a8\u67b6\",\"quantity\":1}]"}
 FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
 
+2026-05-02T15:09:18+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-03","start_period_code":"D1","end_period_code":"D3","phone":"0900000000","purpose":"","cart_items":"[{\"code\":\"A10\",\"name\":\"\u96fb\u92fc\u7434\",\"quantity\":1,\"type\":\"equipment\"}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-02T15:09:18+00:00 VALIDATION ERROR: 電鋼琴 借用數量超過目前可借用數量。
+POST:{"resource_type":"both","borrow_date":"2026-05-03","start_period_code":"D1","end_period_code":"D3","phone":"0900000000","purpose":"","cart_items":"[{\"code\":\"A10\",\"name\":\"\u96fb\u92fc\u7434\",\"quantity\":1,\"type\":\"equipment\"}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-02T15:09:28+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-03","start_period_code":"D1","end_period_code":"D3","phone":"0900000000","purpose":"","cart_items":"[{\"code\":\"A2\",\"name\":\"\u6709\u7dda\u9ea5\u514b\u98a8\",\"quantity\":1,\"type\":\"equipment\"}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-02T15:09:34+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-03","start_period_code":"D1","end_period_code":"D3","phone":"0900000000","purpose":"12345","cart_items":"[]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-02T15:09:34+00:00 VALIDATION ERROR: 請選擇至少一項器材或一個場地。
+POST:{"resource_type":"both","borrow_date":"2026-05-03","start_period_code":"D1","end_period_code":"D3","phone":"0900000000","purpose":"12345","cart_items":"[]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-02T15:09:41+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-03","start_period_code":"D1","end_period_code":"D3","phone":"0900000000","purpose":"12345","cart_items":"[{\"code\":\"A2\",\"name\":\"\u6709\u7dda\u9ea5\u514b\u98a8\",\"quantity\":1,\"type\":\"equipment\"}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-02T15:12:58+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-04","start_period_code":"D1","end_period_code":"D2","phone":"0900000000","purpose":"12345","cart_items":"[{\"code\":\"A3\",\"name\":\"\u77ed\u9ea5\u514b\u98a8\u67b6\",\"quantity\":1,\"type\":\"equipment\"}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+

@@ -229,8 +229,8 @@ if ($dbError === '') {
     }
 
     if ($dbError === '') {
-        // 顯示所有申請狀態（待審、已批准、已拒絕）
-        $listWhere = "r.approval_status IN ('pending', 'approved', 'rejected')";
+        // 顯示所有申請狀態（待審、已批准、已拒絕、待補件）
+        $listWhere = "r.approval_status IN ('pending', 'approved', 'rejected', 'need_revision')";
         $safeUserId = mysqli_real_escape_string($link, $currentUserId);
         $listWhere .= " AND r.`{$applicantColumn}` = '{$safeUserId}'";
 
@@ -351,9 +351,11 @@ if ($dbError === '') {
                                             $isReturned = (int)$row['return_confirmed'] === 1;
                                             $approvalStatus = (string)$row['approval_status'];
                                             
-                                            // 根據批准狀態與報到狀態計算進度：1=申請送出 2=審核中 3=使用中 4=已歸還
+                                            // 根據批准狀態與報到狀態計算進度：1=申請送出 2=審核中/補件 3=使用中 4=已歸還
                                             if ($approvalStatus === 'rejected') {
                                                 $progressStatus = 0;  // 已拒絕
+                                            } elseif ($approvalStatus === 'need_revision') {
+                                                $progressStatus = 1;  // 待補件 (卡在步驟2)
                                             } elseif ($approvalStatus === 'pending') {
                                                 $progressStatus = 1;  // 待審核
                                             } elseif ($approvalStatus === 'approved') {
@@ -438,6 +440,8 @@ if ($dbError === '') {
                                                                             echo '審核通過';
                                                                         } elseif ($approvalStatus === 'rejected') {
                                                                             echo '審核未通過';
+                                                                        } elseif ($approvalStatus === 'need_revision') {
+                                                                            echo '<button type="button" onclick="location.href=\'#\';" style="background-color:#ffc107;color:#000;border:none;padding:2px 8px;border-radius:4px;cursor:pointer;font-size:0.9em;margin-top:4px;">補件</button>';
                                                                         }
                                                                     ?>
                                                                 </span>
@@ -474,8 +478,21 @@ if ($dbError === '') {
                                                         <div class="rejection-alert-content">
                                                             <?php echo htmlspecialchars($row['rejection_reason'], ENT_QUOTES, 'UTF-8'); ?>
                                                         </div>
-                                                    </div>
-                                                <?php } ?>
+                                                    </div>                                                <?php } elseif ($approvalStatus === 'need_revision') {
+                                                    // 顯示補件相關的原因或審核備註給使用者看（使用現有的 rejection_reason 或如果未來有新增 review_comment 此處可調）
+                                                ?>
+                                                    <div class="rejection-alert" style="border-left-color: #ffc107; background-color: #fffdf5;">
+                                                        <div class="rejection-alert-header" style="color: #d39e00;">
+                                                            <span class="rejection-icon">⚠</span>
+                                                            <strong>補件說明</strong>
+                                                        </div>
+                                                        <div class="rejection-alert-content">
+                                                            請盡快繳交缺件或重新上傳企劃書，以利後續審核。
+                                                            <?php if (!empty($row['rejection_reason'])) { ?>
+                                                                <br/><strong>備註：</strong><?php echo htmlspecialchars($row['rejection_reason'], ENT_QUOTES, 'UTF-8'); ?>
+                                                            <?php } ?>
+                                                        </div>
+                                                    </div>                                                <?php } ?>
                                             </td>
                                         </tr>
                                     <?php } ?>
@@ -555,6 +572,12 @@ if ($dbError === '') {
                 if (approvalText) {
                     approvalText.style.color = '#3498db';
                 }
+            } else if (approval === 'need_revision') {
+                // 待補件：顯示黃色提醒
+                dots[1].classList.add('pending'); // 可借用 pending 樣式或自定義閃爍
+                dots[1].style.borderColor = '#ffc107';
+                dots[1].style.backgroundColor = '#fff3cd';
+                lines[0].classList.add('active');
             } else if (approval === 'approved') {
                 // 審核通過：第1、2步完成（綠色✓），可能往第3、4步進行
                 dots[1].classList.add('approved');

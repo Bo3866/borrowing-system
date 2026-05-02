@@ -7,6 +7,7 @@ use PHPMailer\PHPMailer\Exception;
 require 'lib/PHPMailer/PHPMailer.php';
 require 'lib/PHPMailer/SMTP.php';
 require 'lib/PHPMailer/Exception.php';
+require_once __DIR__ . '/config/database.php';
 
 session_start();
 
@@ -29,13 +30,9 @@ if ($incomingQrToken === '' && isset($_SESSION['pending_checkin_qr'])) {
 }
 unset($_SESSION['pending_checkin_qr']);
 
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system',3306);
+$link = mysqli_connect('localhost', 'root', '', 'borrowing_system',3307);
 $dbError = '';
-if (!$link) {
-    $dbError = '資料庫連線失敗：' . mysqli_connect_error();
-} else {
-    mysqli_set_charset($link, 'utf8mb4');
-}
+$link = getMysqliConnection($dbError);
 
 function pickExistingColumn(array $columns, array $candidates): ?string
 {
@@ -50,7 +47,11 @@ function pickExistingColumn(array $columns, array $candidates): ?string
 
 $feedbackMessage = '';
 $feedbackType = '';
+$spaceOptions = [];
+$equipmentOptions = [];
 $reservationOptions = [];
+// 用來記錄最後一次報到類型，決定哪個面板顯示回饋訊息：'equipment' 或 'space'
+$lastCheckinType = '';
 
 if ($incomingQrToken !== $expectedQrToken) {
     $feedbackMessage = 'QR Code 無效，請使用管理員提供的官方報到 QR Code。';
@@ -63,6 +64,8 @@ if ($dbError === '' && $feedbackType !== 'error') {
             checkin_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             reservation_id BIGINT UNSIGNED NOT NULL,
             user_id VARCHAR(10) NOT NULL,
+            checked_in_space_id BIGINT UNSIGNED NULL,
+            checked_in_equipment_id BIGINT UNSIGNED NULL,
             checked_in_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             checkin_source VARCHAR(20) NOT NULL DEFAULT 'qr',
             PRIMARY KEY (checkin_id),
@@ -110,155 +113,230 @@ if ($dbError === '' && $feedbackType !== 'error') {
 }
 
 if ($dbError === '' && $feedbackType !== 'error' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    $selectedReservationId = trim((string)($_POST['reservation_id'] ?? ''));
+    // 使用 hidden 欄位 `checkin_kind` 區分器材或場地報到，當沒有傳入特定 equipment_id 時，視為以 reservation_id 為單位的報到
+    $post = filter_input_array(INPUT_POST, FILTER_SANITIZE_STRING) ?: [];
+    $checkinKind = trim((string)($post['checkin_kind'] ?? ''));
+    $selectedReservationId = trim((string)($post['reservation_id'] ?? ''));
+    $selectedEquipmentId = trim((string)($post['equipment_id'] ?? ''));
+    $selectedSpaceId = trim((string)($post['space_id'] ?? ''));
 
-    if ($selectedReservationId === '') {
-        $feedbackMessage = '請選擇要報到的預約。';
-        $feedbackType = 'error';
-    } else {
-        $matchSql = "
-            SELECT
-                r.reservation_id,
-                r.`{$borrowStartColumn}` AS borrow_start_at,
-                r.`{$borrowEndColumn}` AS borrow_end_at,
-                (SELECT GROUP_CONCAT(s.space_name SEPARATOR '、') FROM space_reservation_items sri JOIN spaces s ON s.space_id = sri.space_id WHERE sri.reservation_id = r.reservation_id) AS space_names,
-                (SELECT GROUP_CONCAT(ec.equipment_name SEPARATOR '、') FROM equipment_reservation_items eri JOIN equipments e ON e.equipment_id = eri.equipment_id JOIN equipment_categories ec ON ec.equipment_code = e.equipment_code WHERE eri.reservation_id = r.reservation_id) AS equipment_names
-            FROM reservations r
-            WHERE r.`{$applicantColumn}` = ?
-              AND r.approval_status = 'approved'
-              AND r.reservation_id = ?
-            LIMIT 1
-        ";
-
-        $matchStmt = mysqli_prepare($link, $matchSql);
-        if (!$matchStmt) {
-            $feedbackMessage = '讀取申請資料失敗：' . mysqli_error($link);
+    if ($checkinKind === 'equipment') {
+        if ($selectedReservationId === '') {
+            $feedbackMessage = '請選擇要報到的預約（器材）。';
             $feedbackType = 'error';
         } else {
-            mysqli_stmt_bind_param($matchStmt, 'si', $currentUserId, $selectedReservationId);
-            mysqli_stmt_execute($matchStmt);
-            $matchResult = mysqli_stmt_get_result($matchStmt);
-            $matchedRow = $matchResult ? mysqli_fetch_assoc($matchResult) : null;
-            mysqli_stmt_close($matchStmt);
+            // 若提供 equipment_id，檢查該器材是否屬於該預約；否則直接以 reservation 為單位記錄器材報到
+            if ($selectedEquipmentId !== '') {
+                $matchSql = "
+                    SELECT r.reservation_id, (SELECT GROUP_CONCAT(ec.equipment_name SEPARATOR '、') FROM equipment_reservation_items eri JOIN equipments e ON e.equipment_id = eri.equipment_id JOIN equipment_categories ec ON ec.equipment_code = e.equipment_code WHERE eri.reservation_id = r.reservation_id) AS equipment_names
+                    FROM reservations r
+                    JOIN equipment_reservation_items eri ON eri.reservation_id = r.reservation_id
+                    WHERE r.`{$applicantColumn}` = ?
+                      AND r.approval_status = 'approved'
+                      AND r.reservation_id = ?
+                      AND eri.equipment_id = ?
+                    LIMIT 1
+                ";
 
-            if (!$matchedRow) {
-                $feedbackMessage = '報到失敗：找不到該筆核准申請，請重新確認。';
+                $matchStmt = mysqli_prepare($link, $matchSql);
+                if (!$matchStmt) {
+                    $feedbackMessage = '讀取申請資料失敗：' . mysqli_error($link);
+                    $feedbackType = 'error';
+                } else {
+                    mysqli_stmt_bind_param($matchStmt, 'sss', $currentUserId, $selectedReservationId, $selectedEquipmentId);
+                    mysqli_stmt_execute($matchStmt);
+                    $matchResult = mysqli_stmt_get_result($matchStmt);
+                    $matchedRow = $matchResult ? mysqli_fetch_assoc($matchResult) : null;
+                    mysqli_stmt_close($matchStmt);
+                }
+
+                if (empty($matchedRow)) {
+                    $feedbackMessage = '報到失敗：找不到該筆核准器材申請，請重新確認。';
+                    $feedbackType = 'error';
+                } else {
+                    mysqli_begin_transaction($link);
+                    try {
+                        $reservationId = (int)$matchedRow['reservation_id'];
+                        $insertLogStmt = mysqli_prepare($link, 'INSERT INTO checkin_logs (reservation_id, user_id, checked_in_equipment_id, checkin_source) VALUES (?, ?, ?, "equipment")');
+                        if (!$insertLogStmt) { throw new RuntimeException('寫入器材報到紀錄失敗：' . mysqli_error($link)); }
+                        mysqli_stmt_bind_param($insertLogStmt, 'iss', $reservationId, $currentUserId, $selectedEquipmentId);
+                        mysqli_stmt_execute($insertLogStmt);
+                        mysqli_stmt_close($insertLogStmt);
+                        // 更新 pickup 欄位如有
+                        if ($pickupFlagColumn !== null || $pickupAtColumn !== null) {
+                            $setParts = [];
+                            if ($pickupFlagColumn !== null) { $setParts[] = "`{$pickupFlagColumn}` = 1"; }
+                            if ($pickupAtColumn !== null) { $setParts[] = "`{$pickupAtColumn}` = COALESCE(`{$pickupAtColumn}`, NOW())"; }
+                            if (count($setParts) > 0) {
+                                $pickupSql = 'UPDATE reservations SET ' . implode(', ', $setParts) . ' WHERE reservation_id = ?';
+                                $pickupStmt = mysqli_prepare($link, $pickupSql);
+                                if (!$pickupStmt) { throw new RuntimeException('更新報到狀態失敗：' . mysqli_error($link)); }
+                                mysqli_stmt_bind_param($pickupStmt, 'i', $reservationId);
+                                mysqli_stmt_execute($pickupStmt);
+                                mysqli_stmt_close($pickupStmt);
+                            }
+                        }
+                        mysqli_commit($link);
+                        $itemsStr = !empty($matchedRow['equipment_names']) ? '（器材：' . $matchedRow['equipment_names'] . '）' : '';
+                        $feedbackMessage = '器材報到成功' . $itemsStr . '。';
+                        $feedbackType = 'success';
+                        $lastCheckinType = 'equipment';
+                    } catch (Throwable $exception) {
+                        mysqli_rollback($link);
+                        $feedbackMessage = '報到失敗：' . $exception->getMessage();
+                        $feedbackType = 'error';
+                    }
+                }
+            } else {
+                // 以 reservation 為單位的器材報到（不指定某個 equipment_id）
+                $matchSql = "SELECT reservation_id, (SELECT GROUP_CONCAT(ec.equipment_name SEPARATOR '、') FROM equipment_reservation_items eri JOIN equipments e ON e.equipment_id = eri.equipment_id JOIN equipment_categories ec ON ec.equipment_code = e.equipment_code WHERE eri.reservation_id = r.reservation_id) AS equipment_names FROM reservations r WHERE r.`{$applicantColumn}` = ? AND r.approval_status = 'approved' AND r.reservation_id = ? LIMIT 1";
+                $matchStmt = mysqli_prepare($link, $matchSql);
+                if ($matchStmt) {
+                    mysqli_stmt_bind_param($matchStmt, 'ss', $currentUserId, $selectedReservationId);
+                    mysqli_stmt_execute($matchStmt);
+                    $matchResult = mysqli_stmt_get_result($matchStmt);
+                    $matchedRow = $matchResult ? mysqli_fetch_assoc($matchResult) : null;
+                    mysqli_stmt_close($matchStmt);
+                }
+                if (empty($matchedRow)) {
+                    $feedbackMessage = '報到失敗：找不到該筆核准申請，請重新確認。';
+                    $feedbackType = 'error';
+                } else {
+                    mysqli_begin_transaction($link);
+                    try {
+                        $reservationId = (int)$matchedRow['reservation_id'];
+                        $insertLogStmt = mysqli_prepare($link, 'INSERT INTO checkin_logs (reservation_id, user_id, checkin_source) VALUES (?, ?, "equipment")');
+                        if (!$insertLogStmt) { throw new RuntimeException('寫入器材報到紀錄失敗：' . mysqli_error($link)); }
+                        mysqli_stmt_bind_param($insertLogStmt, 'is', $reservationId, $currentUserId);
+                        mysqli_stmt_execute($insertLogStmt);
+                        mysqli_stmt_close($insertLogStmt);
+                        // update pickup
+                        if ($pickupFlagColumn !== null || $pickupAtColumn !== null) {
+                            $setParts = [];
+                            if ($pickupFlagColumn !== null) { $setParts[] = "`{$pickupFlagColumn}` = 1"; }
+                            if ($pickupAtColumn !== null) { $setParts[] = "`{$pickupAtColumn}` = COALESCE(`{$pickupAtColumn}`, NOW())"; }
+                            if (count($setParts) > 0) {
+                                $pickupSql = 'UPDATE reservations SET ' . implode(', ', $setParts) . ' WHERE reservation_id = ?';
+                                $pickupStmt = mysqli_prepare($link, $pickupSql);
+                                if (!$pickupStmt) { throw new RuntimeException('更新報到狀態失敗：' . mysqli_error($link)); }
+                                mysqli_stmt_bind_param($pickupStmt, 'i', $reservationId);
+                                mysqli_stmt_execute($pickupStmt);
+                                mysqli_stmt_close($pickupStmt);
+                            }
+                        }
+                        mysqli_commit($link);
+                        $itemsStr = !empty($matchedRow['equipment_names']) ? '（器材：' . $matchedRow['equipment_names'] . '）' : '';
+                        $feedbackMessage = '器材報到成功' . $itemsStr . '。';
+                        $feedbackType = 'success';
+                        $lastCheckinType = 'equipment';
+                    } catch (Throwable $exception) {
+                        mysqli_rollback($link);
+                        $feedbackMessage = '報到失敗：' . $exception->getMessage();
+                        $feedbackType = 'error';
+                    }
+                }
+            }
+        }
+    } else {
+        // 場地報到
+        if ($selectedReservationId === '' && $selectedSpaceId === '') {
+            $feedbackMessage = '請先勾選你目前所在的場地或選擇預約。';
+            $feedbackType = 'error';
+        } else {
+            if ($selectedSpaceId !== '') {
+                $matchSql = "
+                    SELECT r.reservation_id, r.`{$borrowStartColumn}` AS borrow_start_at, r.`{$borrowEndColumn}` AS borrow_end_at, s.space_id, s.space_name
+                    FROM reservations r
+                    JOIN space_reservation_items sri ON sri.reservation_id = r.reservation_id
+                    JOIN spaces s ON s.space_id = sri.space_id
+                    WHERE r.`{$applicantColumn}` = ?
+                      AND r.approval_status = 'approved'
+                      AND s.space_id = ?
+                    ORDER BY r.`{$borrowStartColumn}` DESC
+                    LIMIT 1
+                ";
+
+                $matchStmt = mysqli_prepare($link, $matchSql);
+                if ($matchStmt) {
+                    mysqli_stmt_bind_param($matchStmt, 'ss', $currentUserId, $selectedSpaceId);
+                    mysqli_stmt_execute($matchStmt);
+                    $matchResult = mysqli_stmt_get_result($matchStmt);
+                    $matchedRow = $matchResult ? mysqli_fetch_assoc($matchResult) : null;
+                    mysqli_stmt_close($matchStmt);
+                }
+            } else {
+                $matchSql = "
+                    SELECT r.reservation_id, r.`{$borrowStartColumn}` AS borrow_start_at, r.`{$borrowEndColumn}` AS borrow_end_at, (SELECT GROUP_CONCAT(s.space_name SEPARATOR '、') FROM space_reservation_items sri JOIN spaces s ON s.space_id = sri.space_id WHERE sri.reservation_id = r.reservation_id) AS space_names
+                    FROM reservations r
+                    WHERE r.`{$applicantColumn}` = ?
+                      AND r.approval_status = 'approved'
+                      AND r.reservation_id = ?
+                    LIMIT 1
+                ";
+
+                $matchStmt = mysqli_prepare($link, $matchSql);
+                if ($matchStmt) {
+                    mysqli_stmt_bind_param($matchStmt, 'ss', $currentUserId, $selectedReservationId);
+                    mysqli_stmt_execute($matchStmt);
+                    $matchResult = mysqli_stmt_get_result($matchStmt);
+                    $matchedRow = $matchResult ? mysqli_fetch_assoc($matchResult) : null;
+                    mysqli_stmt_close($matchStmt);
+                }
+            }
+
+            if (empty($matchedRow)) {
+                $feedbackMessage = '報到失敗：你選擇的場地或預約與你的核准申請不符，請重新確認。';
                 $feedbackType = 'error';
             } else {
                 mysqli_begin_transaction($link);
-
                 try {
                     $reservationId = (int)$matchedRow['reservation_id'];
-
-                    $insertLogStmt = mysqli_prepare(
-                        $link,
-                        'INSERT INTO checkin_logs (reservation_id, user_id, checkin_source) VALUES (?, ?, "qr")'
-                    );
-                    if (!$insertLogStmt) {
-                        throw new RuntimeException('寫入報到紀錄失敗：' . mysqli_error($link));
-                    }
-
-                    mysqli_stmt_bind_param($insertLogStmt, 'is', $reservationId, $currentUserId);
+                    $insertLogStmt = mysqli_prepare($link, 'INSERT INTO checkin_logs (reservation_id, user_id, checked_in_space_id, checkin_source) VALUES (?, ?, ?, "qr")');
+                    if (!$insertLogStmt) { throw new RuntimeException('寫入報到紀錄失敗：' . mysqli_error($link)); }
+                    $spaceParam = $selectedSpaceId !== '' ? $selectedSpaceId : ($matchedRow['space_id'] ?? null);
+                    mysqli_stmt_bind_param($insertLogStmt, 'iss', $reservationId, $currentUserId, $spaceParam);
                     mysqli_stmt_execute($insertLogStmt);
                     mysqli_stmt_close($insertLogStmt);
 
                     if ($pickupFlagColumn !== null || $pickupAtColumn !== null) {
                         $setParts = [];
-                        if ($pickupFlagColumn !== null) {
-                            $setParts[] = "`{$pickupFlagColumn}` = 1";
-                        }
-                        if ($pickupAtColumn !== null) {
-                            $setParts[] = "`{$pickupAtColumn}` = COALESCE(`{$pickupAtColumn}`, NOW())";
-                        }
-
+                        if ($pickupFlagColumn !== null) { $setParts[] = "`{$pickupFlagColumn}` = 1"; }
+                        if ($pickupAtColumn !== null) { $setParts[] = "`{$pickupAtColumn}` = COALESCE(`{$pickupAtColumn}`, NOW())"; }
                         if (count($setParts) > 0) {
                             $pickupSql = 'UPDATE reservations SET ' . implode(', ', $setParts) . ' WHERE reservation_id = ?';
                             $pickupStmt = mysqli_prepare($link, $pickupSql);
-                            if (!$pickupStmt) {
-                                throw new RuntimeException('更新報到狀態失敗：' . mysqli_error($link));
-                            }
+                            if (!$pickupStmt) { throw new RuntimeException('更新報到狀態失敗：' . mysqli_error($link)); }
                             mysqli_stmt_bind_param($pickupStmt, 'i', $reservationId);
                             mysqli_stmt_execute($pickupStmt);
                             mysqli_stmt_close($pickupStmt);
                         }
                     }
 
-                    // 報到成功後，將該預約的所有場地狀態設為 '2' (已借出)
-                    $checkinSpaceStmt = mysqli_prepare(
-                        $link,
-                        'UPDATE spaces s JOIN space_reservation_items sri ON s.space_id = sri.space_id SET s.space_status = "2" WHERE sri.reservation_id = ?'
-                    );
-                    if ($checkinSpaceStmt) {
-                        mysqli_stmt_bind_param($checkinSpaceStmt, 'i', $reservationId);
-                        mysqli_stmt_execute($checkinSpaceStmt);
-                        mysqli_stmt_close($checkinSpaceStmt);
+                    if (!empty($spaceParam)) {
+                        $checkinSpaceStmt = mysqli_prepare($link, 'UPDATE spaces s JOIN space_reservation_items sri ON s.space_id = sri.space_id SET s.space_status = "2" WHERE sri.reservation_id = ?');
+                        if ($checkinSpaceStmt) {
+                            mysqli_stmt_bind_param($checkinSpaceStmt, 'i', $reservationId);
+                            mysqli_stmt_execute($checkinSpaceStmt);
+                            mysqli_stmt_close($checkinSpaceStmt);
+                        }
                     }
 
                     mysqli_commit($link);
-                    $successItems = [];
-                    if (!empty($matchedRow['space_names'])) {
-                        $successItems[] = '場地：' . $matchedRow['space_names'];
-                    }
-                    if (!empty($matchedRow['equipment_names'])) {
-                        $successItems[] = '器材：' . $matchedRow['equipment_names'];
-                    }
-                    $itemsStr = implode('；', $successItems);
-                    $itemsStr = $itemsStr !== '' ? " ($itemsStr)" : '';
+                    $itemsStr = !empty($matchedRow['space_name'] ?? $matchedRow['space_names']) ? '（場地：' . ($matchedRow['space_name'] ?? $matchedRow['space_names']) . '）' : '';
                     $feedbackMessage = '報到成功' . $itemsStr . '。';
                     $feedbackType = 'success';
-
-                    // 發送報到成功通知信
-                    $userEmail = '';
-                    $userName = $currentUserName;
-                    $emailSql = "SELECT email, full_name FROM users WHERE user_id = ?";
-                    $emailStmt = mysqli_prepare($link, $emailSql);
-                    if ($emailStmt) {
-                        mysqli_stmt_bind_param($emailStmt, 's', $currentUserId);
-                        mysqli_stmt_execute($emailStmt);
-                        $emailRes = mysqli_stmt_get_result($emailStmt);
-                        if ($emailRow = mysqli_fetch_assoc($emailRes)) {
-                            $userEmail = (string)$emailRow['email'];
-                            $userName = (string)$emailRow['full_name'];
-                        }
-                        mysqli_stmt_close($emailStmt);
-                    }
-
-                    if ($userEmail !== '') {
-                        $mail = new PHPMailer(true);
-                        try {
-                            $mail->isSMTP();
-                            $mail->Host       = 'smtp.gmail.com';
-                            $mail->SMTPAuth   = true;
-                            $mail->Username   = 'sasass041919@gmail.com';
-                            $mail->Password   = 'xogusuplsoapxayc';
-                            $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
-                            $mail->Port       = 465;
-                            $mail->CharSet    = 'UTF-8';
-
-                            $mail->setFrom('sasass041919@gmail.com', '校園資源租借系統');
-                            $mail->addAddress($userEmail, $userName);
-
-                            $mail->isHTML(true);
-                            $mail->Subject = '【系統通知】預約項目報到成功';
-                            $mail->Body    = "您好，{$userName}：<br><br>您的借用項目已經成功完成報到。<br><br><b>報到項目：</b><br>{$itemsStr}<br><br>感謝您的使用！";
-                            $mail->send();
-                        } catch (Exception $e) {
-                            error_log("Mailer Error: {$mail->ErrorInfo}");
-                        }
-                    }
+                    $lastCheckinType = 'space';
                 } catch (Throwable $exception) {
                     mysqli_rollback($link);
-                    if ((int)mysqli_errno($link) === 1062) {
-                        $feedbackMessage = '你已完成本次申請的報到，請勿重複操作。';
-                    } else {
-                        $feedbackMessage = '報到失敗：' . $exception->getMessage();
-                    }
+                    $feedbackMessage = '報到失敗：' . $exception->getMessage();
                     $feedbackType = 'error';
                 }
             }
         }
     }
 }
+
+                
 
 if ($dbError === '' && $feedbackType !== 'error') {
     $optionsSql = "
@@ -292,6 +370,33 @@ if ($dbError === '' && $feedbackType !== 'error') {
         }
         mysqli_stmt_close($optionsStmt);
     }
+
+    // 取得可報到的器材清單（從核准的預約中）
+    $equipSql = "
+        SELECT DISTINCT e.equipment_id, ec.equipment_name, e.equipment_code
+        FROM reservations r
+        JOIN equipment_reservation_items eri ON eri.reservation_id = r.reservation_id
+        JOIN equipments e ON e.equipment_id = eri.equipment_id
+        LEFT JOIN equipment_categories ec ON e.equipment_code = ec.equipment_code
+        WHERE r.`{$applicantColumn}` = ?
+          AND r.approval_status = 'approved'
+        ORDER BY ec.equipment_name ASC
+    ";
+
+    $equipStmt = mysqli_prepare($link, $equipSql);
+    if ($equipStmt) {
+        mysqli_stmt_bind_param($equipStmt, 's', $currentUserId);
+        mysqli_stmt_execute($equipStmt);
+        $equipResult = mysqli_stmt_get_result($equipStmt);
+        while ($equipResult && ($row = mysqli_fetch_assoc($equipResult))) {
+            $equipmentOptions[] = [
+                'equipment_id' => (string)$row['equipment_id'],
+                'equipment_name' => (string)($row['equipment_name'] ?? ''),
+                'equipment_code' => (string)($row['equipment_code'] ?? ''),
+            ];
+        }
+        mysqli_stmt_close($equipStmt);
+    }
 }
 
 if ($link) {
@@ -305,6 +410,130 @@ if ($link) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>掃碼報到｜校園資源租借系統</title>
     <link rel="stylesheet" href="styles.css">
+    <style>
+        :root {
+            /* Variables tied to styles.css primary colors */
+            --primary: #2c3e50;
+            --primary-offset: #1a252f;
+            --secondary: #3498db;
+            --secondary-offset: #2980b9;
+            --success: #27ae60;
+            --danger: #e74c3c;
+            --muted: #7f8c8d;
+            --card-border: #e2e8f0;
+            --focus-ring: rgba(52, 152, 219, 0.2);
+        }
+        
+        .two-column {
+            display: flex;
+            gap: 1.5rem;
+            align-items: stretch;
+            margin-top: 1rem;
+        }
+        .two-column .column { flex: 1 1 0%; }
+        
+        @media (max-width: 900px) {
+            .two-column { flex-direction: column; }
+        }
+
+        /* Card Unified Style */
+        .checkin-card {
+            background: #ffffff;
+            border-radius: var(--border-radius, 8px);
+            padding: 2.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02), 0 10px 15px -3px rgba(0,0,0,0.03);
+            border: 1px solid var(--card-border);
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            transition: all 0.3s ease;
+        }
+        
+        .checkin-card:hover {
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.01);
+            border-color: #cbd5e1;
+        }
+
+        .checkin-card h2 { 
+            margin: 0 0 0.5rem 0; 
+            font-size: 1.6rem; 
+            font-weight: 600;
+            color: var(--primary); 
+            position: relative;
+            display: inline-block;
+            padding-bottom: 0.5rem;
+            border-bottom: none; /* override styles.css */
+        }
+        
+        .checkin-card h2::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 40px;
+            height: 3px;
+            background: var(--secondary);
+            border-radius: 2px;
+        }
+
+        .checkin-card > p { color: var(--muted); font-size: 0.95rem; margin: 1rem 0 2rem 0; line-height: 1.6; }
+
+        .form-group { margin-bottom: 1.5rem; }
+        .form-group label { display: block; font-weight: 600; margin-bottom: 0.5rem; color: var(--primary); font-size: 0.95rem; }
+        
+        select, input {
+            width: 100%; padding: 12px 14px; border: 1px solid #cbd5e1;
+            border-radius: var(--border-radius, 8px); background: #f8fafc; font-size: 1rem; color: #2c3e50;
+            transition: all 0.2s ease;
+            appearance: none;
+        }
+        select:focus, input:focus { 
+            outline: none; 
+            border-color: var(--secondary); 
+            background: #ffffff;
+            box-shadow: 0 0 0 4px var(--focus-ring); 
+        }
+
+        .hero-actions.mt-auto { margin-top: auto; }
+        
+        .hero-actions {
+            margin-top: auto;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .hero-actions button {
+            flex: 1; padding: 12px 0; border-radius: var(--border-radius, 8px); font-weight: 600; font-size: 0.95rem;
+            cursor: pointer; transition: all 0.2s ease;
+        }
+        
+        /* Action Buttons Unified */
+        .btn-primary { 
+            background: var(--secondary); color: white; border: 1px solid var(--secondary); 
+        }
+        .btn-primary:hover:not(:disabled) { 
+            background: var(--secondary-offset); 
+            border-color: var(--secondary-offset);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .btn-secondary { 
+            background: #ffffff; border: 1px solid var(--secondary); color: var(--secondary); 
+        }
+        .btn-secondary:hover { 
+            background: #f8fbff;
+            transform: translateY(-1px);
+        }
+        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
+
+        /* Alerts */
+        .alert-box {
+            padding: 12px 16px; border-radius: var(--border-radius, 8px); margin-bottom: 1.5rem; font-size: 0.95rem; line-height: 1.5; font-weight: 500;
+        }
+        .login-alert { background: #fdf2f2; color: var(--danger); border-left: 4px solid var(--danger); }
+        .borrow-success { background: #f0fdf4; color: var(--success); border-left: 4px solid var(--success); }
+        .checkin-empty-hint { color: var(--muted); font-size: 0.9rem; margin-top: 1rem; text-align: center; }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -319,17 +548,20 @@ if ($link) {
         </nav>
 
         <main class="main-content">
-            <section class="card checkin-form-card">
-                <h2>掃碼報到</h2>
-                <p>請勾選你目前所在場地，系統會自動比對你的核准申請與場地是否一致。</p>
+            <div class="two-column">
+                <!-- Equipment Check-in Panel -->
+                <div class="column">
+                    <section class="checkin-card">
+                        <h2>器材報到</h2>
+                        <p>從你已核准的申請中選擇要提領的器材，將狀態更新為已報到，或前往列表查看詳細資訊。</p>
 
-                <?php if ($dbError !== '') { ?>
-                    <div class="login-alert"><?php echo htmlspecialchars($dbError, ENT_QUOTES, 'UTF-8'); ?></div>
-                <?php } elseif ($feedbackMessage !== '') { ?>
-                    <div class="<?php echo $feedbackType === 'success' ? 'borrow-success' : 'login-alert'; ?>">
-                        <?php echo htmlspecialchars($feedbackMessage, ENT_QUOTES, 'UTF-8'); ?>
-                    </div>
-                <?php } ?>
+                        <?php if ($dbError !== '') { ?>
+                            <div class="alert-box login-alert"><?php echo htmlspecialchars($dbError, ENT_QUOTES, 'UTF-8'); ?></div>
+                        <?php } elseif ($lastCheckinType === 'equipment' && $feedbackMessage !== '') { ?>
+                            <div class="alert-box <?php echo $feedbackType === 'success' ? 'borrow-success' : 'login-alert'; ?>">
+                                <?php echo htmlspecialchars($feedbackMessage, ENT_QUOTES, 'UTF-8'); ?>
+                            </div>
+                        <?php } ?>
 
 <?php if ($dbError === '' && $incomingQrToken === $expectedQrToken) { 
                     $spaceOptions = [];
@@ -376,6 +608,7 @@ if ($link) {
                         <div class="checkin-column">
                             <h3>🏢 場地報到</h3>
                             <form method="post" class="checkin-form">
+                                <input type="hidden" name="checkin_kind" value="space">
                                 <div class="form-group">
                                     <label for="reservation_id_space">請選擇場地：</label>
                                     <select id="reservation_id_space" name="reservation_id" required>
@@ -402,6 +635,7 @@ if ($link) {
                         <div class="checkin-column">
                             <h3>📦 器材報到</h3>
                             <form method="post" class="checkin-form">
+                                <input type="hidden" name="checkin_kind" value="equipment">
                                 <div class="form-group">
                                     <label for="reservation_id_eq">請選擇器材：</label>
                                     <select id="reservation_id_eq" name="reservation_id" required>

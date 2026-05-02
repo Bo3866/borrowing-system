@@ -40,9 +40,11 @@ if ($link) {
             <div class="navbar-menu">
                 <button class="nav-btn" onclick="navigateTo('dashboard')">首頁</button>
                 <button class="nav-btn" onclick="handleBorrowClick(event)">我要租借</button>
-                <button class="nav-btn" onclick="navigateTo('manage')">資源管理</button>
                 <button class="nav-btn" onclick="location.href='return_management.php'">我的申請</button>
-                <button class="nav-btn" onclick="location.href='approve.php'">審核面板</button>
+                
+                <?php if ($isManager) { ?>
+                    <button class="nav-btn" onclick="location.href='approve.php'">審核面板</button>
+                <?php } ?>
                 <button class="nav-btn" onclick="location.href='checkin.php?qr=CHECKIN_GATE_V1'">掃碼報到</button>
                 <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
                 <?php if ($currentRole === '3') { ?>
@@ -261,35 +263,6 @@ if ($link) {
                     <!-- 申請列表將由JavaScript填充 -->
                 </div>
             </section>
-
-            <!-- 資源管理頁面 (課指組) -->
-            <section id="manage" class="page">
-                <h2>資源管理</h2>
-                <button class="btn-primary" onclick="addNewResource()">新增資源</button>
-                
-                <div class="management-tabs">
-                    <button class="tab-btn active" onclick="switchManagementTab('resources')">資源列表</button>
-                    <button class="tab-btn" onclick="switchManagementTab('statistics')">統計分析</button>
-                </div>
-
-                <!-- 資源管理標籤 -->
-                <div id="resourcesTab" class="tab-content active">
-                    <table class="management-table">
-                        <thead>
-                            <tr>
-                                <th>資源ID</th>
-                                <th>名稱</th>
-                                <th>類型</th>
-                                <th>可用性</th>
-                                <th>操作</th>
-                            </tr>
-                        </thead>
-                        <tbody id="resourcesTableBody">
-                            <!-- 資源表格將由JavaScript填充 -->
-                        </tbody>
-                    </table>
-                </div>
-
                 <!-- 統計標籤 -->
                 <div id="statisticsTab" class="tab-content">
                     <div class="statistics-grid">
@@ -313,6 +286,7 @@ if ($link) {
                 </div>
             </section>
 
+            <?php if ($isManager) { ?>
             <!-- 審核面板 -->
             <section id="admin" class="page">
                 <h2>審核面板</h2>
@@ -349,6 +323,7 @@ if ($link) {
                     </table>
                 </div>
             </section>
+            <?php } ?>
         </main>
 
         <!-- 頁腳 -->

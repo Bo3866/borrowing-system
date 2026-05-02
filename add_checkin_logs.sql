@@ -16,4 +16,4 @@ CREATE TABLE IF NOT EXISTS checkin_logs (
   CONSTRAINT fk_checkin_logs_user
     FOREIGN KEY (user_id) REFERENCES users (user_id)
     ON UPDATE CASCADE ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

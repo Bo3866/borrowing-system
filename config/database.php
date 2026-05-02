@@ -36,7 +36,7 @@ function getDatabaseConnectionCandidates(): array
     if ($envHost !== null || $envPort !== null || $envDatabase !== null || $envUser !== null || $envPassword !== null) {
         $candidates[] = [
             'host' => $envHost ?? '127.0.0.1',
-            'port' => $envPort !== null ? (int)$envPort : 3307,
+            'port' => $envPort !== null ? (int)$envPort : 3306,
             'database' => $envDatabase ?? 'borrowing_system',
             'username' => $envUser ?? 'root',
             'password' => $envPassword ?? '',
@@ -75,23 +75,61 @@ function getDatabaseConnectionCandidates(): array
         'password' => '12345678',
     ];
 
+    // Try port 3307 (for alternative MySQL installations)
+    $candidates[] = [
+        'host' => '127.0.0.1',
+        'port' => 3307,
+        'database' => 'borrowing_system',
+        'username' => 'root',
+        'password' => '',
+    ];
+
+    $candidates[] = [
+        'host' => '127.0.0.1',
+        'port' => 3307,
+        'database' => 'borrowing_system',
+        'username' => 'root',
+        'password' => '12345678',
+    ];
+
+    $candidates[] = [
+        'host' => 'localhost',
+        'port' => 3307,
+        'database' => 'borrowing_system',
+        'username' => 'root',
+        'password' => '',
+    ];
+
+    $candidates[] = [
+        'host' => 'localhost',
+        'port' => 3307,
+        'database' => 'borrowing_system',
+        'username' => 'root',
+        'password' => '12345678',
+    ];
+
     return $candidates;
 }
 
 function getMysqliConnection(?string &$error = null): ?mysqli
 {
     foreach (getDatabaseConnectionCandidates() as $config) {
-        $link = @mysqli_connect(
-            $config['host'],
-            $config['username'],
-            $config['password'],
-            $config['database'],
-            $config['port']
-        );
+        try {
+            $link = mysqli_connect(
+                $config['host'],
+                $config['username'],
+                $config['password'],
+                $config['database'],
+                $config['port']
+            );
 
-        if ($link) {
-            mysqli_set_charset($link, 'utf8mb4');
-            return $link;
+            if ($link) {
+                mysqli_set_charset($link, 'utf8mb4');
+                return $link;
+            }
+        } catch (Throwable $e) {
+            // Continue to next candidate
+            continue;
         }
     }
 
@@ -101,6 +139,13 @@ function getMysqliConnection(?string &$error = null): ?mysqli
 
 function getDatabaseConnection(): PDO
 {
+    $host = '127.0.0.1';
+    // Use port 3306 to match mysqli usage elsewhere in the project
+    $port = '3306';
+    $database = 'borrowing_system';
+    $username = 'root';
+    // MySQL in this workspace uses an empty root password for local dev
+    $password = '12345678';
     $lastError = null;
 
     foreach (getDatabaseConnectionCandidates() as $config) {

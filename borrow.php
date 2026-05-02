@@ -298,31 +298,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             break;
                         }
                         $selectedE = $equipmentMap[$cCode];
-                        // 檢查該器材於同日是否已有預約（包含已歸還），若有則不可再次借用
-                        if ($formData['borrow_date'] !== '') {
-                            $sameDaySql = '
-                                SELECT 1
-                                FROM reservations r
-                                JOIN equipment_reservation_items eri ON r.reservation_id = eri.reservation_id
-                                JOIN equipments e ON eri.equipment_id = e.equipment_id
-                                WHERE e.equipment_code = ?
-                                  AND DATE(r.borrow_start_at) = ?
-                                  AND r.approval_status IN ("pending", "approved")
-                                LIMIT 1
-                            ';
-                            $sdStmt = mysqli_prepare($link, $sameDaySql);
-                            if ($sdStmt) {
-                                mysqli_stmt_bind_param($sdStmt, 'ss', $cCode, $formData['borrow_date']);
-                                mysqli_stmt_execute($sdStmt);
-                                $sdRes = mysqli_stmt_get_result($sdStmt);
-                                if ($sdRes && mysqli_num_rows($sdRes) > 0) {
-                                    $borrowError = sprintf('%s 已於當日借出，無法再次借用。', $selectedE['equipment_name']);
-                                    mysqli_stmt_close($sdStmt);
-                                    break;
-                                }
-                                mysqli_stmt_close($sdStmt);
-                            }
-                        }
+                        
                         $selectedEquipment = $selectedE;
                         
                         if ($cQty <= 0) {
@@ -578,7 +554,19 @@ SQL;
                     );
                     $selectEquipmentStmt = mysqli_prepare(
                         $link,
-                        'SELECT equipment_id FROM equipments WHERE equipment_code = ? AND operation_status = 1 ORDER BY equipment_id ASC LIMIT ?'
+                        'SELECT e.equipment_id 
+                         FROM equipments e 
+                         WHERE e.equipment_code = ? 
+                           AND e.operation_status = 1 
+                           AND e.equipment_id NOT IN (
+                               SELECT eri.equipment_id
+                               FROM equipment_reservation_items eri
+                               JOIN reservations r ON r.reservation_id = eri.reservation_id
+                               WHERE r.approval_status IN ("pending", "approved")
+                                 AND r.borrow_start_at < ?
+                                 AND r.borrow_end_at > ?
+                           )
+                         ORDER BY e.equipment_id ASC LIMIT ?'
                     );
                     $reservationItemStmt = mysqli_prepare(
                         $link,
@@ -614,6 +602,30 @@ SQL;
                         $cCode = $item['code'];
                         $cQty = (int)$item['quantity'];
 
+                        // 檢查時段衝突容量
+                        $overlapCheckSql = "
+                            SELECT COALESCE(SUM(eri.borrow_quantity), 0) AS used_qty
+                            FROM equipment_reservation_items eri
+                            JOIN reservations r ON r.reservation_id = eri.reservation_id
+                            JOIN equipments e ON e.equipment_id = eri.equipment_id
+                            WHERE e.equipment_code = ?
+                              AND r.approval_status IN ('pending', 'approved')
+                              AND r.borrow_start_at < ?
+                              AND r.borrow_end_at > ?
+                        ";
+                        $overlapStmt = mysqli_prepare($link, $overlapCheckSql);
+                        mysqli_stmt_bind_param($overlapStmt, 'sss', $cCode, $borrowEndAtSql, $borrowStartAtSql);
+                        mysqli_stmt_execute($overlapStmt);
+                        $overlapRes = mysqli_stmt_get_result($overlapStmt);
+                        $overlapRow = $overlapRes ? mysqli_fetch_assoc($overlapRes) : null;
+                        mysqli_stmt_close($overlapStmt);
+                        
+                        $usedQty = $overlapRow ? (int)$overlapRow['used_qty'] : 0;
+                        $totalQty = isset($equipmentMap[$cCode]) ? (int)$equipmentMap[$cCode]['available_quantity'] : 0;
+                        if (($usedQty + $cQty) > $totalQty) {
+                            throw new RuntimeException("器材 {$cCode} 在該時段的可借用數量不足，請選擇其他時段。");
+                        }
+
                         mysqli_stmt_bind_param($stockCheckStmt, 's', $cCode);
                         mysqli_stmt_execute($stockCheckStmt);
                         $stockCheckResult = mysqli_stmt_get_result($stockCheckStmt);
@@ -621,10 +633,10 @@ SQL;
 
                         $availableCountInTransaction = $stockRow ? (int)$stockRow['available_count'] : 0;
                         if ($availableCountInTransaction < $cQty) {
-                            throw new RuntimeException("器材 {$cCode} 目前可借用數量不足，無法送出申請。");
+                            throw new RuntimeException("器材 {$cCode} 目前整體狀態異常或數量不足，無法送出申請。");
                         }
 
-                        mysqli_stmt_bind_param($selectEquipmentStmt, 'si', $cCode, $cQty);
+                        mysqli_stmt_bind_param($selectEquipmentStmt, 'sssi', $cCode, $borrowEndAtSql, $borrowStartAtSql, $cQty);
                         mysqli_stmt_execute($selectEquipmentStmt);
                         $availableEquipmentResult = mysqli_stmt_get_result($selectEquipmentStmt);
 
@@ -865,6 +877,7 @@ SQL;
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>借用申請｜校園資源租借系統</title>
     <link rel="stylesheet" href="styles.css?v=<?php echo time(); ?>">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <style>
         /* 避免快取問題，在此處再次宣告必要的樣式 */
         
@@ -926,6 +939,12 @@ SQL;
             transition: box-shadow 0.3s ease !important;
         }
         .es-left:hover { box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+        /* flatpickr disabled day custom style for unavailable equipment dates */
+        .flatpickr-day.borrow-disabled {
+            background: #f8d7da !important;
+            color: #721c24 !important;
+            border-color: #f5c6cb !important;
+        }
         
         .es-right {
             flex: 1; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
@@ -1130,9 +1149,8 @@ SQL;
                                             $limitRaw = $equipment['borrow_limit_quantity'];
                                             $limit = $limitRaw === null ? '不限' : (int)$limitRaw;
                                             $maxInput = $limitRaw !== null ? min($avail, (int)$limitRaw) : $avail;
-                                            $isAvail = $avail > 0;
                                         ?>
-                                            <li class="es-item" data-type="equipment" data-name="<?php echo htmlspecialchars($equipment['equipment_name'], ENT_QUOTES, 'UTF-8'); ?>" data-code="<?php echo htmlspecialchars($equipment['equipment_code'], ENT_QUOTES, 'UTF-8'); ?>" data-original-disabled="<?php echo $isAvail ? '0' : '1'; ?>" style="<?php echo $isAvail ? '' : 'opacity: 0.6;'; ?>">
+                                            <li class="es-item" data-type="equipment" data-name="<?php echo htmlspecialchars($equipment['equipment_name'], ENT_QUOTES, 'UTF-8'); ?>" data-code="<?php echo htmlspecialchars($equipment['equipment_code'], ENT_QUOTES, 'UTF-8'); ?>" data-original-disabled="0">
                                                 <div class="es-item-header">
                                                     <div class="es-item-info">
                                                         <div class="es-item-icon"><?php echo getEquipmentIcon($equipment['equipment_name']); ?></div>
@@ -1144,7 +1162,7 @@ SQL;
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <button type="button" class="es-btn-invite" <?php echo $isAvail ? '' : 'disabled'; ?>><?php echo $isAvail ? '選擇' : '已借完'; ?></button>
+                                                    <button type="button" class="es-btn-invite">選擇</button>
                                                 </div>
                                                 <div class="es-item-body">
                                                     <div class="es-item-details">
@@ -1161,10 +1179,8 @@ SQL;
                                         <?php } ?>
                                         <?php foreach ($spaceMap as $space) { 
                                             $spaceStatusVal = (string)$space['space_status'];
-                                            $isSelectable = in_array($spaceStatusVal, ['1', 'available'], true);
-                                            $displayStatus = $isSelectable ? '可借用' : '不可借用';
                                         ?>
-                                            <li class="es-item" data-type="space" data-name="<?php echo htmlspecialchars($space['space_name'], ENT_QUOTES, 'UTF-8'); ?>" data-code="<?php echo htmlspecialchars($space['space_id'], ENT_QUOTES, 'UTF-8'); ?>" data-original-disabled="<?php echo $isSelectable ? '0' : '1'; ?>" style="<?php echo $isSelectable ? '' : 'opacity: 0.6;'; ?>">
+                                            <li class="es-item" data-type="space" data-name="<?php echo htmlspecialchars($space['space_name'], ENT_QUOTES, 'UTF-8'); ?>" data-code="<?php echo htmlspecialchars($space['space_id'], ENT_QUOTES, 'UTF-8'); ?>" data-original-disabled="0">
                                                 <div class="es-item-header">
                                                     <div class="es-item-info">
                                                         <div class="es-item-icon"><?php echo getSpaceIcon($space['space_name']); ?></div>
@@ -1176,11 +1192,10 @@ SQL;
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <button type="button" class="es-btn-invite" <?php echo $isSelectable ? '' : 'disabled'; ?>><?php echo $isSelectable ? '選擇' : '不可借用'; ?></button>
+                                                    <button type="button" class="es-btn-invite">選擇</button>
                                                 </div>
                                                 <div class="es-item-body">
                                                     <div class="es-item-details">
-                                                        <span>目前可借用狀態：<?php echo $displayStatus; ?></span>
                                                         <span>容納人數：<?php echo (int)$space['capacity']; ?></span>
                                                     </div>
                                                     <div class="es-item-action">
@@ -1218,7 +1233,7 @@ SQL;
                             <div style="display: flex; gap: 15px; flex-wrap: wrap;">
                                 <div class="form-group" style="flex: 1; min-width: 150px;">
                                     <label for="borrow_date">借用日期</label>
-                                    <input type="date" id="borrow_date" name="borrow_date" value="<?php echo htmlspecialchars($formData['borrow_date'], ENT_QUOTES, 'UTF-8'); ?>" min="<?php echo date('Y-m-d'); ?>" required>
+                                    <input type="text" id="borrow_date" name="borrow_date" value="<?php echo htmlspecialchars($formData['borrow_date'], ENT_QUOTES, 'UTF-8'); ?>" data-mindate="<?php echo date('Y-m-d'); ?>" placeholder="選擇借用日期" required readonly>
                                 </div>
 
                                 <div class="form-group" style="flex: 1; min-width: 150px;">
@@ -1465,6 +1480,39 @@ SQL;
                             }
                         } else {
                             cartItems.push({ code: code, name: name, quantity: qty, type: type });
+                            
+                            // 如果是器材，預先獲取當月的可用性數據
+                            if (type === 'equipment') {
+                                const today = new Date();
+                                const year = today.getFullYear();
+                                const month = String(today.getMonth() + 1).padStart(2, '0');
+                                
+                                fetch(`api_get_availability.php?type=equipment&id=${encodeURIComponent(code)}&year=${year}&month=${month}`)
+                                    .then(res => res.json())
+                                    .then(data => {
+                                        if (data.total_capacity !== undefined) {
+                                            // 緩存整個月的數據
+                                                const monthKey = `${code}_${year}_${month}`;
+                                                availabilityCache[monthKey] = data;
+                                            const daysInMonth = new Date(year, month, 0).getDate();
+                                            for (let d = 1; d <= daysInMonth; d++) {
+                                                const dateStr = `${year}-${month}-${String(d).padStart(2, '0')}`;
+                                                const dateKey = `${code}_${dateStr}`;
+                                                availabilityCache[dateKey] = {
+                                                    totalCapacity: data.total_capacity,
+                                                    reservations: data.reservations || []
+                                                };
+                                            }
+                                                // If flatpickr is active, refresh disabled dates for this equipment/month
+                                                try {
+                                                    if (typeof refreshDisabledDatesForCurrentMonth === 'function' && window.fpBorrowDate) {
+                                                        refreshDisabledDatesForCurrentMonth(window.fpBorrowDate, { code: code, quantity: qty });
+                                                    }
+                                                } catch (e) { console.error('refresh after preload error', e); }
+                                        }
+                                    })
+                                    .catch(err => console.error('Preload availability error:', err));
+                            }
                         }
                         if(cartItemsInput) {
                             cartItemsInput.value = JSON.stringify(cartItems);
@@ -1663,8 +1711,10 @@ SQL;
                 cell.appendChild(dateHeader);
                 cell.appendChild(statusBox);
                 
-                // 點擊查看詳細
-                cell.onclick = () => showDayDetails(dateStr, dayStatus);
+                // 點擊查看詳細（器材以天為單位，不需要看詳細）
+                if (calData.selectedItemType === 'space') {
+                    cell.onclick = () => showDayDetails(dateStr, dayStatus);
+                }
                 
                 calUI.grid.appendChild(cell);
             }
@@ -1695,6 +1745,16 @@ SQL;
                 return { text: '無法出借', color: 'none' };
             }
             
+            // 對於器材，以天為單位，直接顯示剩餘數量
+            if (calData.selectedItemType === 'equipment') {
+                if (minAvail === 0) {
+                    return { text: '已借出', color: 'none' };
+                } else {
+                    return { text: `還可借 ${minAvail} 件`, color: 'full' };
+                }
+            }
+            
+            // 對於場地，保持現有邏輯
             if (minAvail === calData.totalCapacity) {
                 return { text: '全天可借', color: 'full' };
             } else if (minAvail === 0 && maxAvail === 0) {
@@ -1780,7 +1840,12 @@ SQL;
         updateCalendarHeader();
     </script>
 
-<script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
+    <script>
+// 存儲當前選中的器材/空間的可用性數據（按日期緩存）
+window.availabilityCache = window.availabilityCache || {};
+const availabilityCache = window.availabilityCache;
 const existingSpaceReservations = <?= json_encode($existingSpaceReservations ?? []); ?>;
 const existingEquipmentReservations = <?= json_encode($existingEquipmentReservations ?? []); ?>;
 const periodSlotsMap = <?= json_encode($periodSlots); ?>;
@@ -1791,6 +1856,66 @@ document.addEventListener('DOMContentLoaded', () => {
     const startPeriodEl = document.getElementById('start_period_code');
     const endPeriodEl = document.getElementById('end_period_code');
     const resTypeEl = document.getElementById('resource_type');
+    
+    // 驗證日期是否可選
+    function isDateSelectable(dateStr, itemCode, itemType, reqQty) {
+        if (!itemCode || !dateStr) return true;
+        reqQty = reqQty || 1;
+        
+        if (itemType === 'space') {
+             const conflicts = existingSpaceReservations.filter(r => r.space_id === itemCode && r.date === dateStr);
+             const periodOrder = Object.keys(periodSlotsMap);
+             // 如果在所有時段中都有衝突，則全天不可選
+             for (const code of periodOrder) {
+                  const times = periodSlotsMap[code];
+                  if (!times) continue;
+                  const pStart = times.start;
+                  const pEnd = times.end;
+                  // 檢查此時段是否能借
+                  let canBorrow = true;
+                  for (const c of conflicts) {
+                       if (pStart < c.end && pEnd > c.start) {
+                            canBorrow = false;
+                            break;
+                       }
+                  }
+                  if (canBorrow) return true; // 只要有一個時段可以借，當天就可選
+             }
+             return false; // 全天衝突
+        }
+        
+        const dateKey = `${itemCode}_${dateStr}`;
+        if (!availabilityCache[dateKey]) return true; // 無數據時允許選擇
+        
+        const availability = availabilityCache[dateKey];
+        const periodOrder = Object.keys(periodSlotsMap);
+        
+        // 檢查是否至少有一個時段可用
+        for (const code of periodOrder) {
+            const times = periodSlotsMap[code];
+            if (!times) continue;
+            
+            let used = 0;
+            const pStart = new Date(`${dateStr}T${times.start}`).getTime();
+            const pEnd = new Date(`${dateStr}T${times.end}`).getTime();
+            
+            availability.reservations.forEach(r => {
+                const rStart = new Date(r.start.replace(' ', 'T')).getTime();
+                const rEnd = new Date(r.end.replace(' ', 'T')).getTime();
+                
+                if (!(pEnd <= rStart || pStart >= rEnd)) {
+                    used += r.qty;
+                }
+            });
+            
+            const finalAvail = Math.max(0, availability.totalCapacity - used);
+            if (finalAvail >= reqQty) {
+                return true; // 至少有一個時段滿足所需數量
+            }
+        }
+        
+        return false; // 全天都已借滿或不足
+    }
 
     function updatePeriodOptions() {
         const cartItemsInput = document.querySelector('input[name="cart_items"]');
@@ -1798,7 +1923,9 @@ document.addEventListener('DOMContentLoaded', () => {
         let cartItems = [];
         try { cartItems = JSON.parse(cartItemsStr); } catch (e) {}
 
+        const equipmentObj = cartItems.find(c => c.type === 'equipment');
         const spaceObj = cartItems.find(c => c.type === 'space');
+        const selEquipment = equipmentObj ? equipmentObj.code : '';
         const selSpace = spaceObj ? spaceObj.code : '';
         const selDate = borrowDateEl ? borrowDateEl.value : '';
         const now = new Date();
@@ -1827,6 +1954,83 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         if (!selDate) return;
+
+        // 對於器材，基於實時API數據來禁用已借滿的時段
+        if (selEquipment && selDate) {
+            const year = selDate.substring(0,4);
+            const month = selDate.substring(5,7);
+            const monthKey = `${selEquipment}_${year}_${month}`;
+            const dateKey = `${selEquipment}_${selDate}`;
+            // 若尚未有該月快取，從 API 取得整個月資料並建立每日快取，否則使用現有快取
+            if (!availabilityCache[monthKey]) {
+                fetch(`api_get_availability.php?type=equipment&id=${encodeURIComponent(selEquipment)}&year=${year}&month=${month}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.total_capacity !== undefined) {
+                            availabilityCache[monthKey] = data;
+                            const daysInMonth = new Date(parseInt(year,10), parseInt(month,10), 0).getDate();
+                            for (let d = 1; d <= daysInMonth; d++) {
+                                const dateStr = `${year}-${month}-${String(d).padStart(2,'0')}`;
+                                const dateKeyInner = `${selEquipment}_${dateStr}`;
+                                availabilityCache[dateKeyInner] = {
+                                    totalCapacity: data.total_capacity,
+                                    reservations: data.reservations || []
+                                };
+                            }
+                            // 再次執行以套用禁用
+                            updatePeriodOptions();
+                        }
+                    })
+                    .catch(err => console.error('Fetch availability error:', err));
+                return; // 等待資料後重新執行
+            }
+
+            const availability = availabilityCache[dateKey] || (availabilityCache[monthKey] ? { totalCapacity: availabilityCache[monthKey].total_capacity, reservations: availabilityCache[monthKey].reservations || [] } : null);
+            if (availability) {
+                // 遍歷所有時段，檢查可用性
+                const periodOrder = Object.keys(periodSlotsMap);
+                for (const code of periodOrder) {
+                    const times = periodSlotsMap[code];
+                    if (!times) continue;
+                    
+                    // 計算該時段的可用數量
+                    let used = 0;
+                    const pStart = new Date(`${selDate}T${times.start}`).getTime();
+                    const pEnd = new Date(`${selDate}T${times.end}`).getTime();
+                    
+                    availability.reservations.forEach(r => {
+                        const rStart = new Date(r.start.replace(' ', 'T')).getTime();
+                        const rEnd = new Date(r.end.replace(' ', 'T')).getTime();
+                        
+                        // 檢查時段重疊
+                        if (!(pEnd <= rStart || pStart >= rEnd)) {
+                            used += r.qty;
+                        }
+                    });
+                    
+                    const reqQty = equipmentObj ? parseInt(equipmentObj.quantity, 10) : 1;
+                    const finalAvail = Math.max(0, availability.totalCapacity - used);
+                    
+                    // 如果該時段不可用(剩餘數量小於欲借數量)，禁用選項
+                    if (finalAvail < reqQty) {
+                        if (startPeriodEl) {
+                            const opt1 = startPeriodEl.querySelector(`option[value="${code}"]`);
+                            if (opt1) {
+                                opt1.disabled = true;
+                                if(!opt1.innerHTML.includes('已借完')) opt1.innerHTML += ' (已借完)';
+                            }
+                        }
+                        if (endPeriodEl) {
+                            const opt2 = endPeriodEl.querySelector(`option[value="${code}"]`);
+                            if (opt2) {
+                                opt2.disabled = true;
+                                if(!opt2.innerHTML.includes('已借完')) opt2.innerHTML += ' (已借完)';
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Find conflicts (only relevant for space mode)
         const conflicts = (selSpace && selDate) ? existingSpaceReservations.filter(r => r.space_id === selSpace && r.date === selDate) : [];
@@ -1974,56 +2178,161 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (borrowDateEl) {
-        borrowDateEl.addEventListener('change', updatePeriodOptions);
+        // Initialize flatpickr on the borrow date input and manage per-day disabling for equipment
+        let disabledDatesSet = new Set();
+        let fp = null;
+
+        function fallbackToNativeDate() {
+            try {
+                borrowDateEl.removeAttribute('readonly');
+                borrowDateEl.type = 'date';
+            } catch (e) { console.error('fallbackToNativeDate error', e); }
+        }
+
+        if (typeof flatpickr !== 'function') {
+            console.warn('flatpickr not available; falling back to native date input');
+            fallbackToNativeDate();
+        } else {
+            try {
+                fp = flatpickr(borrowDateEl, {
+                    dateFormat: 'Y-m-d',
+                    minDate: borrowDateEl.getAttribute('data-mindate') || 'today',
+                    disable: [],
+                    onChange: function(selectedDates, dateStr) {
+                        const selDate = dateStr;
+                        const cartItemsInput = document.querySelector('input[name="cart_items"]');
+                        const cartItemsStr = cartItemsInput ? cartItemsInput.value : '[]';
+                        let cartItems = [];
+                        try { cartItems = JSON.parse(cartItemsStr); } catch (e) {}
+
+                        const equipmentObj = cartItems.find(c => c.type === 'equipment');
+                        const spaceObj = cartItems.find(c => c.type === 'space');
+
+                        function proceedUpdate() {
+                            if (equipmentObj) {
+                                if (!isDateSelectable(selDate, equipmentObj.code, 'equipment', parseInt(equipmentObj.quantity, 10))) {
+                                    alert('器材在該日期全天已借滿，請選擇其他日期。');
+                                    fp.clear();
+                                    updatePeriodOptions();
+                                    return;
+                                }
+                            }
+                            if (spaceObj) {
+                                if (!isDateSelectable(selDate, spaceObj.code, 'space', 1)) {
+                                    alert('空間在該日期全天已被預約，請選擇其他日期。');
+                                    fp.clear();
+                                    updatePeriodOptions();
+                                    return;
+                                }
+                            }
+                            updatePeriodOptions();
+                        }
+
+                        if (equipmentObj && selDate) {
+                            const year = selDate.substring(0, 4);
+                            const month = selDate.substring(5, 7);
+                            const monthKey = `${equipmentObj.code}_${year}_${month}`;
+                            if (!availabilityCache[monthKey]) {
+                                fetch(`api_get_availability.php?type=equipment&id=${encodeURIComponent(equipmentObj.code)}&year=${year}&month=${month}`)
+                                    .then(res => res.json())
+                                    .then(data => {
+                                        availabilityCache[monthKey] = data;
+                                        availabilityCache[`${equipmentObj.code}_${selDate}`] = { totalCapacity: data.total_capacity, reservations: data.reservations || [] };
+                                        proceedUpdate();
+                                        refreshDisabledDatesForCurrentMonth(fp, equipmentObj);
+                                    })
+                                    .catch(err => { console.error('Date check error:', err); proceedUpdate(); });
+                            } else {
+                                if (!availabilityCache[`${equipmentObj.code}_${selDate}`]) {
+                                    const data = availabilityCache[monthKey];
+                                    availabilityCache[`${equipmentObj.code}_${selDate}`] = { totalCapacity: data.total_capacity, reservations: data.reservations || [] };
+                                }
+                                proceedUpdate();
+                            }
+                        } else if (spaceObj && selDate) {
+                            if (!isDateSelectable(selDate, spaceObj.code, 'space', 1)) {
+                                alert('空間在該日期全天已被預約，請選擇其他日期。');
+                                fp && fp.clear();
+                            }
+                            updatePeriodOptions();
+                        } else {
+                            updatePeriodOptions();
+                        }
+                    },
+                    onMonthChange: function() { refreshDisabledDatesForCurrentMonth(fp); },
+                    onYearChange: function() { refreshDisabledDatesForCurrentMonth(fp); },
+                    onDayCreate: function(dObj, dStr, fpObj, dayElem) {
+                        try {
+                            const d = dayElem.dateObj.toISOString().slice(0,10);
+                            if (disabledDatesSet && disabledDatesSet.has(d)) dayElem.classList.add('borrow-disabled');
+                        } catch(e) {}
+                    }
+                });
+            } catch (e) {
+                console.error('flatpickr init error', e);
+                fallbackToNativeDate();
+            }
+        }
+
+        window.fpBorrowDate = fp;
+
+        function refreshDisabledDatesForCurrentMonth(fpInstance, equipmentObjParam) {
+            const cartItemsInput = document.querySelector('input[name="cart_items"]');
+            const cartItemsStr = cartItemsInput ? cartItemsInput.value : '[]';
+            let cartItems = [];
+            try { cartItems = JSON.parse(cartItemsStr); } catch (e) {}
+            const equipmentObj = equipmentObjParam || cartItems.find(c => c.type === 'equipment');
+            if (!equipmentObj) {
+                disabledDatesSet = new Set();
+                fpInstance.set('disable', []);
+                fpInstance.redraw && fpInstance.redraw();
+                return;
+            }
+            const year = String(fpInstance.currentYear);
+            const month = String(fpInstance.currentMonth + 1).padStart(2, '0');
+            fetch(`api_get_availability.php?type=equipment&id=${encodeURIComponent(equipmentObj.code)}&year=${year}&month=${month}`)
+                .then(res => res.json())
+                .then(data => {
+                    const total = data.total_capacity || 0;
+                    const reservations = data.reservations || [];
+                    const yNum = parseInt(year, 10);
+                    const mNum = parseInt(month, 10);
+                    const lastDay = new Date(yNum, mNum, 0).getDate();
+                    const set = new Set();
+                    for (let d = 1; d <= lastDay; d++) {
+                        const day = `${year}-${String(mNum).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                        const dayStart = new Date(`${day}T00:00:00`).getTime();
+                        const dayEnd = new Date(`${day}T23:59:59`).getTime();
+                        let used = 0;
+                        reservations.forEach(r => {
+                            const rStart = new Date(r.start.replace(' ', 'T')).getTime();
+                            const rEnd = new Date(r.end.replace(' ', 'T')).getTime();
+                            if (!(dayEnd <= rStart || dayStart >= rEnd)) used += r.qty;
+                        });
+                        const finalAvail = Math.max(0, total - used);
+                        const reqQty = equipmentObj ? parseInt(equipmentObj.quantity, 10) : 1;
+                        if (finalAvail < reqQty) set.add(day);
+                    }
+                    disabledDatesSet = set;
+                    fpInstance.set('disable', [function(date) { const ds = date.toISOString().slice(0,10); return disabledDatesSet.has(ds); }]);
+                    fpInstance.redraw && fpInstance.redraw();
+                })
+                .catch(err => { console.error('fetch month avail error', err); });
+        }
+
+        // wrap existing updatePeriodOptions to also refresh disabled dates
+        if (window.updatePeriodOptions) {
+            const _orig = window.updatePeriodOptions;
+            window.updatePeriodOptions = function() { _orig(); try { refreshDisabledDatesForCurrentMonth(window.fpBorrowDate); } catch(e) {} };
+        }
         if (startPeriodEl) startPeriodEl.addEventListener('change', updatePeriodOptions);
+        if (borrowDateEl) {
+            borrowDateEl.addEventListener('change', updatePeriodOptions);
+            borrowDateEl.addEventListener('input', updatePeriodOptions);
+        }
 
         // Expose function globally so cart changes can trigger this
         window.updatePeriodOptions = updatePeriodOptions;
-
-        // Update equipment availability based on selected date (prevent re-borrow same day)
-        function updateEquipmentAvailability() {
-            const selDateLocal = borrowDateEl ? borrowDateEl.value : '';
-            const items = document.querySelectorAll('.es-item');
-            items.forEach(li => {
-                const code = li.dataset.code;
-                const type = li.dataset.type;
-                const origDisabled = li.dataset.originalDisabled === '1';
-                const inviteBtn = li.querySelector('.es-btn-invite');
-                const header = li.querySelector('.es-item-header');
-                const existingLabel = header ? header.querySelector('.day-used') : null;
-
-                if (!inviteBtn) return;
-
-                // base: if originally disabled, keep disabled
-                let shouldDisable = origDisabled;
-
-                if (type === 'equipment' && selDateLocal) {
-                    const used = (existingEquipmentReservations || []).some(r => r.equipment_code === code && r.date === selDateLocal);
-                    if (used) shouldDisable = true;
-                }
-
-                if (shouldDisable) {
-                    inviteBtn.disabled = true;
-                    li.style.opacity = 0.6;
-                    if (!existingLabel && header && type === 'equipment') {
-                        const span = document.createElement('span');
-                        span.className = 'day-used';
-                        span.style.marginLeft = '8px';
-                        span.style.color = '#e11d48';
-                        span.textContent = ' (當日已借出)';
-                        header.appendChild(span);
-                    }
-                } else {
-                    inviteBtn.disabled = false;
-                    li.style.opacity = '';
-                    if (existingLabel && existingLabel.parentNode) existingLabel.parentNode.removeChild(existingLabel);
-                }
-            });
-        }
-
-        borrowDateEl.addEventListener('change', function(){ updatePeriodOptions(); updateEquipmentAvailability(); });
-        // also run once on load
-        updateEquipmentAvailability();
 
         // Prevent user from selecting a disabled option (some browsers/clients may bypass)
         if (startPeriodEl) {

@@ -45,10 +45,10 @@ function getDatabaseConnectionCandidates(): array
 
     $candidates[] = [
         'host' => '127.0.0.1',
-        'port' => 3307,
+        'port' => 3306,
         'database' => 'borrowing_system',
         'username' => 'root',
-        'password' => '',
+        'password' => '12345678',
     ];
 
     $candidates[] = [
@@ -61,10 +61,10 @@ function getDatabaseConnectionCandidates(): array
 
     $candidates[] = [
         'host' => 'localhost',
-        'port' => 3307,
+        'port' => 3306,
         'database' => 'borrowing_system',
         'username' => 'root',
-        'password' => '',
+        'password' => '12345678',
     ];
 
     $candidates[] = [

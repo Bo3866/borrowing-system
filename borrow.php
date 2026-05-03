@@ -831,7 +831,7 @@ SQL;
                                 $mail->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
                                 $mail->Port       = 465;
                                 $mail->CharSet    = 'UTF-8';
-                                $mail->setFrom('sasass041919@gmail.com', '借用系統通知');
+                                $mail->setFrom('sasass041919@gmail.com', '器材借用系統');
                                 $mail->addAddress($userEmail, $displayName);
                                 $mail->isHTML(true);
                                 $mail->Subject = '【系統通知】預約申請已成功送出';

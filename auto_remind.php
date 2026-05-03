@@ -57,7 +57,7 @@ function run_auto_remind() {
             $mail->CharSet    = 'UTF-8';
             
             // 不使用大學名稱，改為一般的「借用系統」
-            $mail->setFrom('sasass041919@gmail.com', '借用系統通知');
+            $mail->setFrom('sasass041919@gmail.com', '器材借用系統');
             $mail->isHTML(true);
 
             // 準備更新已經寄過信的欄位

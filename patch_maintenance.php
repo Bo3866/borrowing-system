@@ -41,7 +41,7 @@ $success = '器材報修已送出，感謝您的回報。';
                             $mail->Port       = 465;
                             $mail->CharSet    = 'UTF-8';
 
-                            $mail->setFrom('sasass041919@gmail.com', '校園資源租借系統');
+                            $mail->setFrom('sasass041919@gmail.com', '器材借用系統');
                             $mail->addAddress($email, $name);
 
                             $mail->isHTML(true);
@@ -76,7 +76,7 @@ $success = '空間報修已送出，感謝您的回報。';
                             $mail->Port       = 465;
                             $mail->CharSet    = 'UTF-8';
 
-                            $mail->setFrom('sasass041919@gmail.com', '校園資源租借系統');
+                            $mail->setFrom('sasass041919@gmail.com', '器材借用系統');
                             $mail->addAddress($email, $name);
 
                             $mail->isHTML(true);
@@ -142,7 +142,7 @@ $success = '器材報修已送出，感謝您的反映。';
                             $mail->Port       = 465;
                             $mail->CharSet    = 'UTF-8';
 
-                            $mail->setFrom('sasass041919@gmail.com', '校園資源租借系統');
+                            $mail->setFrom('sasass041919@gmail.com', '器材借用系統');
                             $mail->addAddress($email, $name);
 
                             $mail->isHTML(true);
@@ -177,7 +177,7 @@ $success = '場地報修已送出，感謝您的反映。';
                             $mail->Port       = 465;
                             $mail->CharSet    = 'UTF-8';
 
-                            $mail->setFrom('sasass041919@gmail.com', '校園資源租借系統');
+                            $mail->setFrom('sasass041919@gmail.com', '器材借用系統');
                             $mail->addAddress($email, $name);
 
                             $mail->isHTML(true);

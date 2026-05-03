@@ -55,7 +55,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
         if ($r > 0) $reservationIds[] = $r;
     }
     
-    $action = $_POST['action'] === 'approve' ? 'approved' : 'rejected';
+    if ($_POST['action'] === 'approve') {
+        $action = 'approved';
+    } elseif ($_POST['action'] === 'request_revision') {
+        $action = 'need_revision';
+    } else {
+        $action = 'rejected';
+    }
     $comment = trim((string)($_POST['comment'] ?? '')) ?: null;
 
     if ($link && !empty($reservationIds)) {
@@ -120,7 +126,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
 
             mysqli_commit($link);
             
-            $actionMsg = $action === 'approved' ? '已核准此申請。' : '已拒絕此申請。';
+            if ($action === 'approved') {
+                $actionMsg = '已核准此申請。';
+            } elseif ($action === 'need_revision') {
+                $actionMsg = '已要求申請人補件。';
+            } else {
+                $actionMsg = '已拒絕此申請。';
+            }
 
             // 如果有申請人信箱，則寄送通知信 (合併信件)
             if (count($userEmailNameMap) > 0) {
@@ -145,7 +157,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
                     //Content
                     $mail->isHTML(true);
                     $mail->Subject = '您的借用申請狀態已更新';
-                    $statusText = $action === 'approved' ? '已被核准' : '已被拒絕';
+                    
+                    if ($action === 'approved') {
+                        $statusText = '已被核准';
+                    } elseif ($action === 'need_revision') {
+                        $statusText = '需要補件';
+                    } else {
+                        $statusText = '已被拒絕';
+                    }
+                    
                     $idsStr = implode(', ', $reservationIds);
                     $mail->Body    = "您好：<br><br>您提出的借用申請（編號：{$idsStr}）{$statusText}。<br><br>審核意見：<br>" . nl2br(htmlspecialchars($comment ?? '無')) . "<br><br>感謝您！";
                     $mail->AltBody = "您好：\n\n您提出的借用申請（編號：{$idsStr}）{$statusText}。\n\n審核意見：\n" . htmlspecialchars($comment ?? '無') . "\n\n感謝您！";
@@ -354,6 +374,7 @@ function fetchItems(mysqli $link, int $reservationId): array
                                     </div>
                                     <div style="display:flex;flex-direction:column;gap:0.5rem;">
                                         <button type="submit" name="action" value="approve" class="btn-primary" onclick="return confirm('確認要核准此批申請？')">核准</button>
+                                        <button type="submit" name="action" value="request_revision" style="background-color:#ffc107;color:#000;border:none;padding:0.4rem;border-radius:4px;cursor:pointer;font-size:0.9rem;" onclick="return confirm('確認要退回要求補件？\n(可於左側選填要求補件的審核備註)')">要求補件</button>
                                         <button type="submit" name="action" value="reject" class="btn-secondary" onclick="return confirm('確認要拒絕此批申請？')">拒絕</button>
                                     </div>
                                 </form>

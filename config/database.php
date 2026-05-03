@@ -48,7 +48,7 @@ function getDatabaseConnectionCandidates(): array
         'port' => 3306,
         'database' => 'borrowing_system',
         'username' => 'root',
-        'password' => '',
+        'password' => '12345678',
     ];
 
     $candidates[] = [
@@ -64,12 +64,45 @@ function getDatabaseConnectionCandidates(): array
         'port' => 3306,
         'database' => 'borrowing_system',
         'username' => 'root',
-        'password' => '',
+        'password' => '12345678',
     ];
 
     $candidates[] = [
         'host' => 'localhost',
         'port' => 3306,
+        'database' => 'borrowing_system',
+        'username' => 'root',
+        'password' => '12345678',
+    ];
+
+    // Try port 3307 (for alternative MySQL installations)
+    $candidates[] = [
+        'host' => '127.0.0.1',
+        'port' => 3307,
+        'database' => 'borrowing_system',
+        'username' => 'root',
+        'password' => '12345678',
+    ];
+
+    $candidates[] = [
+        'host' => '127.0.0.1',
+        'port' => 3307,
+        'database' => 'borrowing_system',
+        'username' => 'root',
+        'password' => '12345678',
+    ];
+
+    $candidates[] = [
+        'host' => 'localhost',
+        'port' => 3307,
+        'database' => 'borrowing_system',
+        'username' => 'root',
+        'password' => '12345678',
+    ];
+
+    $candidates[] = [
+        'host' => 'localhost',
+        'port' => 3307,
         'database' => 'borrowing_system',
         'username' => 'root',
         'password' => '12345678',
@@ -81,17 +114,22 @@ function getDatabaseConnectionCandidates(): array
 function getMysqliConnection(?string &$error = null): ?mysqli
 {
     foreach (getDatabaseConnectionCandidates() as $config) {
-        $link = @mysqli_connect(
-            $config['host'],
-            $config['username'],
-            $config['password'],
-            $config['database'],
-            $config['port']
-        );
+        try {
+            $link = mysqli_connect(
+                $config['host'],
+                $config['username'],
+                $config['password'],
+                $config['database'],
+                $config['port']
+            );
 
-        if ($link) {
-            mysqli_set_charset($link, 'utf8mb4');
-            return $link;
+            if ($link) {
+                mysqli_set_charset($link, 'utf8mb4');
+                return $link;
+            }
+        } catch (Throwable $e) {
+            // Continue to next candidate
+            continue;
         }
     }
 

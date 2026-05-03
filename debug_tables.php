@@ -1,6 +1,8 @@
 <?php
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system', 3306);
-if (!$link) { echo 'CONNECT_ERR: '.mysqli_connect_error()."\n"; exit(0); }
+require_once __DIR__ . '/config/database.php';
+$dbError = '';
+$link = getMysqliConnection($dbError);
+if (!$link) { echo 'CONNECT_ERR: '.$dbError."\n"; exit(0); }
 $res = mysqli_query($link, "SHOW TABLES LIKE 'checkin_logs'");
 $found = [];
 while ($r = mysqli_fetch_row($res)) { $found[] = $r[0]; }

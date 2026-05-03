@@ -2,3 +2,4 @@
 [2026-04-21 11:18:58] Equipment insert failed: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'photo_path' in 'field list'
 [2026-04-21 11:20:45] Attempting equipment insert: equipment_id=17 reporter_id=S000000001 fault_description_len=3 photo=NULL
 [2026-04-21 12:31:22] Attempting equipment insert: equipment_id=17 reporter_id=S000000001 fault_description_len=3 photo=NULL
+[2026-05-02 06:57:31] Attempting equipment insert: equipment_id=1 reporter_id=j0123 fault_description_len=6 photo=uploads/maintenance/1777705051_ca9af5d9f8e3________________.pdf

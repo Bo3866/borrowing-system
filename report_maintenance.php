@@ -266,7 +266,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $mail->Port       = 465;
                             $mail->CharSet    = 'UTF-8';
 
-                            $mail->setFrom('sasass041919@gmail.com', '校園資源租借系統');
+                            $mail->setFrom('sasass041919@gmail.com', '器材借用系統');
                             $mail->addAddress($email, $name);
 
                             $mail->isHTML(true);
@@ -373,7 +373,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $mail->Port       = 465;
                             $mail->CharSet    = 'UTF-8';
 
-                            $mail->setFrom('sasass041919@gmail.com', '校園資源租借系統');
+                            $mail->setFrom('sasass041919@gmail.com', '器材借用系統');
                             $mail->addAddress($email, $name);
 
                             $mail->isHTML(true);

@@ -83,6 +83,22 @@ if ($dbError === '') {
         }
     }
 
+    // 自動遷移：擴充 approval_status 與新增 revision_deadline
+    if ($dbError === '') {
+        try {
+            if (!in_array('revision_deadline', $reservationColumns, true)) {
+                $migrationSql1 = "ALTER TABLE reservations MODIFY COLUMN approval_status ENUM('pending', 'approved', 'rejected', 'need_revision', 'revision_overdue') NOT NULL DEFAULT 'pending'";
+                mysqli_query($link, $migrationSql1);
+                
+                $migrationSql2 = 'ALTER TABLE reservations ADD COLUMN revision_deadline DATETIME NULL COMMENT "補件期限" AFTER approval_status';
+                mysqli_query($link, $migrationSql2);
+                $reservationColumns[] = 'revision_deadline';
+            }
+        } catch (Throwable $e) {
+            // 忽略列已存在錯誤
+        }
+    }
+
     // 報到狀態：使用 checkin_logs（無需再查 pickup 欄位）
     // 歸還狀態：使用 returned_at 欄位
 
@@ -229,10 +245,14 @@ if ($dbError === '') {
     }
 
     if ($dbError === '') {
-        // 顯示所有申請狀態（待審、已批准、已拒絕、待補件）
-        $listWhere = "r.approval_status IN ('pending', 'approved', 'rejected', 'need_revision')";
+        // 顯示所有申請狀態（待審、已批准、已拒絕、待補件、補件逾期）
+        $listWhere = "r.approval_status IN ('pending', 'approved', 'rejected', 'need_revision', 'revision_overdue')";
         $safeUserId = mysqli_real_escape_string($link, $currentUserId);
         $listWhere .= " AND r.`{$applicantColumn}` = '{$safeUserId}'";
+
+        // 更新逾期的自動狀態 (包含舊的缺漏deadline的測試資料)
+        $updateOverdueSql = "UPDATE reservations SET approval_status = 'revision_overdue' WHERE approval_status = 'need_revision' AND (revision_deadline IS NULL OR revision_deadline < NOW())";
+        mysqli_query($link, $updateOverdueSql);
 
         // 查詢邏輯：
         // - pickup_confirmed: 使用 checkin_logs.checked_in_at 判斷（NULL = 未報到，NOT NULL = 已報到）
@@ -247,6 +267,7 @@ if ($dbError === '') {
                 r.`{$borrowEndColumn}` AS borrow_end_at,
                 r.approval_status,
                 r.rejection_reason,
+                r.revision_deadline,
                 r.submitted_at,
                 r.updated_at,
                 (cl.checked_in_at IS NOT NULL) AS pickup_confirmed,
@@ -296,7 +317,7 @@ if ($dbError === '') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>借還管理｜校園資源租借系統</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=<?php echo time(); ?>">
 </head>
 <body>
     <div class="container">
@@ -354,6 +375,8 @@ if ($dbError === '') {
                                             // 根據批准狀態與報到狀態計算進度：1=申請送出 2=審核中/補件 3=使用中 4=已歸還
                                             if ($approvalStatus === 'rejected') {
                                                 $progressStatus = 0;  // 已拒絕
+                                            } elseif ($approvalStatus === 'revision_overdue') {
+                                                $progressStatus = 0;  // 補件逾期同拒絕概念
                                             } elseif ($approvalStatus === 'need_revision') {
                                                 $progressStatus = 1;  // 待補件 (卡在步驟2)
                                             } elseif ($approvalStatus === 'pending') {
@@ -440,6 +463,8 @@ if ($dbError === '') {
                                                                             echo '審核通過';
                                                                         } elseif ($approvalStatus === 'rejected') {
                                                                             echo '審核未通過';
+                                                                        } elseif ($approvalStatus === 'revision_overdue') {
+                                                                            echo '補件逾期';
                                                                         } elseif ($approvalStatus === 'need_revision') {
                                                                             echo '<button type="button" onclick="location.href=\'#\';" style="background-color:#ffc107;color:#000;border:none;padding:2px 8px;border-radius:4px;cursor:pointer;font-size:0.9em;margin-top:4px;">補件</button>';
                                                                         }
@@ -554,10 +579,10 @@ if ($dbError === '') {
             
             // 先清除所有樣式
             dots.forEach(dot => {
-                dot.classList.remove('active', 'rejected', 'pending', 'approved');
+                dot.classList.remove('active', 'rejected', 'pending', 'approved', 'overdue');
             });
             lines.forEach(line => {
-                line.classList.remove('active', 'rejected');
+                line.classList.remove('active', 'rejected', 'overdue');
             });
             
             // 第1步：始終完成（藍色✓ - 申請送出）
@@ -606,6 +631,17 @@ if ($dbError === '') {
                 // 更新審核文字顏色為紅色
                 if (approvalText) {
                     approvalText.style.color = '#e74c3c';
+                }
+            } else if (approval === 'revision_overdue') {
+                // 補件逾期：第1步完成，第2步為黑色✕
+                dots[1].classList.add('overdue');
+                lines[0].classList.add('overdue');
+                
+                // 第3、4步保持灰色失焦
+                
+                // 更新審核文字顏色為黑色
+                if (approvalText) {
+                    approvalText.style.color = '#333333';
                 }
             }
         }

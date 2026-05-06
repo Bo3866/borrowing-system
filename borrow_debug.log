@@ -247,3 +247,15 @@ FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}
 POST:{"resource_type":"both","borrow_date":"2026-05-04","start_period_code":"D1","end_period_code":"D2","phone":"0900000000","purpose":"12345","cart_items":"[{\"code\":\"A3\",\"name\":\"\u77ed\u9ea5\u514b\u98a8\u67b6\",\"quantity\":1,\"type\":\"equipment\"}]"}
 FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
 
+2026-05-06T17:20:55+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-18","start_period_code":"D2","end_period_code":"D3","phone":"0900000000","purpose":"123","cart_items":"[{\"code\":\"A3\",\"name\":\"\u77ed\u9ea5\u514b\u98a8\u67b6\",\"quantity\":1,\"type\":\"equipment\"}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-06T17:20:55+00:00 VALIDATION ERROR: 短麥克風架 未完成預約共 1 個，加上本次申請 1 個共 2 個，超過限借數量 1 個。
+POST:{"resource_type":"both","borrow_date":"2026-05-18","start_period_code":"D2","end_period_code":"D3","phone":"0900000000","purpose":"123","cart_items":"[{\"code\":\"A3\",\"name\":\"\u77ed\u9ea5\u514b\u98a8\u67b6\",\"quantity\":1,\"type\":\"equipment\"}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-06T17:21:47+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-18","start_period_code":"D1","end_period_code":"D3","phone":"0900000000","purpose":"123","cart_items":"[{\"code\":\"C10\",\"name\":\"\u65d7\u5ea7\",\"quantity\":1,\"type\":\"equipment\"}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+

@@ -25,7 +25,44 @@ function getDatabaseConfig(): array
 
 function getDatabaseConnectionCandidates(): array
 {
-    return [getDatabaseConfig()];
+    $envHost = envOrNull('DB_HOST');
+    $envPort = envOrNull('DB_PORT');
+    $envDatabase = envOrNull('DB_NAME');
+    $envUser = envOrNull('DB_USER');
+    $envPassword = envOrNull('DB_PASSWORD');
+
+    $candidates = [];
+
+    // If any env var is set, try that config first
+    if ($envHost !== null || $envPort !== null || $envDatabase !== null || $envUser !== null || $envPassword !== null) {
+        $candidates[] = [
+            'host' => $envHost ?? '127.0.0.1',
+            'port' => $envPort !== null ? (int)$envPort : 3306,
+            'database' => $envDatabase ?? 'borrowing_system',
+            'username' => $envUser ?? 'root',
+            'password' => $envPassword ?? '',
+        ];
+    }
+
+    // Try standard port 3306 (most common)
+    $candidates[] = [
+        'host' => '127.0.0.1',
+        'port' => 3306,
+        'database' => 'borrowing_system',
+        'username' => 'root',
+        'password' => '',
+    ];
+
+    // Try alternative port 3307 (for XAMPP or other installations)
+    $candidates[] = [
+        'host' => '127.0.0.1',
+        'port' => 3307,
+        'database' => 'borrowing_system',
+        'username' => 'root',
+        'password' => '',
+    ];
+
+    return $candidates;
 }
 
 function getMysqliConnection(?string &$error = null): ?mysqli

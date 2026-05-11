@@ -72,7 +72,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
 
             foreach ($reservationIds as $reservationId) {
                 // Only update pending reservations to avoid race conditions
-                $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET approval_status = ?, updated_at = NOW() WHERE reservation_id = ? AND approval_status = "pending"');
+                if ($action === 'need_revision') {
+                    $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET approval_status = ?, updated_at = NOW(), revision_deadline = CONCAT(DATE_ADD(CURDATE(), INTERVAL 1 DAY), " 23:59:59") WHERE reservation_id = ? AND approval_status = "pending"');
+                } else {
+                    $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET approval_status = ?, updated_at = NOW() WHERE reservation_id = ? AND approval_status = "pending"');
+                }
+                
                 if (!$updateStmt) {
                     throw new RuntimeException('更新預約狀態準備失敗：' . mysqli_error($link));
                 }
@@ -253,7 +258,7 @@ if (isset($dbError) && $dbError !== '') {
 function fetchItems(mysqli $link, int $reservationId): array
 {
     $items = [];
-    $stmt = mysqli_prepare($link, 'SELECT eri.equipment_item_id, e.equipment_id, e.equipment_code, ec.equipment_name, eri.borrow_quantity FROM equipment_reservation_items eri JOIN equipments e ON eri.equipment_id = e.equipment_id JOIN equipment_categories ec ON e.equipment_code = ec.equipment_code WHERE eri.reservation_id = ?');
+    $stmt = mysqli_prepare($link, 'SELECT eri.equipment_item_id, e.equipment_id, e.equipment_code, ec.equipment_name FROM equipment_reservation_items eri JOIN equipments e ON eri.equipment_id = e.equipment_id JOIN equipment_categories ec ON e.equipment_code = ec.equipment_code WHERE eri.reservation_id = ?');
     if ($stmt) {
         mysqli_stmt_bind_param($stmt, 'i', $reservationId);
         mysqli_stmt_execute($stmt);
@@ -263,8 +268,7 @@ function fetchItems(mysqli $link, int $reservationId): array
                 $items[] = [
                     'item_type' => 'equipment',
                     'item_code' => (string)$it['equipment_code'],
-                    'item_name' => (string)$it['equipment_name'],
-                    'borrow_quantity' => (int)($it['borrow_quantity'] ?? 1)
+                    'item_name' => (string)$it['equipment_name']
                 ];
             }
         }
@@ -281,8 +285,7 @@ function fetchItems(mysqli $link, int $reservationId): array
                 $items[] = [
                     'item_type' => 'space',
                     'item_code' => (string)$space['space_id'],
-                    'item_name' => (string)$space['space_name'],
-                    'borrow_quantity' => null
+                    'item_name' => (string)$space['space_name']
                 ];
             }
         }
@@ -299,7 +302,7 @@ function fetchItems(mysqli $link, int $reservationId): array
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>審核面板｜校園資源租借系統</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=<?php echo time(); ?>">
 </head>
 <body>
     <div class="container">
@@ -308,6 +311,7 @@ function fetchItems(mysqli $link, int $reservationId): array
             <div class="navbar-menu">
                 <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
                 <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
+                <button class="nav-btn" id="btnManualRemind" type="button">檢查逾期並催繳</button>
                 <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['user_id'], ENT_QUOTES, 'UTF-8'); ?></button>
                 <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
             </div>
@@ -354,11 +358,7 @@ function fetchItems(mysqli $link, int $reservationId): array
                                                 if ($itemType === 'space') {
                                                     $itemText = '【空間】' . $itemCode . ' - ' . $itemName;
                                                 } else {
-                                                    $qtyText = '';
-                                                    if (isset($it['borrow_quantity']) && $it['borrow_quantity'] !== null) {
-                                                        $qtyText = '（數量：' . (int)$it['borrow_quantity'] . '）';
-                                                    }
-                                                    $itemText = '【器材】' . $itemCode . ' - ' . $itemName . $qtyText;
+                                                    $itemText = '【器材】' . $itemCode . ' - ' . $itemName;
                                                 }
                                             ?>
                                             <li><?php echo htmlspecialchars($itemText, ENT_QUOTES, 'UTF-8'); ?></li>
@@ -389,3 +389,30 @@ function fetchItems(mysqli $link, int $reservationId): array
     </div>
 </body>
 </html>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const btn = document.getElementById('btnManualRemind');
+    if (!btn) return;
+    btn.addEventListener('click', function() {
+        if (!confirm('確定要立即檢查逾期並發送催繳通知嗎？（系統仍會依設定冷卻時間避免重複寄送）')) return;
+        btn.disabled = true;
+        const orig = btn.textContent;
+        btn.textContent = '處理中...';
+        fetch('manual_remind.php', { method: 'POST', credentials: 'same-origin' })
+            .then(r => r.json())
+            .then(js => {
+                let msg = '';
+                if (js.ok) {
+                    msg = js.output ? js.output : '已完成檢查（無輸出）';
+                } else {
+                    msg = '執行失敗: ' + (js.error || JSON.stringify(js));
+                }
+                alert(msg);
+            })
+            .catch(err => {
+                alert('呼叫失敗，請檢查伺服器日誌：' + err);
+            })
+            .finally(() => { btn.disabled = false; btn.textContent = orig; });
+    });
+});
+</script>

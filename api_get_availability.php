@@ -39,7 +39,7 @@ if ($type === 'equipment' && $id !== '') {
     }
     
     $resSql = "
-        SELECT r.borrow_start_at, r.borrow_end_at, SUM(eri.borrow_quantity) as total_qty
+        SELECT r.borrow_start_at, r.borrow_end_at, COUNT(eri.equipment_id) as total_qty
         FROM reservations r
         JOIN equipment_reservation_items eri ON r.reservation_id = eri.reservation_id
         JOIN equipments e ON eri.equipment_id = e.equipment_id

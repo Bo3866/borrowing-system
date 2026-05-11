@@ -93,4 +93,6 @@ function run_auto_remind() {
     }
 }
 
-run_auto_remind();
+// Note: do not auto-run on include; callers should explicitly invoke `run_auto_remind()`.
+// This allows other pages to call the function (e.g. via an admin button) without
+// causing duplicate execution when the file is included.

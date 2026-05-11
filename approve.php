@@ -66,7 +66,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
 
             foreach ($reservationIds as $reservationId) {
                 // Only update pending reservations to avoid race conditions
-                $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET approval_status = ?, updated_at = NOW() WHERE reservation_id = ? AND approval_status = "pending"');
+                if ($action === 'need_revision') {
+                    $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET approval_status = ?, updated_at = NOW(), revision_deadline = CONCAT(DATE_ADD(CURDATE(), INTERVAL 1 DAY), " 23:59:59") WHERE reservation_id = ? AND approval_status = "pending"');
+                } else {
+                    $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET approval_status = ?, updated_at = NOW() WHERE reservation_id = ? AND approval_status = "pending"');
+                }
+                
                 if (!$updateStmt) {
                     throw new RuntimeException('更新預約狀態準備失敗：' . mysqli_error($link));
                 }
@@ -291,7 +296,7 @@ function fetchItems(mysqli $link, int $reservationId): array
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>審核面板｜校園資源租借系統</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=<?php echo time(); ?>">
 </head>
 <body>
     <div class="container">

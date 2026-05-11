@@ -247,47 +247,15 @@ FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}
 POST:{"resource_type":"both","borrow_date":"2026-05-04","start_period_code":"D1","end_period_code":"D2","phone":"0900000000","purpose":"12345","cart_items":"[{\"code\":\"A3\",\"name\":\"\u77ed\u9ea5\u514b\u98a8\u67b6\",\"quantity\":1,\"type\":\"equipment\"}]"}
 FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
 
-2026-05-03T08:56:40+02:00 POST handler invoked
-POST:{"resource_type":"both","borrow_date":"2026-05-04","start_period_code":"D1","end_period_code":"D4","phone":"0970634016","purpose":"11","cart_items":"[{\"code\":\"A8\",\"name\":\"\u91d1\u55d3 \u5361\u62c9 ok(\u7121\u7dda\u9ea5\u514b\u98a8*2)\",\"quantity\":1,\"type\":\"equipment\"}]"}
-FILES:{"proposal_file":{"name":"","full_path":"","type":"","tmp_name":"...","error":4,"size":0}}
+2026-05-06T17:20:55+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-18","start_period_code":"D2","end_period_code":"D3","phone":"0900000000","purpose":"123","cart_items":"[{\"code\":\"A3\",\"name\":\"\u77ed\u9ea5\u514b\u98a8\u67b6\",\"quantity\":1,\"type\":\"equipment\"}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
 
-2026-05-03T08:56:40+02:00 VALIDATION ERROR: 金嗓 卡拉 ok(無線麥克風*2) 借用數量超過目前可借用數量。
-POST:{"resource_type":"both","borrow_date":"2026-05-04","start_period_code":"D1","end_period_code":"D4","phone":"0970634016","purpose":"11","cart_items":"[{\"code\":\"A8\",\"name\":\"\u91d1\u55d3 \u5361\u62c9 ok(\u7121\u7dda\u9ea5\u514b\u98a8*2)\",\"quantity\":1,\"type\":\"equipment\"}]"}
-FILES:{"proposal_file":{"name":"","full_path":"","type":"","tmp_name":"...","error":4,"size":0}}
+2026-05-06T17:20:55+00:00 VALIDATION ERROR: 短麥克風架 未完成預約共 1 個，加上本次申請 1 個共 2 個，超過限借數量 1 個。
+POST:{"resource_type":"both","borrow_date":"2026-05-18","start_period_code":"D2","end_period_code":"D3","phone":"0900000000","purpose":"123","cart_items":"[{\"code\":\"A3\",\"name\":\"\u77ed\u9ea5\u514b\u98a8\u67b6\",\"quantity\":1,\"type\":\"equipment\"}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
 
-2026-05-03T08:59:43+02:00 POST handler invoked
-POST:{"resource_type":"both","borrow_date":"2026-05-04","start_period_code":"D1","end_period_code":"D4","phone":"0970634016","purpose":"11","cart_items":"[{\"code\":\"A8\",\"name\":\"\u91d1\u55d3 \u5361\u62c9 ok(\u7121\u7dda\u9ea5\u514b\u98a8*2)\",\"quantity\":1,\"type\":\"equipment\"}]"}
-FILES:{"proposal_file":{"name":"","full_path":"","type":"","tmp_name":"...","error":4,"size":0}}
-
-2026-05-03T09:04:40+02:00 POST handler invoked
-POST:{"resource_type":"both","borrow_date":"2026-05-04","start_period_code":"DN","end_period_code":"D5","phone":"0970634016","purpose":"11","cart_items":"[{\"code\":\"A8\",\"name\":\"\u91d1\u55d3 \u5361\u62c9 ok(\u7121\u7dda\u9ea5\u514b\u98a8*2)\",\"quantity\":1,\"type\":\"equipment\"}]"}
-FILES:{"proposal_file":{"name":"","full_path":"","type":"","tmp_name":"...","error":4,"size":0}}
-
-2026-05-03T09:04:40+02:00 VALIDATION ERROR: 金嗓 卡拉 ok(無線麥克風*2) 借用數量超過目前可借用數量。
-POST:{"resource_type":"both","borrow_date":"2026-05-04","start_period_code":"DN","end_period_code":"D5","phone":"0970634016","purpose":"11","cart_items":"[{\"code\":\"A8\",\"name\":\"\u91d1\u55d3 \u5361\u62c9 ok(\u7121\u7dda\u9ea5\u514b\u98a8*2)\",\"quantity\":1,\"type\":\"equipment\"}]"}
-FILES:{"proposal_file":{"name":"","full_path":"","type":"","tmp_name":"...","error":4,"size":0}}
-
-2026-05-11T10:41:06+02:00 POST handler invoked
-POST:{"resource_type":"both","borrow_date":"2026-05-11","start_period_code":"E0","end_period_code":"E0","phone":"0970634016","purpose":"11","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1,\"type\":\"equipment\"}]"}
-FILES:{"proposal_file":{"name":"","full_path":"","type":"","tmp_name":"...","error":4,"size":0}}
-
-2026-05-11T10:41:06+02:00 VALIDATION ERROR: 喊話器(充電電池*1) 借用數量超過目前可借用數量。
-POST:{"resource_type":"both","borrow_date":"2026-05-11","start_period_code":"E0","end_period_code":"E0","phone":"0970634016","purpose":"11","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1,\"type\":\"equipment\"}]"}
-FILES:{"proposal_file":{"name":"","full_path":"","type":"","tmp_name":"...","error":4,"size":0}}
-
-2026-05-11T10:41:16+02:00 POST handler invoked
-POST:{"resource_type":"both","borrow_date":"2026-05-11","start_period_code":"E0","end_period_code":"E0","phone":"0970634016","purpose":"11","cart_items":"[{\"code\":\"A2\",\"name\":\"\u6709\u7dda\u9ea5\u514b\u98a8\",\"quantity\":1,\"type\":\"equipment\"}]"}
-FILES:{"proposal_file":{"name":"","full_path":"","type":"","tmp_name":"...","error":4,"size":0}}
-
-2026-05-11T10:41:16+02:00 VALIDATION ERROR: 有線麥克風 未完成預約共 2 個，加上本次申請 1 個共 3 個，超過限借數量 2 個。
-POST:{"resource_type":"both","borrow_date":"2026-05-11","start_period_code":"E0","end_period_code":"E0","phone":"0970634016","purpose":"11","cart_items":"[{\"code\":\"A2\",\"name\":\"\u6709\u7dda\u9ea5\u514b\u98a8\",\"quantity\":1,\"type\":\"equipment\"}]"}
-FILES:{"proposal_file":{"name":"","full_path":"","type":"","tmp_name":"...","error":4,"size":0}}
-
-2026-05-11T10:41:23+02:00 POST handler invoked
-POST:{"resource_type":"both","borrow_date":"2026-05-11","start_period_code":"E0","end_period_code":"E0","phone":"0970634016","purpose":"11","cart_items":"[{\"code\":\"A6\",\"name\":\"MIPRO \u64f4\u97f3\u5668 MA-708(\u7121\u7dda\u9ea5\u514b\u98a8*2)\",\"quantity\":1,\"type\":\"equipment\"}]"}
-FILES:{"proposal_file":{"name":"","full_path":"","type":"","tmp_name":"...","error":4,"size":0}}
-
-2026-05-11T11:07:54+02:00 POST handler invoked
-POST:{"resource_type":"both","borrow_date":"2026-05-12","start_period_code":"D8","end_period_code":"E0","phone":"0970634016","purpose":"11","cart_items":"[{\"code\":\"C7\",\"name\":\"\u4ea4\u901a\u8b66\u793a\u9310\",\"quantity\":10,\"type\":\"equipment\"}]"}
-FILES:{"proposal_file":{"name":"","full_path":"","type":"","tmp_name":"...","error":4,"size":0}}
+2026-05-06T17:21:47+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-18","start_period_code":"D1","end_period_code":"D3","phone":"0900000000","purpose":"123","cart_items":"[{\"code\":\"C10\",\"name\":\"\u65d7\u5ea7\",\"quantity\":1,\"type\":\"equipment\"}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
 

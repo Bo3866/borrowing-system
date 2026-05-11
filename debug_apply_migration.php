@@ -22,9 +22,6 @@ if ($res) {
 }
 
 $alterParts = [];
-if (!in_array('checked_in_space_id', $cols, true)) {
-    $alterParts[] = 'ADD COLUMN checked_in_space_id BIGINT UNSIGNED NULL';
-}
 if (!in_array('checked_in_equipment_id', $cols, true)) {
     $alterParts[] = 'ADD COLUMN checked_in_equipment_id BIGINT UNSIGNED NULL';
 }
@@ -50,9 +47,6 @@ if ($ir) {
 }
 
 $indexStatements = [];
-if (!in_array('idx_checked_in_space_id', $existingIndexes, true)) {
-    $indexStatements[] = 'ALTER TABLE checkin_logs ADD INDEX idx_checked_in_space_id (checked_in_space_id)';
-}
 if (!in_array('idx_checked_in_equipment_id', $existingIndexes, true)) {
     $indexStatements[] = 'ALTER TABLE checkin_logs ADD INDEX idx_checked_in_equipment_id (checked_in_equipment_id)';
 }

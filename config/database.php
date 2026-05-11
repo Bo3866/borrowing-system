@@ -16,7 +16,7 @@ function getDatabaseConfig(): array
 {
     return [
         'host' => envOrNull('DB_HOST') ?? '127.0.0.1',
-        'port' => envOrNull('DB_PORT') !== null ? (int)envOrNull('DB_PORT') : 0,
+        'port' => envOrNull('DB_PORT') !== null ? (int)envOrNull('DB_PORT') : 3307,
         'database' => envOrNull('DB_NAME') ?? 'borrowing_system',
         'username' => envOrNull('DB_USER') ?? 'root',
         'password' => envOrNull('DB_PASSWORD') ?? '',
@@ -25,90 +25,7 @@ function getDatabaseConfig(): array
 
 function getDatabaseConnectionCandidates(): array
 {
-    $envHost = envOrNull('DB_HOST');
-    $envPort = envOrNull('DB_PORT');
-    $envDatabase = envOrNull('DB_NAME');
-    $envUser = envOrNull('DB_USER');
-    $envPassword = envOrNull('DB_PASSWORD');
-
-    $candidates = [];
-
-    if ($envHost !== null || $envPort !== null || $envDatabase !== null || $envUser !== null || $envPassword !== null) {
-        $candidates[] = [
-            'host' => $envHost ?? '127.0.0.1',
-            'port' => $envPort !== null ? (int)$envPort : 3306,
-            'database' => $envDatabase ?? 'borrowing_system',
-            'username' => $envUser ?? 'root',
-            'password' => $envPassword ?? '',
-        ];
-    }
-
-    $candidates[] = [
-        'host' => '127.0.0.1',
-        'port' => 3306,
-        'database' => 'borrowing_system',
-        'username' => 'root',
-        'password' => '12345678',
-    ];
-
-    $candidates[] = [
-        'host' => '127.0.0.1',
-        'port' => 3306,
-        'database' => 'borrowing_system',
-        'username' => 'root',
-        'password' => '12345678',
-    ];
-
-    $candidates[] = [
-        'host' => 'localhost',
-        'port' => 3306,
-        'database' => 'borrowing_system',
-        'username' => 'root',
-        'password' => '12345678',
-    ];
-
-    $candidates[] = [
-        'host' => 'localhost',
-        'port' => 3306,
-        'database' => 'borrowing_system',
-        'username' => 'root',
-        'password' => '12345678',
-    ];
-
-    // Try port 3307 (for alternative MySQL installations)
-    $candidates[] = [
-        'host' => '127.0.0.1',
-        'port' => 3307,
-        'database' => 'borrowing_system',
-        'username' => 'root',
-        'password' => '',
-    ];
-
-    $candidates[] = [
-        'host' => '127.0.0.1',
-        'port' => 3307,
-        'database' => 'borrowing_system',
-        'username' => 'root',
-        'password' => '12345678',
-    ];
-
-    $candidates[] = [
-        'host' => 'localhost',
-        'port' => 3307,
-        'database' => 'borrowing_system',
-        'username' => 'root',
-        'password' => '',
-    ];
-
-    $candidates[] = [
-        'host' => 'localhost',
-        'port' => 3307,
-        'database' => 'borrowing_system',
-        'username' => 'root',
-        'password' => '12345678',
-    ];
-
-    return $candidates;
+    return [getDatabaseConfig()];
 }
 
 function getMysqliConnection(?string &$error = null): ?mysqli
@@ -139,13 +56,6 @@ function getMysqliConnection(?string &$error = null): ?mysqli
 
 function getDatabaseConnection(): PDO
 {
-    $host = '127.0.0.1';
-    // Use port 3306 to match mysqli usage elsewhere in the project
-    $port = '3306';
-    $database = 'borrowing_system';
-    $username = 'root';
-    // MySQL in this workspace uses an empty root password for local dev
-    $password = '12345678';
     $lastError = null;
 
     foreach (getDatabaseConnectionCandidates() as $config) {

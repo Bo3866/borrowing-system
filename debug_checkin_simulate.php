@@ -100,8 +100,8 @@ try {
 
 // Then attempt space checkin
 try {
-    $stmt = mysqli_prepare($link, 'INSERT INTO checkin_logs (reservation_id, user_id, checked_in_space_id, checkin_source) VALUES (?, ?, ?, "qr")');
-    mysqli_stmt_bind_param($stmt, 'iss', $reservationId, $testUserId, $spaceId);
+    $stmt = mysqli_prepare($link, 'INSERT INTO checkin_logs (reservation_id, user_id, checkin_source) VALUES (?, ?, "qr")');
+    mysqli_stmt_bind_param($stmt, 'is', $reservationId, $testUserId);
     $res = mysqli_stmt_execute($stmt);
     if (!$res) {
         echo 'Space insert error: ' . mysqli_error($link) . PHP_EOL;

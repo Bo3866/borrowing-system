@@ -30,7 +30,6 @@ if ($incomingQrToken === '' && isset($_SESSION['pending_checkin_qr'])) {
 }
 unset($_SESSION['pending_checkin_qr']);
 
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system');
 $dbError = '';
 $link = getMysqliConnection($dbError);
 
@@ -64,7 +63,6 @@ if ($dbError === '' && $feedbackType !== 'error') {
             checkin_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             reservation_id BIGINT UNSIGNED NOT NULL,
             user_id VARCHAR(10) NOT NULL,
-            checked_in_space_id BIGINT UNSIGNED NULL,
             checked_in_equipment_id BIGINT UNSIGNED NULL,
             checked_in_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             checkin_source VARCHAR(20) NOT NULL DEFAULT 'qr',
@@ -291,10 +289,9 @@ if ($dbError === '' && $feedbackType !== 'error' && $_SERVER['REQUEST_METHOD'] =
                 mysqli_begin_transaction($link);
                 try {
                     $reservationId = (int)$matchedRow['reservation_id'];
-                    $insertLogStmt = mysqli_prepare($link, 'INSERT INTO checkin_logs (reservation_id, user_id, checked_in_space_id, checkin_source) VALUES (?, ?, ?, "qr")');
+                    $insertLogStmt = mysqli_prepare($link, 'INSERT INTO checkin_logs (reservation_id, user_id, checkin_source) VALUES (?, ?, "qr")');
                     if (!$insertLogStmt) { throw new RuntimeException('寫入報到紀錄失敗：' . mysqli_error($link)); }
-                    $spaceParam = $selectedSpaceId !== '' ? $selectedSpaceId : ($matchedRow['space_id'] ?? null);
-                    mysqli_stmt_bind_param($insertLogStmt, 'iss', $reservationId, $currentUserId, $spaceParam);
+                    mysqli_stmt_bind_param($insertLogStmt, 'is', $reservationId, $currentUserId);
                     mysqli_stmt_execute($insertLogStmt);
                     mysqli_stmt_close($insertLogStmt);
 
@@ -557,7 +554,7 @@ if ($link) {
 
                         <?php if ($dbError !== '') { ?>
                             <div class="alert-box login-alert"><?php echo htmlspecialchars($dbError, ENT_QUOTES, 'UTF-8'); ?></div>
-                        <?php } elseif ($lastCheckinType === 'equipment' && $feedbackMessage !== '') { ?>
+                        <?php } elseif ($feedbackMessage !== '') { ?>
                             <div class="alert-box <?php echo $feedbackType === 'success' ? 'borrow-success' : 'login-alert'; ?>">
                                 <?php echo htmlspecialchars($feedbackMessage, ENT_QUOTES, 'UTF-8'); ?>
                             </div>

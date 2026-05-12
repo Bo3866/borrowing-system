@@ -352,6 +352,43 @@ try {
             color: #ef4444; border: none; background: none; cursor: pointer; font-weight: bold;
         }
         .btn-remove:hover { text-decoration: underline; }
+
+        /* 頁籤樣式 */
+        .tabs-header {
+            display: flex;
+            border-bottom: 2px solid #e2e8f0;
+            margin-bottom: 1.5rem;
+        }
+        .tab-btn {
+            padding: 10px 20px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: #64748b;
+            background: none;
+            border: none;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.2s;
+        }
+        .tab-btn:hover {
+            color: var(--secondary-color);
+        }
+        .tab-btn.active {
+            color: var(--secondary-color);
+            border-bottom-color: var(--secondary-color);
+        }
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.3s;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
     </style>
 </head>
 <body>
@@ -379,18 +416,23 @@ try {
                 <div class="msg-alert msg-error"><?php echo htmlspecialchars($error); ?></div>
             <?php endif; ?>
 
-            <!-- 入庫區塊 -->
-            <div class="card" style="margin-bottom: 2.5rem;">
-                <h3>器材入庫</h3>
-                <hr style="border: 0; height: 1px; background: #eee; margin-bottom: 1.5rem;">
-                <form id="add-form" method="POST">
-                    
-                    <div class="form-group" style="max-width: 250px;">
-                        <label for="added_date">入庫日期：</label>
-                        <input type="date" id="added_date" name="added_date" required value="<?php echo date('Y-m-d'); ?>">
-                    </div>
+            <!-- 頁籤按鈕 -->
+            <div class="tabs-header">
+                <button class="tab-btn active" onclick="switchTab('tab-add', this)">📥 器材入庫</button>
+                <button class="tab-btn" onclick="switchTab('tab-delete', this)">🗑️ 刪除庫存</button>
+            </div>
 
-                    <div id="equipmentSelectorContainer" class="equipment-selector-container form-group">
+            <!-- 入庫區塊 -->
+            <div id="tab-add" class="tab-content active">
+                <div class="card" style="margin-bottom: 2.5rem;">
+                    <form id="add-form" method="POST">
+                        
+                        <div class="form-group" style="max-width: 250px;">
+                            <label for="added_date">入庫日期：</label>
+                            <input type="date" id="added_date" name="added_date" required value="<?php echo date('Y-m-d'); ?>">
+                        </div>
+
+                        <div id="equipmentSelectorContainer" class="equipment-selector-container form-group">
                         <div class="es-left">
                             <div class="es-title">
                                 <span style="color: #3b82f6; margin-right: 8px;">➕</span>
@@ -441,19 +483,20 @@ try {
 
                     <input type="hidden" name="cart_items" id="cart_items_input">
 
-                    <button type="submit" class="btn-primary" style="width: 100%;">確認入庫所有清單項目</button>
-                </form>
+                        <button type="submit" class="btn-primary" style="width: 100%;">確認入庫所有清單項目</button>
+                    </form>
+                </div>
             </div>
 
             <!-- 刪除區塊 -->
-            <div class="card" style="margin-bottom: 2.5rem;">
-                <h3>刪除庫存</h3>
-                <hr style="border: 0; height: 1px; background: #eee; margin-bottom: 1.5rem;">
-                <div class="form-group" style="margin-bottom:0;">
-                    <label for="search_eq_id">請輸入要刪除的器材流水編號：</label>
-                    <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 0.5rem;">
-                        <input type="number" id="search_eq_id" placeholder="例如: 101" style="flex: 1; min-width: 200px; max-width: 300px;">
-                        <button type="button" class="btn-secondary" onclick="checkAndDelete()">查詢並刪除</button>
+            <div id="tab-delete" class="tab-content">
+                <div class="card" style="margin-bottom: 2.5rem;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label for="search_eq_id">請輸入要刪除的器材流水編號：</label>
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 0.5rem;">
+                            <input type="number" id="search_eq_id" placeholder="例如: 101" style="flex: 1; min-width: 200px; max-width: 300px;">
+                            <button type="button" class="btn-secondary" onclick="checkAndDelete()">查詢並刪除</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -462,6 +505,18 @@ try {
 </div>
 
 <script>
+// 頁籤切換功能
+function switchTab(tabId, btnEl) {
+    // 隱藏所有內容
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    // 移除所有按鈕的 active 狀態
+    document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+    
+    // 顯示目標內容並更新按鈕狀態
+    document.getElementById(tabId).classList.add('active');
+    btnEl.classList.add('active');
+}
+
 // 購物車清單
 let cartItems = [];
 

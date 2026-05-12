@@ -122,6 +122,7 @@ if ($link) {
                 
                 <?php if ($isManager) { ?>
                     <button class="nav-btn" onclick="location.href='approve.php'">審核面板</button>
+                    <button class="nav-btn" onclick="location.href='equipment_inventory.php'">庫存管理</button>
                     <button class="nav-btn" id="btnManualRemind" type="button" onclick="handleManualRemindClick(event)">檢查逾期並催繳</button>
                 <?php } ?>
                 <button class="nav-btn" onclick="location.href='checkin.php?qr=CHECKIN_GATE_V1'">掃碼報到</button>

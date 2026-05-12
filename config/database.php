@@ -40,7 +40,7 @@ function getDatabaseConnectionCandidates(): array
             'port' => $envPort !== null ? (int)$envPort : 3306,
             'database' => $envDatabase ?? 'borrowing_system',
             'username' => $envUser ?? 'root',
-            'password' => $envPassword ?? '',
+            'password' => $envPassword ?? '12345678',
         ];
     }
 

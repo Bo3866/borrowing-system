@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 2026-04-22T11:12:15+00:00 POST handler invoked
 POST:{"resource_type":"equipment","space_id":"","borrow_date":"2026-04-22","start_period_code":"D3","end_period_code":"E3","phone":"","purpose":"9663\r\n","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1},{\"code\":\"A2\",\"name\":\"\u6709\u7dda\u9ea5\u514b\u98a8\",\"quantity\":1}]"}
 FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
@@ -276,5 +277,9 @@ FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}
 
 2026-05-12T11:28:39+00:00 POST handler invoked
 POST:{"resource_type":"both","borrow_date":"2026-05-12","start_period_code":"E2","end_period_code":"E4","phone":"0912345678","purpose":"100\r\n","cart_items":"[{\"code\":\"A10\",\"name\":\"\u96fb\u92fc\u7434\",\"quantity\":1,\"type\":\"equipment\"}]"}
+=======
+2026-05-11T16:30:00+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-18","start_period_code":"D1","end_period_code":"D2","phone":"0900000000","purpose":"123","cart_items":"[{\"code\":\"A2\",\"name\":\"\u6709\u7dda\u9ea5\u514b\u98a8\",\"quantity\":1,\"type\":\"equipment\"}]"}
+>>>>>>> e73da17c7f8f3e4f84940d129cc5d57076ec698c
 FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
 

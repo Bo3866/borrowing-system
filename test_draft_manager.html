@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>草稿功能測試</title>
+    <style>
+        body { font-family: 'Noto Sans TC'; margin: 20px; background: #f5f5f5; }
+        .test-container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .test-result { margin: 10px 0; padding: 10px; border-radius: 4px; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .warning { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+        button { padding: 8px 16px; margin: 5px; border: none; border-radius: 4px; cursor: pointer; }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-danger { background: #dc3545; color: white; }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🧪 DraftManager 功能測試</h1>
+        
+        <div id="testResults"></div>
+        
+        <h3>測試按鈕</h3>
+        <button class="btn-primary" onclick="testLocalStorage()">測試 LocalStorage</button>
+        <button class="btn-success" onclick="testDraftManager()">測試 DraftManager</button>
+        <button class="btn-danger" onclick="clearAllDrafts()">清除所有草稿</button>
+    </div>
+
+    <script src="DraftManager.js"></script>
+    <script>
+        const resultsDiv = document.getElementById('testResults');
+
+        function addResult(title, message, type = 'success') {
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.innerHTML = `<strong>${title}:</strong> ${message}`;
+            resultsDiv.appendChild(div);
+        }
+
+        function testLocalStorage() {
+            resultsDiv.innerHTML = '';
+            try {
+                const test = '__test__';
+                localStorage.setItem(test, 'test');
+                const value = localStorage.getItem(test);
+                localStorage.removeItem(test);
+                
+                if (value === 'test') {
+                    addResult('LocalStorage', '✓ 可用且正常工作', 'success');
+                } else {
+                    addResult('LocalStorage', '✗ 讀寫失敗', 'error');
+                }
+            } catch (e) {
+                addResult('LocalStorage', `✗ 錯誤: ${e.message}`, 'error');
+            }
+        }
+
+        function testDraftManager() {
+            resultsDiv.innerHTML = '';
+            
+            try {
+                if (!window.draftManager) {
+                    addResult('DraftManager', '✗ 未初始化', 'error');
+                    return;
+                }
+                
+                addResult('DraftManager', '✓ 已初始化', 'success');
+                
+                const stats = window.draftManager.getDraftStats();
+                addResult('草稿統計', `已保存 ${stats.totalCount} 筆草稿`, 'success');
+                
+                addResult('主要方法', '✓ 以下方法可用:', 'success');
+                const methods = [
+                    'extractFormData', 'saveDraft', 'loadAllDrafts', 'getDraftById',
+                    'deleteDraft', 'loadDraftToForm', 'clearForm', 'getDraftStats'
+                ];
+                methods.forEach(m => {
+                    const available = typeof window.draftManager[m] === 'function';
+                    addResult(`  ${m}`, available ? '✓ 可用' : '✗ 不可用', available ? 'success' : 'error');
+                });
+                
+            } catch (e) {
+                addResult('DraftManager', `✗ 錯誤: ${e.message}`, 'error');
+            }
+        }
+
+        function clearAllDrafts() {
+            if (window.draftManager && confirm('確定要清除所有草稿嗎？')) {
+                window.draftManager.deleteAllDrafts();
+                addResult('清除操作', '✓ 所有草稿已清除', 'success');
+            }
+        }
+
+        // 自動檢查
+        window.addEventListener('load', function() {
+            resultsDiv.innerHTML = '';
+            setTimeout(function() {
+                if (window.draftManager) {
+                    addResult('自動檢查', '✓ DraftManager 已初始化', 'success');
+                    addResult('LocalStorage', `✓ 已保存 ${window.draftManager.getDraftStats().totalCount} 筆草稿`, 'success');
+                } else {
+                    addResult('自動檢查', '✗ DraftManager 初始化失敗', 'error');
+                }
+            }, 500);
+        });
+    </script>
+</body>
+</html>

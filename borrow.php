@@ -199,6 +199,11 @@ $reservationApplicantColumn = 'user_id';
 $borrowError = '';
 $borrowSuccess = '';
 $formData = [
+    'organization_name' => '',
+    'activity_name' => '',
+    'participant_count' => '',
+    'staff_count' => '',
+    'club_president' => '',
     'resource_type' => 'equipment',
     'equipment_code' => '',
     'space_id' => '',
@@ -219,6 +224,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     // We override equipment_code since cart_items processes multiple
     $formData['equipment_code'] = 'unused';
+    $formData['organization_name'] = trim((string)($_POST['organization_name'] ?? ''));
+    $formData['activity_name'] = trim((string)($_POST['activity_name'] ?? ''));
+    $formData['participant_count'] = trim((string)($_POST['participant_count'] ?? ''));
+    $formData['staff_count'] = trim((string)($_POST['staff_count'] ?? ''));
+    $formData['club_president'] = trim((string)($_POST['club_president'] ?? ''));
     $formData['space_id'] = trim((string)($_POST['space_id'] ?? ''));
     $formData['borrow_date'] = trim((string)($_POST['borrow_date'] ?? ''));
     $formData['start_period_code'] = trim((string)($_POST['start_period_code'] ?? ''));
@@ -516,9 +526,9 @@ SQL;
                 $hasApprovalStageCol = in_array('approval_stage', $reservationCols, true);
                 
                 $submittedAtVal = date('Y-m-d H:i:s'); // 保證同一批次提交時間一致
-                $insertCols = [$applicantColumn, 'borrow_start_at', 'borrow_end_at'];
-                $bindValuesTemplate = [$userId, $borrowStartAtSql, $borrowEndAtSql];
-                $bindTypesTemplate = 'sss';
+                $insertCols = [$applicantColumn, 'borrow_start_at', 'borrow_end_at', 'organization_name', 'activity_name', 'participant_count', 'staff_count', 'club_president'];
+                $bindValuesTemplate = [$userId, $borrowStartAtSql, $borrowEndAtSql, $formData['organization_name'], $formData['activity_name'], $formData['participant_count'], (int)$formData['staff_count'], $formData['club_president']];
+                $bindTypesTemplate = 'ssssssis';
 
                 if ($hasPurposeCol) {
                     $insertCols[] = 'purpose';
@@ -1027,6 +1037,10 @@ SQL;
         .period-item:hover { transform:translateY(-2px); }
         .calendar-card { width:100%; border-top:4px solid #3b82f6; }
     </style>
+    <!-- 引入 Flatpickr -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh-tw.js"></script>
 </head>
 <body>
     <div class="container">
@@ -1061,14 +1075,116 @@ SQL;
 
                 <div class="borrow-layout full-width-layout" id="mainBorrowLayout">
                     <section class="card borrow-form-card">
-                        <h3>申請資料</h3>
-                        <form method="post" enctype="multipart/form-data" class="borrow-form" action="borrow.php" novalidate>
-                            <div class="form-group" style="display:none;">
-                                <label for="resource_type">借用類型 (已合併)</label>
-                                <select id="resource_type" name="resource_type">
-                                    <option value="both" selected>兩者</option>
-                                </select>
+                        <!-- 進度條 Stepper -->
+                        <div class="stepper-container">
+                            <div class="stepper-item active" id="stepper-1">
+                                <div class="step-circle">1</div>
+                                <div class="step-label">活動日期</div>
                             </div>
+                            <div class="stepper-line"></div>
+                            <div class="stepper-item" id="stepper-2">
+                                <div class="step-circle">2</div>
+                                <div class="step-label">器材與場地</div>
+                            </div>
+                            <div class="stepper-line"></div>
+                            <div class="stepper-item" id="stepper-3">
+                                <div class="step-circle">3</div>
+                                <div class="step-label">聯絡資訊</div>
+                            </div>
+                            <div class="stepper-line"></div>
+                            <div class="stepper-item" id="stepper-4">
+                                <div class="step-circle">4</div>
+                                <div class="step-label">確認送出</div>
+                            </div>
+                        </div>
+
+                        <h3>申請資料</h3>
+                        <form method="post" enctype="multipart/form-data" class="borrow-form" action="borrow.php" novalidate id="multistep_form">
+                            <!-- ========== 步驟 1 內容區 ========== -->
+                            <div class="step-content active" id="step-content-1">
+                                <h3 class="step-title" style="margin-bottom: 10px;">第一步：活動基本資料</h3>
+                                <p class="step-desc" style="color: #7f8c8d;">請填寫活動相關資訊與申請日期。</p>
+
+                                <div class="form-group" style="margin-top: 20px;">
+                                    <label for="organization_name">單位名稱 / 主辦社團 <span style="color:red">*</span></label>
+                                    <input type="text" id="organization_name" name="organization_name" class="form-control" placeholder="請輸入主辦單位名稱" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="activity_name">活動名稱 <span style="color:red">*</span></label>
+                                    <input type="text" id="activity_name" name="activity_name" class="form-control" placeholder="請輸入活動名稱" required>
+                                </div>
+
+                                <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
+                                    <div class="form-group" style="flex: 1; min-width: 150px;">
+                                        <label for="participant_count">活動對象人數 <span style="color:red">*</span></label>
+                                        <select id="participant_count" name="participant_count" class="form-control" required style="padding: 8px;">
+                                            <option value="">請選擇</option>
+                                            <option value="50人以下">50人以下</option>
+                                            <option value="50~100人">50~100人</option>
+                                            <option value="100~200人">100~200人</option>
+                                            <option value="200人以上">200人以上</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group" style="flex: 1; min-width: 150px;">
+                                        <label for="staff_count">工作人員人數 <span style="color:red">*</span></label>
+                                        <input type="number" id="staff_count" name="staff_count" class="form-control" placeholder="請輸入人數" min="1" required>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="club_president">社 / 會長 (負責人) <span style="color:red">*</span></label>
+                                    <input type="text" id="club_president" name="club_president" class="form-control" placeholder="請輸入負責人姓名" required>
+                                </div>
+
+                                <div class="form-group" style="margin-top: 20px; border-top: 1px solid #ccc; padding-top: 15px;">
+                                    <label for="activity_date_range">活動日期範圍 <span style="color:red">*</span></label>
+                                    <input type="text" id="activity_date_range" name="borrow_date" class="form-control" placeholder="請點擊此處並圈選起迄日" value="<?php echo htmlspecialchars($formData['borrow_date'], ENT_QUOTES, 'UTF-8'); ?>" required readonly style="background-color: #fff; cursor: pointer;">
+                                    <div id="date_error_msg" style="color: #e74c3c; font-size: 0.9em; margin-top: 5px; display: none;">
+                                        ⚠️ 警告：活動最多僅能連續借用 4 天，請重新選擇。
+                                    </div>
+                                </div>
+
+                                <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
+                                    <div class="form-group" style="flex: 1; min-width: 150px;">
+                                        <label for="start_period_code">活動開始時間 (節次) <span style="color:red">*</span></label>
+                                        <select id="start_period_code" name="start_period_code" class="form-control" required style="padding: 8px;">
+                                            <option value="">請選擇</option>
+                                            <?php foreach ($periodSlots as $periodCode => $periodConfig) { ?>
+                                                <option value="<?php echo htmlspecialchars($periodCode, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData['start_period_code'] === $periodCode ? 'selected' : ''; ?>>
+                                                    <?php echo htmlspecialchars($periodCode . ' (' . substr($periodConfig['start'], 0, 5) . '-' . substr($periodConfig['end'], 0, 5) . ')', ENT_QUOTES, 'UTF-8'); ?>
+                                                </option>
+                                            <?php } ?>
+                                        </select>
+                                    </div>
+
+                                    <div class="form-group" style="flex: 1; min-width: 150px;">
+                                        <label for="end_period_code">活動結束時間 (節次) <span style="color:red">*</span></label>
+                                        <select id="end_period_code" name="end_period_code" class="form-control" required style="padding: 8px;">
+                                            <option value="">請選擇</option>
+                                            <?php foreach ($periodSlots as $periodCode => $periodConfig) { ?>
+                                                <option value="<?php echo htmlspecialchars($periodCode, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData['end_period_code'] === $periodCode ? 'selected' : ''; ?>>
+                                                    <?php echo htmlspecialchars($periodCode . ' (' . substr($periodConfig['start'], 0, 5) . '-' . substr($periodConfig['end'], 0, 5) . ')', ENT_QUOTES, 'UTF-8'); ?>
+                                                </option>
+                                            <?php } ?>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="step-actions">
+                                    <button type="button" class="btn btn-primary btn-next" onclick="goToStep(2)">下一步：選擇場地設備 ➔</button>
+                                </div>
+                            </div>
+
+                            <!-- ========== 步驟 2 內容區準備的地方 ========== -->
+                            <div class="step-content" id="step-content-2">
+                                <h3 class="step-title" style="margin-bottom: 10px;">第二步：挑選器材與場地</h3>
+                                
+                                <!-- 隱藏或不需要重新顯示的部分 -->
+                                <div class="form-group" style="display:none;">
+                                    <label for="resource_type">借用類型 (已合併)</label>
+                                    <select id="resource_type" name="resource_type">
+                                        <option value="both" selected>兩者</option>
+                                    </select>
+                                </div>
 
                             <div class="form-group" id="proposalGroup" style="display: none; margin-bottom: 20px;">
                                 <label for="proposal_file">活動企劃書（申請場地時必填，僅接受 PDF，限 5MB）</label>
@@ -1078,37 +1194,6 @@ SQL;
                             <div class="form-group">
                                 <label for="applicant_user_id">申請人帳號</label>
                                 <input type="text" id="applicant_user_id" value="<?php echo htmlspecialchars($userId, ENT_QUOTES, 'UTF-8'); ?>" readonly>
-                            </div>
-
-                            <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
-                                <div class="form-group" style="flex: 1; min-width: 150px;">
-                                    <label for="borrow_date">借用日期</label>
-                                    <input type="text" id="borrow_date" name="borrow_date" value="<?php echo htmlspecialchars($formData['borrow_date'], ENT_QUOTES, 'UTF-8'); ?>" data-mindate="<?php echo date('Y-m-d'); ?>" placeholder="選擇借用日期" required readonly>
-                                </div>
-
-                                <div class="form-group" style="flex: 1; min-width: 150px;">
-                                    <label for="start_period_code">開始節次</label>
-                                    <select id="start_period_code" name="start_period_code" required>
-                                        <option value="">請選擇</option>
-                                        <?php foreach ($periodSlots as $periodCode => $periodConfig) { ?>
-                                            <option value="<?php echo htmlspecialchars($periodCode, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData['start_period_code'] === $periodCode ? 'selected' : ''; ?>>
-                                                <?php echo htmlspecialchars($periodCode . ' (' . substr($periodConfig['start'], 0, 5) . '-' . substr($periodConfig['end'], 0, 5) . ')', ENT_QUOTES, 'UTF-8'); ?>
-                                            </option>
-                                        <?php } ?>
-                                    </select>
-                                </div>
-
-                                <div class="form-group" style="flex: 1; min-width: 150px;">
-                                    <label for="end_period_code">結束節次</label>
-                                    <select id="end_period_code" name="end_period_code" required>
-                                        <option value="">請選擇</option>
-                                        <?php foreach ($periodSlots as $periodCode => $periodConfig) { ?>
-                                            <option value="<?php echo htmlspecialchars($periodCode, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData['end_period_code'] === $periodCode ? 'selected' : ''; ?>>
-                                                <?php echo htmlspecialchars($periodCode . ' (' . substr($periodConfig['start'], 0, 5) . '-' . substr($periodConfig['end'], 0, 5) . ')', ENT_QUOTES, 'UTF-8'); ?>
-                                            </option>
-                                        <?php } ?>
-                                    </select>
-                                </div>
                             </div>
 
                             <div id="equipmentSelectorContainer" class="equipment-selector-container">
@@ -1231,24 +1316,82 @@ SQL;
                                 <textarea id="purpose" name="purpose" rows="4" required><?php echo htmlspecialchars($formData['purpose'], ENT_QUOTES, 'UTF-8'); ?></textarea>
                             </div>
 
-                            <div class="form-buttons">
-                                <button type="submit" class="btn-primary" id="borrowSubmitBtn">確認借用</button>
-                                <button type="button" class="btn-secondary" onclick="location.href='index.php'">取消</button>
+                            <div class="step-actions">
+                                <button type="button" class="btn btn-secondary" onclick="goToStep(1)"> ⬅ 回上一步</button>
+                                <button type="submit" class="btn btn-primary btn-next" id="borrowSubmitBtn">確認借用</button>
                             </div>
-                            <div id="submitDebugMsg" style="margin-top:8px; font-size:13px; color:#64748b;"></div>
+                        </div> <!-- end of step-content-2 -->
+
+                        <!-- 草稿功能保留可放至其他位置, 或暫時隱藏, 為了簡化, 先放著 -->
+                        <!-- <div class="form-buttons">
+                                <div class="draft-buttons">
+                                    <button type="button" class="btn-draft btn-draft-save" id="saveDraftBtn">暫存申請</button>
+                                    <button type="button" class="btn-draft btn-draft-manage" id="manageDraftBtn">草稿箱</button>
+                                </div>
+                                <button type="button" class="btn-secondary" onclick="location.href='index.php'">取消</button>
+                            </div> -->
+                        <div id="submitDebugMsg" style="margin-top:8px; font-size:13px; color:#64748b;"></div>
                         </form>
                     </section>
+
+                    <!-- 草稿管理中心模態框 -->
+                    <div id="draftModalOverlay" class="draft-modal-overlay">
+                        <div class="draft-modal">
+                            <div class="draft-modal-header">
+                                <h2>📋 草稿管理中心</h2>
+                                <button type="button" class="draft-modal-close" id="draftModalCloseBtn">&times;</button>
+                            </div>
+                            <div class="draft-modal-content">
+                                <div id="draftMessage" class="draft-message"></div>
+                                <div id="draftTableContainer">
+                                    <p class="draft-empty-message">
+                                        <div class="draft-empty-icon">📭</div>
+                                        暫無已儲存的草稿
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="draft-modal-footer">
+                                <div class="draft-footer-buttons">
+                                    <button type="button" class="draft-btn-new" id="draftBtnNew">✨ 新增申請</button>
+                                    <button type="button" class="draft-btn-close" id="draftBtnClose">關閉</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
         </main>
     </div>
 
+    <!-- 草稿管理 JavaScript 模組 - 必須在 borrow.php 邏輯之前加載 -->
+    <script src="DraftManager.js"></script>
+
     <script>
-        (function () {
-            const borrowForm = document.querySelector('form.borrow-form');
-            const spaceSelect = document.getElementById('space_id');
-            const resourceTypeSelect = document.getElementById('resource_type');
-            const submitButton = document.getElementById('borrowSubmitBtn');
+        // 確保在 DOM 完全加載後執行
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', startApplication);
+        } else {
+            startApplication();
+        }
+
+        function startApplication() {
+            console.log('[Borrow Page] Initializing...');
+            
+            // 確保 DraftManager 已初始化
+            if (!window.draftManager) {
+                console.error('[Draft] DraftManager not found! Retrying...');
+                setTimeout(startApplication, 100);
+                return;
+            }
+            
+            console.log('[Draft] DraftManager initialized successfully');
+            initializeBorrowForm();
+            initializeDraftManagement();
+        }
+
+        // ================== 借用表單邏輯 ==================
+        function initializeBorrowForm() {
+            (function () {
             const spaceGroup = document.getElementById('spaceGroup');
             const equipmentSelectorContainer = document.getElementById('equipmentSelectorContainer');
             const proposalFileInput = document.getElementById('proposal_file');
@@ -1641,7 +1784,206 @@ SQL;
             if (borrowForm) borrowForm.addEventListener('submit', handleFormSubmit);
             refreshModeUI();
             renderCart();
-        })();
+            })();
+        }
+
+        // ================== 草稿管理 (Draft Management) ==================
+        function initializeDraftManagement() {
+            (function() {
+            // DOM 元素參考
+            const saveDraftBtn = document.getElementById('saveDraftBtn');
+            const manageDraftBtn = document.getElementById('manageDraftBtn');
+            const draftModalOverlay = document.getElementById('draftModalOverlay');
+            const draftModalCloseBtn = document.getElementById('draftModalCloseBtn');
+            const draftBtnClose = document.getElementById('draftBtnClose');
+            const draftBtnNew = document.getElementById('draftBtnNew');
+            const draftTableContainer = document.getElementById('draftTableContainer');
+            const draftMessage = document.getElementById('draftMessage');
+
+            /**
+             * 顯示暫時訊息
+             */
+            function showMessage(text, type = 'success', duration = 3000) {
+                draftMessage.textContent = text;
+                draftMessage.className = `draft-message show ${type}`;
+                
+                if (duration > 0) {
+                    setTimeout(() => {
+                        draftMessage.classList.remove('show');
+                    }, duration);
+                }
+            }
+
+            /**
+             * 渲染草稿列表表格
+             */
+            function renderDraftTable() {
+                const stats = window.draftManager.getDraftStats();
+                
+                if (stats.totalCount === 0) {
+                    draftTableContainer.innerHTML = `
+                        <p class="draft-empty-message">
+                            <div class="draft-empty-icon">📭</div>
+                            暫無已儲存的草稿
+                        </p>
+                    `;
+                    return;
+                }
+
+                let tableHtml = `
+                    <table class="draft-table">
+                        <thead>
+                            <tr>
+                                <th>暫存時間</th>
+                                <th>用途摘要</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                stats.drafts.forEach(draft => {
+                    const timestamp = draft.timestamp || '未知';
+                    const purposeSummary = window.draftManager.generatePurposeSummary(draft.purpose);
+                    const draftId = draft.draftId;
+                    
+                    tableHtml += `
+                        <tr>
+                            <td>${timestamp}</td>
+                            <td>${purposeSummary}</td>
+                            <td>
+                                <div class="draft-actions">
+                                    <button type="button" class="draft-btn-load" onclick="loadDraft('${draftId}')">載入</button>
+                                    <button type="button" class="draft-btn-delete" onclick="deleteDraft('${draftId}')">刪除</button>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                tableHtml += `
+                        </tbody>
+                    </table>
+                `;
+
+                draftTableContainer.innerHTML = tableHtml;
+            }
+
+            /**
+             * 全域函數：載入草稿
+             */
+            window.loadDraft = function(draftId) {
+                const draft = window.draftManager.getDraftById(draftId);
+                if (!draft) {
+                    showMessage('找不到此草稿', 'error');
+                    return;
+                }
+
+                const success = window.draftManager.loadDraftToForm(draft);
+                if (success) {
+                    closeDraftModal();
+                    showMessage(`✓ 已載入草稿 (${draft.timestamp})`, 'success', 3000);
+                } else {
+                    showMessage('載入草稿失敗，請重新嘗試', 'error');
+                }
+            };
+
+            /**
+             * 全域函數：刪除草稿
+             */
+            window.deleteDraft = function(draftId) {
+                if (!confirm('確定要刪除此草稿嗎？')) {
+                    return;
+                }
+
+                const deleted = window.draftManager.deleteDraft(draftId);
+                if (deleted) {
+                    renderDraftTable();
+                    showMessage('✓ 草稿已刪除', 'success', 2000);
+                } else {
+                    showMessage('刪除草稿失敗', 'error');
+                }
+            };
+
+            /**
+             * 開啟草稿管理中心模態框
+             */
+            function openDraftModal() {
+                renderDraftTable();
+                draftModalOverlay.classList.add('active');
+            }
+
+            /**
+             * 關閉草稿管理中心模態框
+             */
+            function closeDraftModal() {
+                draftModalOverlay.classList.remove('active');
+            }
+
+            window.closeDraftModal = closeDraftModal;
+
+            /**
+             * 保存草稿
+             */
+            function saveDraft() {
+                try {
+                    const draft = window.draftManager.saveDraft();
+                    showMessage(`✓ 草稿已暫存 (${draft.draftId.substring(0, 20)}...)`, 'success', 3000);
+                } catch (error) {
+                    showMessage(`✗ 暫存失敗：${error.message}`, 'error', 3000);
+                }
+            }
+
+            /**
+             * 新增申請（清空表單）
+             */
+            function createNewApplication() {
+                if (!confirm('確定要清空當前表單並建立新申請嗎？\n（已暫存的資料不會遺失）')) {
+                    return;
+                }
+                window.draftManager.clearForm();
+                closeDraftModal();
+                showMessage('✓ 表單已清空，可開始新申請', 'success', 2000);
+            }
+
+            // 事件綁定
+            if (saveDraftBtn) {
+                saveDraftBtn.addEventListener('click', saveDraft);
+            }
+
+            if (manageDraftBtn) {
+                manageDraftBtn.addEventListener('click', openDraftModal);
+            }
+
+            if (draftModalCloseBtn) {
+                draftModalCloseBtn.addEventListener('click', closeDraftModal);
+            }
+
+            if (draftBtnClose) {
+                draftBtnClose.addEventListener('click', closeDraftModal);
+            }
+
+            if (draftBtnNew) {
+                draftBtnNew.addEventListener('click', createNewApplication);
+            }
+
+            // 點擊模態框背景關閉
+            if (draftModalOverlay) {
+                draftModalOverlay.addEventListener('click', function(e) {
+                    if (e.target === this) {
+                        closeDraftModal();
+                    }
+                });
+            }
+
+            // 按 Escape 鍵也可關閉
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape' && draftModalOverlay.classList.contains('active')) {
+                    closeDraftModal();
+                }
+            });
+            })();
+        }
         
     </script>
 
@@ -2180,6 +2522,121 @@ document.addEventListener('DOMContentLoaded', () => {
         updatePeriodOptions();
     }
 });
+
+let selectedDays = 0;
+
+// 計算 n 個工作天後的日期 (跳過六、日)
+function getWorkingDaysFromToday(days) {
+    let date = new Date();
+    let addedDays = 0;
+    while (addedDays < days) {
+        date.setDate(date.getDate() + 1);
+        if (date.getDay() !== 0 && date.getDay() !== 6) {
+            addedDays++;
+        }
+    }
+    return date;
+}
+
+// 根據人數取得最短限制日期
+function getMinDateByParticipantCount(countValue) {
+    if (countValue === '100~200人' || countValue === '200人以上') {
+        // 大於 100 人：30個工作天
+        return getWorkingDaysFromToday(30);
+    } else {
+        // 一般情況：7 天後 (日曆天)
+        let d = new Date();
+        d.setDate(d.getDate() + 7);
+        return d;
+    }
+}
+
+let initialMinDate = getMinDateByParticipantCount(document.getElementById('participant_count') ? document.getElementById('participant_count').value : ''); 
+
+const fpActivityDate = flatpickr("#activity_date_range", {
+    mode: "range",
+    minDate: initialMinDate,
+    locale: "zh_tw",
+    dateFormat: "Y-m-d",
+    onChange: function(selectedDates, dateStr, instance) {
+        const errorMsg = document.getElementById('date_error_msg');
+        const rangeInput = document.getElementById('activity_date_range');
+        
+        if (selectedDates.length === 2) {
+            const timeDiff = Math.abs(selectedDates[1].getTime() - selectedDates[0].getTime());
+            selectedDays = Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1; // 包含頭尾天數
+
+            if(selectedDays > 4) {
+                errorMsg.style.display = 'block';
+                rangeInput.style.borderColor = '#e74c3c';
+            } else {
+                errorMsg.style.display = 'none';
+                rangeInput.style.borderColor = '#ccc';
+            }
+        } else if (selectedDates.length === 1) {
+            selectedDays = 1;
+            errorMsg.style.display = 'none';
+            rangeInput.style.borderColor = '#ccc';
+        }
+    }
+});
+
+// 當改變人數時，動態更新鎖定日期
+const participantSelect = document.getElementById('participant_count');
+if (participantSelect) {
+    participantSelect.addEventListener('change', function(e) {
+        const newMinDate = getMinDateByParticipantCount(e.target.value);
+        
+        // 更新日曆的最小可選日期
+        fpActivityDate.set('minDate', newMinDate);
+        
+        // 如果目前已選日期早於新規定日期，則清空重選
+        const selected = fpActivityDate.selectedDates;
+        if (selected.length > 0) {
+            // 將 time 歸零以準確比對日期
+            const minTime = new Date(newMinDate).setHours(0,0,0,0);
+            if (selected[0].getTime() < minTime) {
+                alert("人數達 100 人以上之大型活動需提前 30 個工作天申請！\n系統已清空您的舊日期，請重新按規定選擇。");
+                fpActivityDate.clear();
+                selectedDays = 0;
+            }
+        }
+    });
+}
+
+function goToStep(stepNo) {
+    if (stepNo === 2) {
+        const dateInput = document.getElementById('activity_date_range').value;
+        if (!dateInput || dateInput === '') {
+            alert("請先選擇活動起訖日期！");
+            return;
+        }
+        if (selectedDays > 4) {
+            alert("活動天數最多不可超過 4 天，請重新選擇！");
+            return;
+        }
+        // 將選擇的第一個日期帶入原本需要檢查的依據，避免後續腳本故障
+        // (這裡您可以視情況調整後端邏輯，目前暫且讓它正常進入 Step 2)
+    }
+
+    document.querySelectorAll('.step-content').forEach(function(el) {
+        el.classList.remove('active');
+    });
+    
+    const nextStep = document.getElementById('step-content-' + stepNo);
+    if(nextStep) {
+        nextStep.classList.add('active');
+    }
+
+    for(let i=1; i<=4; i++) {
+        let st = document.getElementById('stepper-' + i);
+        if (st) st.classList.remove('active');
+    }
+    for(let i=1; i<=stepNo; i++) {
+        let st = document.getElementById('stepper-' + i);
+        if (st) st.classList.add('active');
+    }
+}
 </script>
 </body>
 </html>

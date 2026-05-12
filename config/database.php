@@ -19,7 +19,7 @@ function getDatabaseConfig(): array
         'port' => envOrNull('DB_PORT') !== null ? (int)envOrNull('DB_PORT') : 3306,
         'database' => envOrNull('DB_NAME') ?? 'borrowing_system',
         'username' => envOrNull('DB_USER') ?? 'root',
-        'password' => envOrNull('DB_PASSWORD') ?? '',
+        'password' => envOrNull('DB_PASSWORD') ?? '12345678',
     ];
 }
 
@@ -40,7 +40,7 @@ function getDatabaseConnectionCandidates(): array
             'port' => $envPort !== null ? (int)$envPort : 3306,
             'database' => $envDatabase ?? 'borrowing_system',
             'username' => $envUser ?? 'root',
-            'password' => $envPassword ?? '',
+            'password' => $envPassword ?? '12345678',
         ];
     }
 
@@ -93,7 +93,7 @@ function getMysqliConnection(?string &$error = null): ?mysqli
 {
     foreach (getDatabaseConnectionCandidates() as $config) {
         try {
-            $link = mysqli_connect(
+            $link = @mysqli_connect(
                 $config['host'],
                 $config['username'],
                 $config['password'],

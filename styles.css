@@ -1199,6 +1199,54 @@ h3 {
     .form-buttons button {
         width: 100%;
     }
+
+    .draft-buttons {
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .btn-draft {
+        width: 100%;
+    }
+
+    .draft-modal {
+        width: 95%;
+        max-height: 90vh;
+    }
+
+    .draft-modal-header {
+        padding: 1rem;
+    }
+
+    .draft-modal-header h2 {
+        font-size: 1.1rem;
+    }
+
+    .draft-modal-content {
+        padding: 1rem;
+        font-size: 0.85rem;
+    }
+
+    .draft-table th,
+    .draft-table td {
+        padding: 0.5rem;
+        font-size: 0.8rem;
+    }
+
+    .draft-modal-footer {
+        flex-direction: column;
+        padding: 1rem;
+    }
+
+    .draft-footer-buttons {
+        width: 100%;
+        flex-direction: column;
+    }
+
+    .draft-btn-new,
+    .draft-btn-close {
+        width: 100%;
+    }
 }
 
 /* ===== 實用工具類 ===== */
@@ -1422,6 +1470,309 @@ h3 {
 /* 簡化進度條容器 */
 .stepper-simple {
     padding: 1.2rem 1rem;
+}
+
+/* ===== 草稿管理中心 (Draft Management) ===== */
+
+/* 草稿按鈕組 */
+.draft-buttons {
+    display: flex;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+}
+
+.btn-draft {
+    padding: 0.6rem 1.2rem;
+    font-size: 0.95rem;
+    font-weight: 500;
+    border: none;
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.btn-draft-save {
+    background-color: #f39c12;
+    color: white;
+    border: 1px solid #d68910;
+}
+
+.btn-draft-save:hover {
+    background-color: #d68910;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(243, 156, 18, 0.3);
+}
+
+.btn-draft-save:active {
+    transform: translateY(0);
+}
+
+.btn-draft-manage {
+    background-color: #3498db;
+    color: white;
+    border: 1px solid #2980b9;
+}
+
+.btn-draft-manage:hover {
+    background-color: #2980b9;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+}
+
+.btn-draft-manage:active {
+    transform: translateY(0);
+}
+
+/* 模態框背景 */
+.draft-modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+    animation: fadeIn 0.3s ease-out;
+}
+
+.draft-modal-overlay.active {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+/* 模態框本體 */
+.draft-modal {
+    background: white;
+    border-radius: var(--border-radius);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    max-width: 700px;
+    width: 90%;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 模態框標題 */
+.draft-modal-header {
+    padding: 1.5rem;
+    border-bottom: 2px solid var(--light-bg);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.draft-modal-header h2 {
+    font-size: 1.3rem;
+    color: var(--primary-color);
+    margin: 0;
+}
+
+.draft-modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #7f8c8d;
+    transition: var(--transition);
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.draft-modal-close:hover {
+    color: var(--primary-color);
+}
+
+/* 模態框內容 */
+.draft-modal-content {
+    padding: 1.5rem;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.draft-empty-message {
+    text-align: center;
+    padding: 2rem;
+    color: #7f8c8d;
+    font-size: 1rem;
+}
+
+.draft-empty-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
+
+/* 草稿表格 */
+.draft-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.draft-table thead {
+    background-color: var(--light-bg);
+}
+
+.draft-table th {
+    padding: 0.8rem;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-color);
+    border-bottom: 1px solid #bdc3c7;
+}
+
+.draft-table td {
+    padding: 0.8rem;
+    border-bottom: 1px solid #ecf0f1;
+}
+
+.draft-table tbody tr {
+    transition: var(--transition);
+}
+
+.draft-table tbody tr:hover {
+    background-color: #f8f9fa;
+}
+
+/* 草稿操作按鈕組 */
+.draft-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+}
+
+.draft-btn-load,
+.draft-btn-delete {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.draft-btn-load {
+    background-color: var(--success-color);
+    color: white;
+}
+
+.draft-btn-load:hover {
+    background-color: #229954;
+    box-shadow: 0 2px 8px rgba(39, 174, 96, 0.2);
+}
+
+.draft-btn-delete {
+    background-color: var(--danger-color);
+    color: white;
+}
+
+.draft-btn-delete:hover {
+    background-color: #c0392b;
+    box-shadow: 0 2px 8px rgba(231, 76, 60, 0.2);
+}
+
+/* 模態框頁腳 */
+.draft-modal-footer {
+    padding: 1.5rem;
+    border-top: 2px solid var(--light-bg);
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+}
+
+.draft-footer-buttons {
+    display: flex;
+    gap: 0.8rem;
+}
+
+.draft-btn-new,
+.draft-btn-close {
+    padding: 0.6rem 1.2rem;
+    font-size: 0.95rem;
+    border: none;
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.draft-btn-new {
+    background-color: var(--success-color);
+    color: white;
+    border: 1px solid #229954;
+}
+
+.draft-btn-new:hover {
+    background-color: #229954;
+    box-shadow: 0 4px 12px rgba(39, 174, 96, 0.3);
+}
+
+.draft-btn-close {
+    background-color: #95a5a6;
+    color: white;
+    border: 1px solid #7f8c8d;
+}
+
+.draft-btn-close:hover {
+    background-color: #7f8c8d;
+    box-shadow: 0 4px 12px rgba(127, 140, 141, 0.3);
+}
+
+/* 成功/警告訊息 */
+.draft-message {
+    padding: 0.8rem 1.2rem;
+    margin-bottom: 1rem;
+    border-radius: var(--border-radius);
+    display: none;
+    animation: slideDown 0.3s ease-out;
+}
+
+.draft-message.show {
+    display: block;
+}
+
+.draft-message.success {
+    background-color: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.draft-message.error {
+    background-color: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+.draft-message.warning {
+    background-color: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeeba;
+}
 }
 
 .stepper-track {
@@ -1672,4 +2023,75 @@ h3 {
     }
 }
 
+
+
+/* =========================================
+   Stepper �˦� (borrow.php �Ĥ@�B)
+========================================= */
+.stepper-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+    background: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+.stepper-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    color: #bdc3c7;
+    flex: 1;
+}
+.stepper-item.active {
+    color: #3498db;
+}
+.step-circle {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: #ecf0f1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    margin-bottom: 8px;
+    transition: all 0.3s;
+}
+.stepper-item.active .step-circle {
+    background-color: #3498db;
+    color: white;
+    box-shadow: 0 0 0 4px rgba(52, 152, 219, 0.2);
+}
+.stepper-line {
+    flex: 1;
+    height: 2px;
+    background-color: #ecf0f1;
+    margin: 0 10px;
+    position: relative;
+    top: -15px;
+}
+.step-content {
+    display: none;
+    background: #fff;
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+.step-content.active {
+    display: block;
+    animation: fadeIn 0.4s;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.step-actions {
+    margin-top: 30px;
+    text-align: right;
+    border-top: 1px solid #ecf0f1;
+    padding-top: 20px;
+}
 

@@ -126,6 +126,8 @@ if ($link) {
                     <?php if (in_array($currentRole, ['2','3'], true)) { ?>
                         <button class="nav-btn" id="btnManualRemind" type="button" onclick="handleManualRemindClick(event)">檢查逾期並催繳</button>
                     <?php } ?>
+                    <button class="nav-btn" onclick="location.href='equipment_inventory.php'">庫存管理</button>
+                    <button class="nav-btn" id="btnManualRemind" type="button" onclick="handleManualRemindClick(event)">檢查逾期並催繳</button>
                 <?php } ?>
                 <button class="nav-btn" onclick="location.href='checkin.php?qr=CHECKIN_GATE_V1'">掃碼報到</button>
                 <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>

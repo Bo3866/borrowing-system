@@ -59,7 +59,7 @@ function getDatabaseConnectionCandidates(): array
         'port' => 3307,
         'database' => 'borrowing_system',
         'username' => 'root',
-        'password' => '12345678',
+        'password' => '',
     ];
 
     return $candidates;

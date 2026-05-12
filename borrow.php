@@ -57,7 +57,6 @@ $periodSlots = [
 ];
 $periodOrder = array_keys($periodSlots);
 
-$link = mysqli_connect('localhost', 'root', '12345678', 'borrowing_system',3306);
 $dbError = '';
 $link = getMysqliConnection($dbError);
 
@@ -207,9 +206,13 @@ $formData = [
     'resource_type' => 'equipment',
     'equipment_code' => '',
     'space_id' => '',
-    'borrow_date' => '',
-    'start_period_code' => '',
-    'end_period_code' => '',
+    'borrow_start_date' => '',
+    'borrow_start_time' => '',
+    'borrow_end_date' => '',
+    'borrow_end_time' => '',
+    'has_alcohol' => '',
+    'has_fire' => '',
+    'has_sales' => '',
     'purpose' => '',
     'phone' => $userPhone,
 ];
@@ -230,9 +233,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['staff_count'] = trim((string)($_POST['staff_count'] ?? ''));
     $formData['club_president'] = trim((string)($_POST['club_president'] ?? ''));
     $formData['space_id'] = trim((string)($_POST['space_id'] ?? ''));
-    $formData['borrow_date'] = trim((string)($_POST['borrow_date'] ?? ''));
-    $formData['start_period_code'] = trim((string)($_POST['start_period_code'] ?? ''));
-    $formData['end_period_code'] = trim((string)($_POST['end_period_code'] ?? ''));
+    $formData['borrow_start_date'] = trim((string)($_POST['borrow_start_date'] ?? ''));
+    
+    $bsh = $_POST['borrow_start_time_h'] ?? '';
+    $bsm = $_POST['borrow_start_time_m'] ?? '';
+    $formData['borrow_start_time'] = ($bsh !== '' && $bsm !== '') ? sprintf('%02d:%02d:00', $bsh, $bsm) : '';
+
+    $formData['borrow_end_date'] = trim((string)($_POST['borrow_end_date'] ?? ''));
+    
+    $beh = $_POST['borrow_end_time_h'] ?? '';
+    $bem = $_POST['borrow_end_time_m'] ?? '';
+    $formData['borrow_end_time'] = ($beh !== '' && $bem !== '') ? sprintf('%02d:%02d:00', $beh, $bem) : '';
+
+    $formData['has_alcohol'] = isset($_POST['has_alcohol']) ? '1' : '';
+    $formData['has_fire'] = isset($_POST['has_fire']) ? '1' : '';
+    $formData['has_sales'] = isset($_POST['has_sales']) ? '1' : '';
+
     $formData['purpose'] = trim((string)($_POST['purpose'] ?? ''));
     $formData['phone'] = trim((string)($_POST['phone'] ?? ''));
 
@@ -259,22 +275,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $borrowEndAtSql = '';
         
         if (
-            $formData['borrow_date'] !== '' &&
-            $formData['start_period_code'] !== '' &&
-            $formData['end_period_code'] !== ''
+            $formData['borrow_start_date'] !== '' &&
+            $formData['borrow_start_time'] !== '' &&
+            $formData['borrow_end_date'] !== '' &&
+            $formData['borrow_end_time'] !== ''
         ) {
-            if (isset($periodSlots[$formData['start_period_code']]) && isset($periodSlots[$formData['end_period_code']])) {
-                $startIndex = array_search($formData['start_period_code'], $periodOrder, true);
-                $endIndex = array_search($formData['end_period_code'], $periodOrder, true);
-                if ($startIndex !== false && $endIndex !== false && $endIndex >= $startIndex) {
-                    $borrowStartAtSql = $formData['borrow_date'] . ' ' . $periodSlots[$formData['start_period_code']]['start'];
-                    $borrowEndAtSql = $formData['borrow_date'] . ' ' . $periodSlots[$formData['end_period_code']]['end'];
+            $borrowStartAtSql = $formData['borrow_start_date'] . ' ' . $formData['borrow_start_time'];
+            $borrowEndAtSql = $formData['borrow_end_date'] . ' ' . $formData['borrow_end_time'];
+            
+            if (strtotime($borrowStartAtSql) < time()) {
+                $borrowError = '借用開始時間不可為過去時間。';
+            } elseif (strtotime($borrowEndAtSql) <= strtotime($borrowStartAtSql)) {
+                $borrowError = '結束時間不可早於或等於開始時間。';
+            } else {
+                if ($formData['has_alcohol'] === '1' || $formData['has_fire'] === '1' || $formData['has_sales'] === '1') {
+                    $limitTime = strtotime('+30 days', strtotime(date('Y-m-d 00:00:00')));
+                    if (strtotime($borrowStartAtSql) < $limitTime) {
+                        $borrowError = '送出駁回，有酒精、有明火、需擺攤販售者請於一個月以前送出。';
+                    }
                 }
             }
-                    // 若選到的借用開始時間已落在過去，視為無效
-                    if ($borrowStartAtSql !== '' && strtotime($borrowStartAtSql) < time()) {
-                        $borrowError = '借用開始時間不可為過去時間。';
-                    }
         }
 
         $selectedEquipment = null;
@@ -381,24 +401,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Keep the first validation error.
             @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " VALIDATION ERROR: " . $borrowError . "\nPOST:" . json_encode($_POST) . "\nFILES:" . json_encode(array_map(function($f){ return is_array($f)?array_merge($f,['tmp_name'=>'...']):$f; }, $_FILES)) . "\n\n", FILE_APPEND | LOCK_EX);
         } elseif (
-            $formData['borrow_date'] === '' ||
-            $formData['start_period_code'] === '' ||
-            $formData['end_period_code'] === ''
+            $formData['borrow_start_date'] === '' ||
+            $formData['borrow_start_time'] === '' ||
+            $formData['borrow_end_date'] === '' ||
+            $formData['borrow_end_time'] === ''
         ) {
-            $borrowError = '請完整填寫借用日期與起訖節次。';
-        } elseif (!isset($periodSlots[$formData['start_period_code']]) || !isset($periodSlots[$formData['end_period_code']])) {
-            $borrowError = '節次代號無效，請重新選擇。';
+            $borrowError = '請完整填寫借用起訖日期與時間。';
         } elseif ($formData['purpose'] === '') {
             $borrowError = '請填寫用途說明。';
         } else {
-            $startIndex = array_search($formData['start_period_code'], $periodOrder, true);
-            $endIndex = array_search($formData['end_period_code'], $periodOrder, true);
-
-            if ($startIndex === false || $endIndex === false || $endIndex < $startIndex) {
-                $borrowError = '結束節次不可早於開始節次。';
-            } else {
-                $submittedResourceType = $formData['resource_type'];
-            }
+            $submittedResourceType = $formData['resource_type'];
         }
 
         if ($borrowError === '') {
@@ -1136,36 +1148,84 @@ SQL;
                                 </div>
 
                                 <div class="form-group" style="margin-top: 20px; border-top: 1px solid #ccc; padding-top: 15px;">
-                                    <label for="activity_date_range">活動日期範圍 <span style="color:red">*</span></label>
-                                    <input type="text" id="activity_date_range" name="borrow_date" class="form-control" placeholder="請點擊此處並圈選起迄日" value="<?php echo htmlspecialchars($formData['borrow_date'], ENT_QUOTES, 'UTF-8'); ?>" required readonly style="background-color: #fff; cursor: pointer;">
-                                    <div id="date_error_msg" style="color: #e74c3c; font-size: 0.9em; margin-top: 5px; display: none;">
-                                        ⚠️ 警告：活動最多僅能連續借用 4 天，請重新選擇。
+                                    <label>活動開始時間 <span style="color:red">*</span></label>
+                                    <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center;">
+                                        <input type="date" id="borrow_start_date" name="borrow_start_date" class="form-control" value="<?php echo htmlspecialchars($formData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
+                                        <?php
+                                        $curBsh = ''; $curBsm = '';
+                                        if (!empty($formData['borrow_start_time'])) {
+                                            $parts = explode(':', $formData['borrow_start_time']);
+                                            if (count($parts) >= 2) {
+                                                $curBsh = (int)$parts[0];
+                                                $curBsm = (int)$parts[1];
+                                            }
+                                        }
+                                        ?>
+                                        <select name="borrow_start_time_h" class="form-control" required style="padding: 8px; width: 80px;">
+                                            <option value="">選擇</option>
+                                            <?php for($h=0; $h<=23; $h++) { 
+                                                $selected = ($curBsh !== '' && $curBsh === $h) ? 'selected' : '';
+                                            ?>
+                                                <option value="<?php echo $h; ?>" <?php echo $selected; ?>><?php echo $h; ?></option>
+                                            <?php } ?>
+                                        </select>
+                                        <span>時</span>
+                                        
+                                        <select name="borrow_start_time_m" class="form-control" required style="padding: 8px; width: 80px;">
+                                            <option value="">選擇</option>
+                                            <option value="0" <?php echo ($curBsm !== '' && $curBsm === 0) ? 'selected' : ''; ?>>0</option>
+                                            <option value="30" <?php echo ($curBsm !== '' && $curBsm === 30) ? 'selected' : ''; ?>>30</option>
+                                        </select>
+                                        <span>分</span>
+                                    </div>
+                                    
+                                    <label>活動結束時間 <span style="color:red">*</span></label>
+                                    <div style="display: flex; gap: 10px; align-items: center;">
+                                        <input type="date" id="borrow_end_date" name="borrow_end_date" class="form-control" value="<?php echo htmlspecialchars($formData['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
+                                        <?php
+                                        $curBeh = ''; $curBem = '';
+                                        if (!empty($formData['borrow_end_time'])) {
+                                            $parts = explode(':', $formData['borrow_end_time']);
+                                            if (count($parts) >= 2) {
+                                                $curBeh = (int)$parts[0];
+                                                $curBem = (int)$parts[1];
+                                            }
+                                        }
+                                        ?>
+                                        <select name="borrow_end_time_h" class="form-control" required style="padding: 8px; width: 80px;">
+                                            <option value="">選擇</option>
+                                            <?php for($h=0; $h<=23; $h++) { 
+                                                $selected = ($curBeh !== '' && $curBeh === $h) ? 'selected' : '';
+                                            ?>
+                                                <option value="<?php echo $h; ?>" <?php echo $selected; ?>><?php echo $h; ?></option>
+                                            <?php } ?>
+                                        </select>
+                                        <span>時</span>
+                                        
+                                        <select name="borrow_end_time_m" class="form-control" required style="padding: 8px; width: 80px;">
+                                            <option value="">選擇</option>
+                                            <option value="0" <?php echo ($curBem !== '' && $curBem === 0) ? 'selected' : ''; ?>>0</option>
+                                            <option value="30" <?php echo ($curBem !== '' && $curBem === 30) ? 'selected' : ''; ?>>30</option>
+                                        </select>
+                                        <span>分</span>
                                     </div>
                                 </div>
 
-                                <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
-                                    <div class="form-group" style="flex: 1; min-width: 150px;">
-                                        <label for="start_period_code">活動開始時間 (節次) <span style="color:red">*</span></label>
-                                        <select id="start_period_code" name="start_period_code" class="form-control" required style="padding: 8px;">
-                                            <option value="">請選擇</option>
-                                            <?php foreach ($periodSlots as $periodCode => $periodConfig) { ?>
-                                                <option value="<?php echo htmlspecialchars($periodCode, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData['start_period_code'] === $periodCode ? 'selected' : ''; ?>>
-                                                    <?php echo htmlspecialchars($periodCode . ' (' . substr($periodConfig['start'], 0, 5) . '-' . substr($periodConfig['end'], 0, 5) . ')', ENT_QUOTES, 'UTF-8'); ?>
-                                                </option>
-                                            <?php } ?>
-                                        </select>
-                                    </div>
-
-                                    <div class="form-group" style="flex: 1; min-width: 150px;">
-                                        <label for="end_period_code">活動結束時間 (節次) <span style="color:red">*</span></label>
-                                        <select id="end_period_code" name="end_period_code" class="form-control" required style="padding: 8px;">
-                                            <option value="">請選擇</option>
-                                            <?php foreach ($periodSlots as $periodCode => $periodConfig) { ?>
-                                                <option value="<?php echo htmlspecialchars($periodCode, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData['end_period_code'] === $periodCode ? 'selected' : ''; ?>>
-                                                    <?php echo htmlspecialchars($periodCode . ' (' . substr($periodConfig['start'], 0, 5) . '-' . substr($periodConfig['end'], 0, 5) . ')', ENT_QUOTES, 'UTF-8'); ?>
-                                                </option>
-                                            <?php } ?>
-                                        </select>
+                                <div class="form-group" style="margin-bottom: 20px;">
+                                    <label>活動特殊性質 (可複選)</label>
+                                    <div style="display: flex; gap: 15px; margin-top: 5px;">
+                                        <label style="display: inline-flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer; white-space: nowrap;">
+                                            <input type="checkbox" id="has_alcohol" name="has_alcohol" value="1" <?php echo $formData['has_alcohol'] ? 'checked' : ''; ?>>
+                                            有酒精
+                                        </label>
+                                        <label style="display: inline-flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer; white-space: nowrap;">
+                                            <input type="checkbox" id="has_fire" name="has_fire" value="1" <?php echo $formData['has_fire'] ? 'checked' : ''; ?>>
+                                            有明火
+                                        </label>
+                                        <label style="display: inline-flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer; white-space: nowrap;">
+                                            <input type="checkbox" id="has_sales" name="has_sales" value="1" <?php echo $formData['has_sales'] ? 'checked' : ''; ?>>
+                                            需擺攤販售
+                                        </label>
                                     </div>
                                 </div>
 
@@ -2541,8 +2601,10 @@ function getWorkingDaysFromToday(days) {
 // 根據人數取得最短限制日期
 function getMinDateByParticipantCount(countValue) {
     if (countValue === '100~200人' || countValue === '200人以上') {
-        // 大於 100 人：30個工作天
-        return getWorkingDaysFromToday(30);
+        // 大於 100 人：30 天 (日曆天)
+        let d = new Date();
+        d.setDate(d.getDate() + 30);
+        return d;
     } else {
         // 一般情況：7 天後 (日曆天)
         let d = new Date();
@@ -2553,32 +2615,16 @@ function getMinDateByParticipantCount(countValue) {
 
 let initialMinDate = getMinDateByParticipantCount(document.getElementById('participant_count') ? document.getElementById('participant_count').value : ''); 
 
-const fpActivityDate = flatpickr("#activity_date_range", {
-    mode: "range",
+const fpStartDate = flatpickr("#borrow_start_date", {
     minDate: initialMinDate,
     locale: "zh_tw",
-    dateFormat: "Y-m-d",
-    onChange: function(selectedDates, dateStr, instance) {
-        const errorMsg = document.getElementById('date_error_msg');
-        const rangeInput = document.getElementById('activity_date_range');
-        
-        if (selectedDates.length === 2) {
-            const timeDiff = Math.abs(selectedDates[1].getTime() - selectedDates[0].getTime());
-            selectedDays = Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1; // 包含頭尾天數
+    dateFormat: "Y-m-d"
+});
 
-            if(selectedDays > 4) {
-                errorMsg.style.display = 'block';
-                rangeInput.style.borderColor = '#e74c3c';
-            } else {
-                errorMsg.style.display = 'none';
-                rangeInput.style.borderColor = '#ccc';
-            }
-        } else if (selectedDates.length === 1) {
-            selectedDays = 1;
-            errorMsg.style.display = 'none';
-            rangeInput.style.borderColor = '#ccc';
-        }
-    }
+const fpEndDate = flatpickr("#borrow_end_date", {
+    minDate: initialMinDate,
+    locale: "zh_tw",
+    dateFormat: "Y-m-d"
 });
 
 // 當改變人數時，動態更新鎖定日期
@@ -2588,17 +2634,17 @@ if (participantSelect) {
         const newMinDate = getMinDateByParticipantCount(e.target.value);
         
         // 更新日曆的最小可選日期
-        fpActivityDate.set('minDate', newMinDate);
+        fpStartDate.set('minDate', newMinDate);
+        fpEndDate.set('minDate', newMinDate);
         
         // 如果目前已選日期早於新規定日期，則清空重選
-        const selected = fpActivityDate.selectedDates;
-        if (selected.length > 0) {
-            // 將 time 歸零以準確比對日期
+        const startSel = fpStartDate.selectedDates;
+        if (startSel.length > 0) {
             const minTime = new Date(newMinDate).setHours(0,0,0,0);
-            if (selected[0].getTime() < minTime) {
-                alert("人數達 100 人以上之大型活動需提前 30 個工作天申請！\n系統已清空您的舊日期，請重新按規定選擇。");
-                fpActivityDate.clear();
-                selectedDays = 0;
+            if (startSel[0].getTime() < minTime) {
+                alert("人數達 100 人以上之大型活動需提前 30 天申請！\n系統已清空您的舊日期，請重新按規定選擇。");
+                fpStartDate.clear();
+                fpEndDate.clear();
             }
         }
     });
@@ -2606,17 +2652,37 @@ if (participantSelect) {
 
 function goToStep(stepNo) {
     if (stepNo === 2) {
-        const dateInput = document.getElementById('activity_date_range').value;
-        if (!dateInput || dateInput === '') {
+        const startDate = document.getElementById('borrow_start_date').value;
+        const endDate = document.getElementById('borrow_end_date').value;
+        if (!startDate || !endDate) {
             alert("請先選擇活動起訖日期！");
             return;
         }
-        if (selectedDays > 4) {
+
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        const timeDiff = Math.abs(end.getTime() - start.getTime());
+        const days = Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1;
+        
+        if (days > 4) {
             alert("活動天數最多不可超過 4 天，請重新選擇！");
             return;
         }
-        // 將選擇的第一個日期帶入原本需要檢查的依據，避免後續腳本故障
-        // (這裡您可以視情況調整後端邏輯，目前暫且讓它正常進入 Step 2)
+        
+        const hasAlcohol = document.getElementById('has_alcohol') && document.getElementById('has_alcohol').checked;
+        const hasFire = document.getElementById('has_fire') && document.getElementById('has_fire').checked;
+        const hasSales = document.getElementById('has_sales') && document.getElementById('has_sales').checked;
+
+        if (hasAlcohol || hasFire || hasSales) {
+            let limitDate = new Date();
+            limitDate.setHours(0,0,0,0);
+            limitDate.setDate(limitDate.getDate() + 30);
+            
+            if (start.getTime() < limitDate.getTime()) {
+                alert("送出駁回，有酒精、有明火、需擺攤販售者請於一個月以前送出。");
+                return;
+            }
+        }
     }
 
     document.querySelectorAll('.step-content').forEach(function(el) {

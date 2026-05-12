@@ -53,18 +53,27 @@ function getDatabaseConnectionCandidates(): array
         'password' => '12345678',
     ];
 
-    // Try alternative port 3306 (for XAMPP or other installations)
+    // Try alternative port 3307
     $candidates[] = [
         'host' => '127.0.0.1',
-        'port' => 3306,
+        'port' => 3307,
         'database' => 'borrowing_system',
         'username' => 'root',
         'password' => '12345678',
     ];
 
+    // Try alternative port 3307 without password
     $candidates[] = [
         'host' => '127.0.0.1',
-        'port' => 3306,
+        'port' => 3307,
+        'database' => 'borrowing_system',
+        'username' => 'root',
+        'password' => '',
+    ];
+
+    $candidates[] = [
+        'host' => 'localhost',
+        'port' => 3307,
         'database' => 'borrowing_system',
         'username' => 'root',
         'password' => '12345678',
@@ -72,15 +81,7 @@ function getDatabaseConnectionCandidates(): array
 
     $candidates[] = [
         'host' => 'localhost',
-        'port' => 3306,
-        'database' => 'borrowing_system',
-        'username' => 'root',
-        'password' => '12345678',
-    ];
-
-    $candidates[] = [
-        'host' => 'localhost',
-        'port' => 3306,
+        'port' => 3307,
         'database' => 'borrowing_system',
         'username' => 'root',
         'password' => '',

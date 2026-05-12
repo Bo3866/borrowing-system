@@ -286,3 +286,11 @@ INSERT IGNORE INTO equipments (equipment_code, operation_status, added_date) VAL
 ('E2', 1, '2025-02-01'), ('E2', 1, '2025-02-01'), ('E2', 1, '2025-02-01'), ('E2', 1, '2025-02-01'), ('E2', 1, '2025-02-01'), ('E2', 1, '2025-02-01'), ('E2', 1, '2025-02-01'), ('E2', 1, '2025-02-01'), ('E2', 1, '2025-02-01'), ('E2', 1, '2025-02-01'),
 ('E3', 1, '2025-02-01'), ('E3', 1, '2025-02-01'), ('E3', 1, '2025-02-01'),
 ('E4', 1, '2025-02-01'), ('E4', 1, '2025-02-01'), ('E4', 1, '2025-02-01'), ('E4', 1, '2025-02-01'), ('E4', 1, '2025-02-01'), ('E4', 1, '2025-02-01'), ('E4', 1, '2025-02-01'), ('E4', 1, '2025-02-01'), ('E4', 1, '2025-02-01'), ('E4', 1, '2025-02-01');
+
+-- Added from Activity App migration (Step 1):
+-- ALTER TABLE reservations ADD COLUMN organization_name VARCHAR(100) NULL COMMENT '單位名稱 / 主辦社團';
+-- ALTER TABLE reservations ADD COLUMN activity_name VARCHAR(100) NULL COMMENT '活動名稱';
+-- ALTER TABLE reservations ADD COLUMN participant_count VARCHAR(20) NULL COMMENT '活動對象人數';
+-- ALTER TABLE reservations ADD COLUMN staff_count INT NULL COMMENT '工作人員人數';
+-- ALTER TABLE reservations ADD COLUMN club_president VARCHAR(50) NULL COMMENT '社 / 會長';
+

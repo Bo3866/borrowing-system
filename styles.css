@@ -2024,3 +2024,74 @@ h3 {
 }
 
 
+
+/* =========================================
+   Stepper 樣式 (borrow.php 第一步)
+========================================= */
+.stepper-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+    background: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+.stepper-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    color: #bdc3c7;
+    flex: 1;
+}
+.stepper-item.active {
+    color: #3498db;
+}
+.step-circle {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: #ecf0f1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    margin-bottom: 8px;
+    transition: all 0.3s;
+}
+.stepper-item.active .step-circle {
+    background-color: #3498db;
+    color: white;
+    box-shadow: 0 0 0 4px rgba(52, 152, 219, 0.2);
+}
+.stepper-line {
+    flex: 1;
+    height: 2px;
+    background-color: #ecf0f1;
+    margin: 0 10px;
+    position: relative;
+    top: -15px;
+}
+.step-content {
+    display: none;
+    background: #fff;
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+.step-content.active {
+    display: block;
+    animation: fadeIn 0.4s;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.step-actions {
+    margin-top: 30px;
+    text-align: right;
+    border-top: 1px solid #ecf0f1;
+    padding-top: 20px;
+}
+

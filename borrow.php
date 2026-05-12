@@ -1223,23 +1223,75 @@ SQL;
                             </div>
 
                             <div class="form-buttons">
+                                <div class="draft-buttons">
+                                    <button type="button" class="btn-draft btn-draft-save" id="saveDraftBtn">暫存申請</button>
+                                    <button type="button" class="btn-draft btn-draft-manage" id="manageDraftBtn">草稿箱</button>
+                                </div>
                                 <button type="submit" class="btn-primary" id="borrowSubmitBtn">確認借用</button>
                                 <button type="button" class="btn-secondary" onclick="location.href='index.php'">取消</button>
                             </div>
                             <div id="submitDebugMsg" style="margin-top:8px; font-size:13px; color:#64748b;"></div>
                         </form>
                     </section>
+
+                    <!-- 草稿管理中心模態框 -->
+                    <div id="draftModalOverlay" class="draft-modal-overlay">
+                        <div class="draft-modal">
+                            <div class="draft-modal-header">
+                                <h2>📋 草稿管理中心</h2>
+                                <button type="button" class="draft-modal-close" id="draftModalCloseBtn">&times;</button>
+                            </div>
+                            <div class="draft-modal-content">
+                                <div id="draftMessage" class="draft-message"></div>
+                                <div id="draftTableContainer">
+                                    <p class="draft-empty-message">
+                                        <div class="draft-empty-icon">📭</div>
+                                        暫無已儲存的草稿
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="draft-modal-footer">
+                                <div class="draft-footer-buttons">
+                                    <button type="button" class="draft-btn-new" id="draftBtnNew">✨ 新增申請</button>
+                                    <button type="button" class="draft-btn-close" id="draftBtnClose">關閉</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
         </main>
     </div>
 
+    <!-- 草稿管理 JavaScript 模組 - 必須在 borrow.php 邏輯之前加載 -->
+    <script src="DraftManager.js"></script>
+
     <script>
-        (function () {
-            const borrowForm = document.querySelector('form.borrow-form');
-            const spaceSelect = document.getElementById('space_id');
-            const resourceTypeSelect = document.getElementById('resource_type');
-            const submitButton = document.getElementById('borrowSubmitBtn');
+        // 確保在 DOM 完全加載後執行
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', startApplication);
+        } else {
+            startApplication();
+        }
+
+        function startApplication() {
+            console.log('[Borrow Page] Initializing...');
+            
+            // 確保 DraftManager 已初始化
+            if (!window.draftManager) {
+                console.error('[Draft] DraftManager not found! Retrying...');
+                setTimeout(startApplication, 100);
+                return;
+            }
+            
+            console.log('[Draft] DraftManager initialized successfully');
+            initializeBorrowForm();
+            initializeDraftManagement();
+        }
+
+        // ================== 借用表單邏輯 ==================
+        function initializeBorrowForm() {
+            (function () {
             const spaceGroup = document.getElementById('spaceGroup');
             const equipmentSelectorContainer = document.getElementById('equipmentSelectorContainer');
             const proposalFileInput = document.getElementById('proposal_file');
@@ -1632,7 +1684,206 @@ SQL;
             if (borrowForm) borrowForm.addEventListener('submit', handleFormSubmit);
             refreshModeUI();
             renderCart();
-        })();
+            })();
+        }
+
+        // ================== 草稿管理 (Draft Management) ==================
+        function initializeDraftManagement() {
+            (function() {
+            // DOM 元素參考
+            const saveDraftBtn = document.getElementById('saveDraftBtn');
+            const manageDraftBtn = document.getElementById('manageDraftBtn');
+            const draftModalOverlay = document.getElementById('draftModalOverlay');
+            const draftModalCloseBtn = document.getElementById('draftModalCloseBtn');
+            const draftBtnClose = document.getElementById('draftBtnClose');
+            const draftBtnNew = document.getElementById('draftBtnNew');
+            const draftTableContainer = document.getElementById('draftTableContainer');
+            const draftMessage = document.getElementById('draftMessage');
+
+            /**
+             * 顯示暫時訊息
+             */
+            function showMessage(text, type = 'success', duration = 3000) {
+                draftMessage.textContent = text;
+                draftMessage.className = `draft-message show ${type}`;
+                
+                if (duration > 0) {
+                    setTimeout(() => {
+                        draftMessage.classList.remove('show');
+                    }, duration);
+                }
+            }
+
+            /**
+             * 渲染草稿列表表格
+             */
+            function renderDraftTable() {
+                const stats = window.draftManager.getDraftStats();
+                
+                if (stats.totalCount === 0) {
+                    draftTableContainer.innerHTML = `
+                        <p class="draft-empty-message">
+                            <div class="draft-empty-icon">📭</div>
+                            暫無已儲存的草稿
+                        </p>
+                    `;
+                    return;
+                }
+
+                let tableHtml = `
+                    <table class="draft-table">
+                        <thead>
+                            <tr>
+                                <th>暫存時間</th>
+                                <th>用途摘要</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                stats.drafts.forEach(draft => {
+                    const timestamp = draft.timestamp || '未知';
+                    const purposeSummary = window.draftManager.generatePurposeSummary(draft.purpose);
+                    const draftId = draft.draftId;
+                    
+                    tableHtml += `
+                        <tr>
+                            <td>${timestamp}</td>
+                            <td>${purposeSummary}</td>
+                            <td>
+                                <div class="draft-actions">
+                                    <button type="button" class="draft-btn-load" onclick="loadDraft('${draftId}')">載入</button>
+                                    <button type="button" class="draft-btn-delete" onclick="deleteDraft('${draftId}')">刪除</button>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                tableHtml += `
+                        </tbody>
+                    </table>
+                `;
+
+                draftTableContainer.innerHTML = tableHtml;
+            }
+
+            /**
+             * 全域函數：載入草稿
+             */
+            window.loadDraft = function(draftId) {
+                const draft = window.draftManager.getDraftById(draftId);
+                if (!draft) {
+                    showMessage('找不到此草稿', 'error');
+                    return;
+                }
+
+                const success = window.draftManager.loadDraftToForm(draft);
+                if (success) {
+                    closeDraftModal();
+                    showMessage(`✓ 已載入草稿 (${draft.timestamp})`, 'success', 3000);
+                } else {
+                    showMessage('載入草稿失敗，請重新嘗試', 'error');
+                }
+            };
+
+            /**
+             * 全域函數：刪除草稿
+             */
+            window.deleteDraft = function(draftId) {
+                if (!confirm('確定要刪除此草稿嗎？')) {
+                    return;
+                }
+
+                const deleted = window.draftManager.deleteDraft(draftId);
+                if (deleted) {
+                    renderDraftTable();
+                    showMessage('✓ 草稿已刪除', 'success', 2000);
+                } else {
+                    showMessage('刪除草稿失敗', 'error');
+                }
+            };
+
+            /**
+             * 開啟草稿管理中心模態框
+             */
+            function openDraftModal() {
+                renderDraftTable();
+                draftModalOverlay.classList.add('active');
+            }
+
+            /**
+             * 關閉草稿管理中心模態框
+             */
+            function closeDraftModal() {
+                draftModalOverlay.classList.remove('active');
+            }
+
+            window.closeDraftModal = closeDraftModal;
+
+            /**
+             * 保存草稿
+             */
+            function saveDraft() {
+                try {
+                    const draft = window.draftManager.saveDraft();
+                    showMessage(`✓ 草稿已暫存 (${draft.draftId.substring(0, 20)}...)`, 'success', 3000);
+                } catch (error) {
+                    showMessage(`✗ 暫存失敗：${error.message}`, 'error', 3000);
+                }
+            }
+
+            /**
+             * 新增申請（清空表單）
+             */
+            function createNewApplication() {
+                if (!confirm('確定要清空當前表單並建立新申請嗎？\n（已暫存的資料不會遺失）')) {
+                    return;
+                }
+                window.draftManager.clearForm();
+                closeDraftModal();
+                showMessage('✓ 表單已清空，可開始新申請', 'success', 2000);
+            }
+
+            // 事件綁定
+            if (saveDraftBtn) {
+                saveDraftBtn.addEventListener('click', saveDraft);
+            }
+
+            if (manageDraftBtn) {
+                manageDraftBtn.addEventListener('click', openDraftModal);
+            }
+
+            if (draftModalCloseBtn) {
+                draftModalCloseBtn.addEventListener('click', closeDraftModal);
+            }
+
+            if (draftBtnClose) {
+                draftBtnClose.addEventListener('click', closeDraftModal);
+            }
+
+            if (draftBtnNew) {
+                draftBtnNew.addEventListener('click', createNewApplication);
+            }
+
+            // 點擊模態框背景關閉
+            if (draftModalOverlay) {
+                draftModalOverlay.addEventListener('click', function(e) {
+                    if (e.target === this) {
+                        closeDraftModal();
+                    }
+                });
+            }
+
+            // 按 Escape 鍵也可關閉
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape' && draftModalOverlay.classList.contains('active')) {
+                    closeDraftModal();
+                }
+            });
+            })();
+        }
         
     </script>
 

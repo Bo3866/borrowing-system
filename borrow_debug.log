@@ -247,3 +247,11 @@ FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}
 POST:{"resource_type":"both","borrow_date":"2026-05-04","start_period_code":"D1","end_period_code":"D2","phone":"0900000000","purpose":"12345","cart_items":"[{\"code\":\"A3\",\"name\":\"\u77ed\u9ea5\u514b\u98a8\u67b6\",\"quantity\":1,\"type\":\"equipment\"}]"}
 FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
 
+2026-05-11T08:11:32+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-22","start_period_code":"DN","end_period_code":"E1","phone":"0976530817","purpose":"123","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1,\"type\":\"equipment\"},{\"code\":\"A10\",\"name\":\"\u96fb\u92fc\u7434\",\"quantity\":1,\"type\":\"equipment\"},{\"code\":\"A2\",\"name\":\"\u6709\u7dda\u9ea5\u514b\u98a8\",\"quantity\":1,\"type\":\"equipment\"},{\"code\":\"ES002\",\"name\":\"\u9032\u4fee\u90e8 \u5730\u4e0b\u5ba4\u6559\u5ba4 ES002\",\"quantity\":1,\"type\":\"space\"}]"}
+FILES:{"proposal_file":{"name":"123.pdf","type":"application\/pdf","tmp_name":"...","error":0,"size":672332}}
+
+2026-05-11T08:11:32+00:00 VALIDATION ERROR: 喊話器(充電電池*1) 借用數量超過目前可借用數量。
+POST:{"resource_type":"both","borrow_date":"2026-05-22","start_period_code":"DN","end_period_code":"E1","phone":"0976530817","purpose":"123","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1,\"type\":\"equipment\"},{\"code\":\"A10\",\"name\":\"\u96fb\u92fc\u7434\",\"quantity\":1,\"type\":\"equipment\"},{\"code\":\"A2\",\"name\":\"\u6709\u7dda\u9ea5\u514b\u98a8\",\"quantity\":1,\"type\":\"equipment\"},{\"code\":\"ES002\",\"name\":\"\u9032\u4fee\u90e8 \u5730\u4e0b\u5ba4\u6559\u5ba4 ES002\",\"quantity\":1,\"type\":\"space\"}]"}
+FILES:{"proposal_file":{"name":"123.pdf","type":"application\/pdf","tmp_name":"...","error":0,"size":672332}}
+

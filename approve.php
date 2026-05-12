@@ -19,8 +19,9 @@ if (!isset($_SESSION['user_id'])) {
 $currentUserId = (string)$_SESSION['user_id'];
 $currentRole = (string)($_SESSION['role_name'] ?? '');
 
-// Allow manager roles
-if (!in_array($currentRole, ['2', '3'], true)) {
+// Allow manager roles (treat roles a, b, c, d as managers alongside role 3)
+$allowedRoles = ['2', '3', 'a', 'b', 'c', 'd'];
+if (!in_array($currentRole, $allowedRoles, true)) {
     http_response_code(403);
     echo "<p style=\"padding:1rem;background:#ffecec;border-radius:6px;\">存取被拒：此功能僅限課指組老師。</p>";
     exit;
@@ -68,16 +69,172 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
         mysqli_begin_transaction($link);
         try {
             $totalAffected = 0;
+
+            // detect whether reservations table has approval_stage column
+            $hasApprovalStage = false;
+            $colCheck = mysqli_query($link, "SHOW COLUMNS FROM reservations LIKE 'approval_stage'");
+            if ($colCheck && mysqli_num_rows($colCheck) > 0) {
+                $hasApprovalStage = true;
+            }
+
+            // determine current approver stage for this user
+            $currentStageForUser = $currentRole === '2' ? '3' : $currentRole; // role '2' can act as final '3'
+
+            $notifyApproved = [];
+            $notifyRejected = [];
+            $notifyNeedRevision = [];
             $userEmailNameMap = [];
 
             foreach ($reservationIds as $reservationId) {
-                // Only update pending reservations to avoid race conditions
+                // If approval_stage exists, enforce stage-based approval
+                if ($hasApprovalStage) {
+                    $selStmt = mysqli_prepare($link, 'SELECT approval_stage, approval_status FROM reservations WHERE reservation_id = ? FOR UPDATE');
+                    if (!$selStmt) {
+                        throw new RuntimeException('取得審核階段失敗：' . mysqli_error($link));
+                    }
+                    mysqli_stmt_bind_param($selStmt, 'i', $reservationId);
+                    mysqli_stmt_execute($selStmt);
+                    $selRes = mysqli_stmt_get_result($selStmt);
+                    $row = $selRes ? mysqli_fetch_assoc($selRes) : null;
+                    mysqli_stmt_close($selStmt);
+
+                    if (!$row || $row['approval_status'] !== 'pending') {
+                        continue; // already processed or missing
+                    }
+
+                    $currentApprovalStage = (string)($row['approval_stage'] ?? '3');
+
+                    // Only allow user to process if their role matches the current approval stage
+                    $canProcess = false;
+                    if ($currentRole === '2') {
+                        $canProcess = ($currentApprovalStage === '3');
+                    } elseif ($currentRole === '3') {
+                        // role 3 can process both 'd' (課指組) and '3' (最終)
+                        $canProcess = in_array($currentApprovalStage, ['d', '3'], true);
+                    } else {
+                        $canProcess = ($currentRole === $currentApprovalStage);
+                    }
+                    if (!$canProcess) {
+                        continue;
+                    }
+
+                    if ($_POST['action'] === 'request_revision') {
+                        $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET approval_status = ?, updated_at = NOW(), revision_deadline = CONCAT(DATE_ADD(CURDATE(), INTERVAL 1 DAY), " 23:59:59") WHERE reservation_id = ? AND approval_status = "pending"');
+                        if (!$updateStmt) throw new RuntimeException('準備要求補件失敗：' . mysqli_error($link));
+                        mysqli_stmt_bind_param($updateStmt, 'si', $action, $reservationId);
+                        mysqli_stmt_execute($updateStmt);
+                        $affected = mysqli_stmt_affected_rows($updateStmt);
+                        mysqli_stmt_close($updateStmt);
+                        if ($affected > 0) {
+                            $totalAffected++;
+                            $notifyNeedRevision[] = $reservationId;
+                        }
+                    } elseif ($_POST['action'] === 'reject') {
+                        $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET approval_status = ?, updated_at = NOW(), rejection_reason = ? WHERE reservation_id = ? AND approval_status = "pending"');
+                        if (!$updateStmt) throw new RuntimeException('準備拒絕失敗：' . mysqli_error($link));
+                        mysqli_stmt_bind_param($updateStmt, 'ssi', $action, $comment, $reservationId);
+                        mysqli_stmt_execute($updateStmt);
+                        $affected = mysqli_stmt_affected_rows($updateStmt);
+                        mysqli_stmt_close($updateStmt);
+                        if ($affected > 0) {
+                            $totalAffected++;
+                            $notifyRejected[] = $reservationId;
+                            // restore equipments for this reservation
+                            $restoreStmt = mysqli_prepare(
+                                $link,
+                                'UPDATE equipments e JOIN equipment_reservation_items eri ON e.equipment_id = eri.equipment_id SET e.operation_status = 1 WHERE eri.reservation_id = ? AND e.operation_status = 2'
+                            );
+                            if (!$restoreStmt) {
+                                throw new RuntimeException('還原器材狀態失敗：' . mysqli_error($link));
+                            }
+                            mysqli_stmt_bind_param($restoreStmt, 'i', $reservationId);
+                            mysqli_stmt_execute($restoreStmt);
+                            mysqli_stmt_close($restoreStmt);
+                        }
+                    } else { // approve -> advance stage or final approve
+                        $stages = ['a','b','c','d','3'];
+                        $idx = array_search($currentApprovalStage, $stages, true);
+                        if ($idx === false) $idx = count($stages) - 1; // treat unknown as final
+                        if ($idx === count($stages) - 1) {
+                            // final approval
+                            $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET approval_status = "approved", updated_at = NOW() WHERE reservation_id = ? AND approval_status = "pending"');
+                            if (!$updateStmt) throw new RuntimeException('準備最終核准失敗：' . mysqli_error($link));
+                            mysqli_stmt_bind_param($updateStmt, 'i', $reservationId);
+                            mysqli_stmt_execute($updateStmt);
+                            $affected = mysqli_stmt_affected_rows($updateStmt);
+                            mysqli_stmt_close($updateStmt);
+                            if ($affected > 0) {
+                                $totalAffected++;
+                                $notifyApproved[] = $reservationId;
+                            }
+                        } else {
+                            $nextStage = $stages[$idx + 1];
+
+                            // If the current user is role 3 and they're processing a prior stage (e.g. 'd'),
+                            // treat their approval as final approval (role 3 is final approver).
+                            if ($currentRole === '3' && in_array($currentApprovalStage, ['d', '3'], true)) {
+                                $finalStmt = mysqli_prepare($link, 'UPDATE reservations SET approval_status = "approved", updated_at = NOW() WHERE reservation_id = ? AND approval_status = "pending"');
+                                if (!$finalStmt) throw new RuntimeException('準備最終核准失敗：' . mysqli_error($link));
+                                mysqli_stmt_bind_param($finalStmt, 'i', $reservationId);
+                                mysqli_stmt_execute($finalStmt);
+                                $affected = mysqli_stmt_affected_rows($finalStmt);
+                                mysqli_stmt_close($finalStmt);
+                                if ($affected > 0) {
+                                    $totalAffected++;
+                                    $notifyApproved[] = $reservationId;
+                                }
+                            } else {
+                                $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET approval_stage = ?, updated_at = NOW() WHERE reservation_id = ? AND approval_status = "pending"');
+                                if (!$updateStmt) throw new RuntimeException('準備更新下一審階段失敗：' . mysqli_error($link));
+                                mysqli_stmt_bind_param($updateStmt, 'si', $nextStage, $reservationId);
+                                mysqli_stmt_execute($updateStmt);
+                                $affected = mysqli_stmt_affected_rows($updateStmt);
+                                mysqli_stmt_close($updateStmt);
+                                if ($affected > 0) {
+                                    $totalAffected++;
+                                    // not final — do not notify applicant yet
+                                }
+                            }
+                        }
+                    }
+
+                    // if affected, write approval log
+                    if (!empty($affected) && $affected > 0) {
+                        $logStmt = mysqli_prepare($link, 'INSERT INTO approval_logs (reservation_id, reviewer_id, review_result, review_comment) VALUES (?, ?, ?, ?)');
+                        if (!$logStmt) {
+                            throw new RuntimeException('建立審核紀錄失敗：' . mysqli_error($link));
+                        }
+                        // map review_result to 'approved' or 'rejected'
+                        $reviewResult = ($_POST['action'] === 'reject') ? 'rejected' : 'approved';
+                        mysqli_stmt_bind_param($logStmt, 'isss', $reservationId, $currentUserId, $reviewResult, $comment);
+                        mysqli_stmt_execute($logStmt);
+                        mysqli_stmt_close($logStmt);
+
+                        // collect applicant email/name for final notifications
+                        if (in_array($reservationId, $notifyApproved, true) || in_array($reservationId, $notifyRejected, true) || in_array($reservationId, $notifyNeedRevision, true)) {
+                            $userQuery = mysqli_prepare($link, 'SELECT u.email, u.full_name FROM users u JOIN reservations r ON u.user_id = r.user_id WHERE r.reservation_id = ?');
+                            if ($userQuery) {
+                                mysqli_stmt_bind_param($userQuery, 'i', $reservationId);
+                                mysqli_stmt_execute($userQuery);
+                                $userResult = mysqli_stmt_get_result($userQuery);
+                                if ($userData = mysqli_fetch_assoc($userResult)) {
+                                    $userEmailNameMap[$userData['email']] = $userData['full_name'];
+                                }
+                                mysqli_stmt_close($userQuery);
+                            }
+                        }
+                    }
+
+                    continue; // proceed to next reservation
+                }
+
+                // If no approval_stage column, fallback to existing behavior (single-step)
                 if ($action === 'need_revision') {
                     $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET approval_status = ?, updated_at = NOW(), revision_deadline = CONCAT(DATE_ADD(CURDATE(), INTERVAL 1 DAY), " 23:59:59") WHERE reservation_id = ? AND approval_status = "pending"');
                 } else {
                     $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET approval_status = ?, updated_at = NOW() WHERE reservation_id = ? AND approval_status = "pending"');
                 }
-                
+
                 if (!$updateStmt) {
                     throw new RuntimeException('更新預約狀態準備失敗：' . mysqli_error($link));
                 }
@@ -85,7 +242,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
                 mysqli_stmt_execute($updateStmt);
                 $affected = mysqli_stmt_affected_rows($updateStmt);
                 mysqli_stmt_close($updateStmt);
-    
+
                 if ($affected > 0) {
                     $totalAffected++;
                     $logStmt = mysqli_prepare($link, 'INSERT INTO approval_logs (reservation_id, reviewer_id, review_result, review_comment) VALUES (?, ?, ?, ?)');
@@ -95,7 +252,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
                     mysqli_stmt_bind_param($logStmt, 'isss', $reservationId, $currentUserId, $action, $comment);
                     mysqli_stmt_execute($logStmt);
                     mysqli_stmt_close($logStmt);
-        
+
                     // 若為拒絕，需將相關器材狀態還原為可借 (operation_status = 1)
                     if ($action === 'rejected') {
                         $restoreStmt = mysqli_prepare(
@@ -108,78 +265,99 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
                         mysqli_stmt_bind_param($restoreStmt, 'i', $reservationId);
                         mysqli_stmt_execute($restoreStmt);
                         mysqli_stmt_close($restoreStmt);
-                        
+                        $notifyRejected[] = $reservationId;
                     }
 
-                    // 取得申請人資訊以寄送郵件
-                    $userQuery = mysqli_prepare($link, 'SELECT u.email, u.full_name FROM users u JOIN reservations r ON u.user_id = r.user_id WHERE r.reservation_id = ?');
-                    if ($userQuery) {
-                        mysqli_stmt_bind_param($userQuery, 'i', $reservationId);
-                        mysqli_stmt_execute($userQuery);
-                        $userResult = mysqli_stmt_get_result($userQuery);
-                        if ($userData = mysqli_fetch_assoc($userResult)) {
-                            $userEmailNameMap[$userData['email']] = $userData['full_name'];
+                    // 取得申請人資訊以寄送郵件（僅針對最終狀態/原單步驟流程）
+                    if ($action === 'rejected' || $action === 'need_revision' || $action === 'approved') {
+                        $userQuery = mysqli_prepare($link, 'SELECT u.email, u.full_name FROM users u JOIN reservations r ON u.user_id = r.user_id WHERE r.reservation_id = ?');
+                        if ($userQuery) {
+                            mysqli_stmt_bind_param($userQuery, 'i', $reservationId);
+                            mysqli_stmt_execute($userQuery);
+                            $userResult = mysqli_stmt_get_result($userQuery);
+                            if ($userData = mysqli_fetch_assoc($userResult)) {
+                                $userEmailNameMap[$userData['email']] = $userData['full_name'];
+                            }
+                            mysqli_stmt_close($userQuery);
                         }
-                        mysqli_stmt_close($userQuery);
                     }
                 }
             }
 
             if ($totalAffected <= 0) {
-                throw new RuntimeException('更新失敗：申請可能已被審核。');
+                throw new RuntimeException('更新失敗：申請可能已被審核或您無權處理所選項目。');
             }
 
             mysqli_commit($link);
-            
-            if ($action === 'approved') {
-                $actionMsg = '已核准此申請。';
-            } elseif ($action === 'need_revision') {
+
+            // Build action message
+            if ($_POST['action'] === 'request_revision') {
                 $actionMsg = '已要求申請人補件。';
-            } else {
+            } elseif ($_POST['action'] === 'reject') {
                 $actionMsg = '已拒絕此申請。';
+            } else {
+                // For approve, some may be advanced and some may be final approved
+                $actionMsg = '審核處理完成。';
             }
 
-            // 如果有申請人信箱，則寄送通知信 (合併信件)
-            if (count($userEmailNameMap) > 0) {
-                $mail = new PHPMailer(true);
-                try {
-                    //Server settings
-                    $mail->isSMTP();
-                    $mail->Host       = 'smtp.gmail.com'; // Gmail SMTP 伺服器
-                    $mail->SMTPAuth   = true;
-                    $mail->Username   = 'sasass041919@gmail.com'; // 您的 Gmail 信箱
-                    $mail->Password   = 'xogusuplsoapxayc';    // Gmail 應用程式密碼
-                    $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
-                    $mail->Port       = 465;
-                    $mail->CharSet    = 'UTF-8';
+            // Send notification emails per final-result groups
+            $mail = new PHPMailer(true);
+            try {
+                $mail->isSMTP();
+                $mail->Host       = 'smtp.gmail.com';
+                $mail->SMTPAuth   = true;
+                $mail->Username   = 'sasass041919@gmail.com';
+                $mail->Password   = 'xogusuplsoapxayc';
+                $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+                $mail->Port       = 465;
+                $mail->CharSet    = 'UTF-8';
 
-                    //Recipients
-                    $mail->setFrom('sasass041919@gmail.com', '器材借用系統');
-                    foreach ($userEmailNameMap as $userEmail => $userName) {
-                        $mail->addAddress($userEmail, $userName);
+                $mail->setFrom('sasass041919@gmail.com', '器材借用系統');
+
+                // Approved
+                if (count($notifyApproved) > 0) {
+                    foreach ($userEmailNameMap as $email => $name) {
+                        $mail->addAddress($email, $name);
                     }
-
-                    //Content
                     $mail->isHTML(true);
-                    $mail->Subject = '您的借用申請狀態已更新';
-                    
-                    if ($action === 'approved') {
-                        $statusText = '已被核准';
-                    } elseif ($action === 'need_revision') {
-                        $statusText = '需要補件';
-                    } else {
-                        $statusText = '已被拒絕';
-                    }
-                    
-                    $idsStr = implode(', ', $reservationIds);
-                    $mail->Body    = "您好：<br><br>您提出的借用申請（編號：{$idsStr}）{$statusText}。<br><br>審核意見：<br>" . nl2br(htmlspecialchars($comment ?? '無')) . "<br><br>感謝您！";
-                    $mail->AltBody = "您好：\n\n您提出的借用申請（編號：{$idsStr}）{$statusText}。\n\n審核意見：\n" . htmlspecialchars($comment ?? '無') . "\n\n感謝您！";
-
+                    $mail->Subject = '您的借用申請已核准';
+                    $idsStr = implode(', ', $notifyApproved);
+                    $mail->Body    = "您好：<br><br>您提出的借用申請（編號：{$idsStr}）已被核准。<br><br>審核意見：<br>" . nl2br(htmlspecialchars($comment ?? '無')) . "<br><br>感謝您！";
+                    $mail->AltBody = "您好：\n\n您提出的借用申請（編號：{$idsStr}）已被核准。\n\n審核意見：\n" . htmlspecialchars($comment ?? '無') . "\n\n感謝您！";
                     $mail->send();
-                    $actionMsg .= ' 已寄出通知信。';
-                } catch (Exception $e) {
-                    $actionMsg .= " 但通知信寄送失敗： {$mail->ErrorInfo}";
+                    // clear recipients for next group
+                    $mail->clearAllRecipients();
                 }
+
+                // Need revision
+                if (count($notifyNeedRevision) > 0) {
+                    foreach ($userEmailNameMap as $email => $name) {
+                        $mail->addAddress($email, $name);
+                    }
+                    $mail->isHTML(true);
+                    $mail->Subject = '您的借用申請需要補件';
+                    $idsStr = implode(', ', $notifyNeedRevision);
+                    $mail->Body    = "您好：<br><br>您提出的借用申請（編號：{$idsStr}）需要補件，請依通知補件。<br><br>審核意見：<br>" . nl2br(htmlspecialchars($comment ?? '無')) . "<br><br>感謝您！";
+                    $mail->AltBody = "您好：\n\n您提出的借用申請（編號：{$idsStr}）需要補件，請依通知補件。\n\n審核意見：\n" . htmlspecialchars($comment ?? '無') . "\n\n感謝您！";
+                    $mail->send();
+                    $mail->clearAllRecipients();
+                }
+
+                // Rejected
+                if (count($notifyRejected) > 0) {
+                    foreach ($userEmailNameMap as $email => $name) {
+                        $mail->addAddress($email, $name);
+                    }
+                    $mail->isHTML(true);
+                    $mail->Subject = '您的借用申請已被拒絕';
+                    $idsStr = implode(', ', $notifyRejected);
+                    $mail->Body    = "您好：<br><br>您提出的借用申請（編號：{$idsStr}）已被拒絕。<br><br>審核意見：<br>" . nl2br(htmlspecialchars($comment ?? '無')) . "<br><br>感謝您！";
+                    $mail->AltBody = "您好：\n\n您提出的借用申請（編號：{$idsStr}）已被拒絕。\n\n審核意見：\n" . htmlspecialchars($comment ?? '無') . "\n\n感謝您！";
+                    $mail->send();
+                    $mail->clearAllRecipients();
+                }
+            } catch (Exception $e) {
+                $actionMsg .= " 但通知信寄送失敗： {$mail->ErrorInfo}";
             }
 
         } catch (Throwable $e) {
@@ -207,6 +385,30 @@ if (isset($dbError) && $dbError !== '') {
     // 使用現行資料表欄位 `user_id`
     $applicantColumn = 'user_id';
 
+    // 如果 reservations 表有 approval_stage 欄位，僅顯示屬於當前審核階段的待審申請
+    $hasApprovalStage = in_array('approval_stage', $reservationColumns, true);
+    $approvalStageFilter = '';
+    if ($hasApprovalStage) {
+        // role '2' acts as final '3'; role '3' should be able to see both 'd' and '3' stages
+        if ($currentRole === '2') {
+            $expectedStages = ['3'];
+        } elseif ($currentRole === '3') {
+            $expectedStages = ['d', '3'];
+        } else {
+            $expectedStages = [$currentRole];
+        }
+
+        if ($link) {
+            $escaped = array_map(function($s) use ($link) { return "'" . mysqli_real_escape_string($link, (string)$s) . "'"; }, $expectedStages);
+            $inList = implode(',', $escaped);
+            $approvalStageFilter = " AND r.approval_stage IN (" . $inList . ")";
+        } else {
+            $escaped = array_map(function($s) { return "'" . addslashes((string)$s) . "'"; }, $expectedStages);
+            $inList = implode(',', $escaped);
+            $approvalStageFilter = " AND r.approval_stage IN (" . $inList . ")";
+        }
+    }
+
     if (!in_array($applicantColumn, $reservationColumns, true)) {
         $dbError = '資料表 reservations 缺少 user_id，無法顯示審核資料。';
     } else {
@@ -215,12 +417,13 @@ if (isset($dbError) && $dbError !== '') {
             "SELECT r.reservation_id, r.`%s` AS applicant_user_id, %s AS submitted_at, r.borrow_start_at, r.borrow_end_at, u.full_name, u.email
              FROM reservations r
              JOIN users u ON r.`%s` = u.user_id
-             WHERE r.approval_status = 'pending'
+             WHERE r.approval_status = 'pending' %s
              ORDER BY %s ASC
              LIMIT 200",
             $applicantColumn,
             $submittedAtExpr,
             $applicantColumn,
+            $approvalStageFilter,
             $submittedAtExpr
         );
 

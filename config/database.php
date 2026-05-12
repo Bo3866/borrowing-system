@@ -16,7 +16,7 @@ function getDatabaseConfig(): array
 {
     return [
         'host' => envOrNull('DB_HOST') ?? '127.0.0.1',
-        'port' => envOrNull('DB_PORT') !== null ? (int)envOrNull('DB_PORT') : 3307,
+        'port' => envOrNull('DB_PORT') !== null ? (int)envOrNull('DB_PORT') : 3306,
         'database' => envOrNull('DB_NAME') ?? 'borrowing_system',
         'username' => envOrNull('DB_USER') ?? 'root',
         'password' => envOrNull('DB_PASSWORD') ?? '',
@@ -50,13 +50,13 @@ function getDatabaseConnectionCandidates(): array
         'port' => 3306,
         'database' => 'borrowing_system',
         'username' => 'root',
-        'password' => '',
+        'password' => '12345678',
     ];
 
-    // Try alternative port 3307 (for XAMPP or other installations)
+    // Try alternative port 3306 (for XAMPP or other installations)
     $candidates[] = [
         'host' => '127.0.0.1',
-        'port' => 3307,
+        'port' => 3306,
         'database' => 'borrowing_system',
         'username' => 'root',
         'password' => '12345678',
@@ -64,7 +64,7 @@ function getDatabaseConnectionCandidates(): array
 
     $candidates[] = [
         'host' => '127.0.0.1',
-        'port' => 3307,
+        'port' => 3306,
         'database' => 'borrowing_system',
         'username' => 'root',
         'password' => '12345678',
@@ -72,7 +72,7 @@ function getDatabaseConnectionCandidates(): array
 
     $candidates[] = [
         'host' => 'localhost',
-        'port' => 3307,
+        'port' => 3306,
         'database' => 'borrowing_system',
         'username' => 'root',
         'password' => '12345678',
@@ -80,7 +80,7 @@ function getDatabaseConnectionCandidates(): array
 
     $candidates[] = [
         'host' => 'localhost',
-        'port' => 3307,
+        'port' => 3306,
         'database' => 'borrowing_system',
         'username' => 'root',
         'password' => '12345678',

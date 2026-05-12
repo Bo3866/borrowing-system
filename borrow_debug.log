@@ -221,3 +221,60 @@ FILES:{"proposal_file":{"name":"Good.docx.pdf","type":"application\/pdf","tmp_na
 POST:{"resource_type":"space","space_id":"204","borrow_date":"2026-04-29","start_period_code":"D7","end_period_code":"D8","phone":"0912345678","purpose":"123","cart_items":"[]"}
 FILES:{"proposal_file":{"name":"Good.docx.pdf","type":"application\/pdf","tmp_name":"...","error":0,"size":52258}}
 
+2026-05-11T11:09:27+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-11","start_period_code":"E2","end_period_code":"E3","phone":"0912345678","purpose":"123","cart_items":"[]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-11T11:09:28+00:00 VALIDATION ERROR: 請選擇至少一項器材或一個場地。
+POST:{"resource_type":"both","borrow_date":"2026-05-11","start_period_code":"E2","end_period_code":"E3","phone":"0912345678","purpose":"123","cart_items":"[]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-11T11:09:38+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-11","start_period_code":"E2","end_period_code":"E3","phone":"0912345678","purpose":"123","cart_items":"[{\"code\":\"204\",\"name\":\"\u8ab2\u6307\u7d44\u4e8c\u6a13 204 \u6703\u8b70\u5ba4\",\"quantity\":1,\"type\":\"space\"}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-11T11:09:38+00:00 EXCEPTION: 申請場地需上傳活動企劃書。
+TRACE:#0 {main}
+POST:{"resource_type":"both","borrow_date":"2026-05-11","start_period_code":"E2","end_period_code":"E3","phone":"0912345678","purpose":"123","cart_items":"[{\"code\":\"204\",\"name\":\"\u8ab2\u6307\u7d44\u4e8c\u6a13 204 \u6703\u8b70\u5ba4\",\"quantity\":1,\"type\":\"space\"}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-11T11:09:47+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-11","start_period_code":"E2","end_period_code":"E3","phone":"0912345678","purpose":"123","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1,\"type\":\"equipment\"}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-11T16:00:39+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-12","start_period_code":"D1","end_period_code":"D2","phone":"0912345678","purpose":"123","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1,\"type\":\"equipment\"}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-11T16:19:54+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-13","start_period_code":"D1","end_period_code":"D2","phone":"0912345678","purpose":"123","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1,\"type\":\"equipment\"}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-11T16:29:36+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-12","start_period_code":"D1","end_period_code":"D3","phone":"0912345678","purpose":"123","cart_items":"[{\"code\":\"ES005\",\"name\":\"\u9032\u4fee\u90e8 \u5730\u4e0b\u5ba4\u6559\u5ba4 ES005\",\"quantity\":1,\"type\":\"space\"}]"}
+FILES:{"proposal_file":{"name":"Good.docx.pdf","type":"application\/pdf","tmp_name":"...","error":0,"size":52258}}
+
+2026-05-11T16:40:47+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-12","start_period_code":"D1","end_period_code":"D3","phone":"0912345678","purpose":"123","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1,\"type\":\"equipment\"}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-12T10:37:48+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-12","start_period_code":"E1","end_period_code":"E2","phone":"0912345678","purpose":"100","cart_items":"[{\"code\":\"A10\",\"name\":\"\u96fb\u92fc\u7434\",\"quantity\":1,\"type\":\"equipment\"}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-12T10:48:53+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-12","start_period_code":"E2","end_period_code":"E4","phone":"0912345678","purpose":"123","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1,\"type\":\"equipment\"}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-12T10:51:26+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-12","start_period_code":"E2","end_period_code":"E4","phone":"0912345678","purpose":"123","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1,\"type\":\"equipment\"}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-12T11:07:43+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-12","start_period_code":"E2","end_period_code":"E4","phone":"0912345678","purpose":"123","cart_items":"[{\"code\":\"A1\",\"name\":\"\u558a\u8a71\u5668(\u5145\u96fb\u96fb\u6c60*1)\",\"quantity\":1,\"type\":\"equipment\"}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-12T11:28:39+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-12","start_period_code":"E2","end_period_code":"E4","phone":"0912345678","purpose":"100\r\n","cart_items":"[{\"code\":\"A10\",\"name\":\"\u96fb\u92fc\u7434\",\"quantity\":1,\"type\":\"equipment\"}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+

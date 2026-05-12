@@ -10,7 +10,8 @@ $dbStatusText = '連線失敗';
 $isLoggedIn = isset($_SESSION['user_id']);
 $displayName = (string)($_SESSION['full_name'] ?? '訪客');
 $currentRole = (string)($_SESSION['role_name'] ?? '');
-$isManager = in_array($currentRole, ['2', '3'], true);
+// Treat roles a, b, c as equivalent to role 3 for manager/admin interfaces
+$isManager = in_array($currentRole, ['2', '3', 'a', 'b', 'c'], true);
 
 $periodSlots = [
     'D0' => ['label' => '日間第0節', 'start' => '07:10:00', 'end' => '08:00:00'],
@@ -122,11 +123,13 @@ if ($link) {
                 
                 <?php if ($isManager) { ?>
                     <button class="nav-btn" onclick="location.href='approve.php'">審核面板</button>
-                    <button class="nav-btn" id="btnManualRemind" type="button" onclick="handleManualRemindClick(event)">檢查逾期並催繳</button>
+                    <?php if (in_array($currentRole, ['2','3'], true)) { ?>
+                        <button class="nav-btn" id="btnManualRemind" type="button" onclick="handleManualRemindClick(event)">檢查逾期並催繳</button>
+                    <?php } ?>
                 <?php } ?>
                 <button class="nav-btn" onclick="location.href='checkin.php?qr=CHECKIN_GATE_V1'">掃碼報到</button>
                 <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
-                <?php if ($currentRole === '3') { ?>
+                <?php if (in_array($currentRole, ['3','a','b','c'], true)) { ?>
                     <button class="nav-btn" onclick="location.href='qr_admin.php'">生成報到 QR</button>
                 <?php } ?>
                 <?php if ($isLoggedIn) { ?>
@@ -786,7 +789,7 @@ if ($link) {
                     }
 
                     if (calData.selectedItemType === 'space') {
-                        text = avail === 0 ? '被約走' : '可借用';
+                        text = avail === 0 ? '已預約' : '可借用';
                     }
 
                     itemDiv.style.backgroundColor = bgColor;

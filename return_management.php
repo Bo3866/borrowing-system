@@ -267,6 +267,7 @@ if ($dbError === '') {
                 r.`{$borrowStartColumn}` AS borrow_start_at,
                 r.`{$borrowEndColumn}` AS borrow_end_at,
                 r.approval_status,
+                r.approval_stage,
                 r.rejection_reason,
                 r.revision_deadline,
                 r.submitted_at,
@@ -311,6 +312,38 @@ if ($dbError === '') {
         }
     }
 }
+
+// Attach per-reservation approval log info (timestamps and results) for UI
+if ($dbError === '' && count($rows) > 0) {
+    foreach ($rows as $idx => $r) {
+        $reservationId = (int)$r['reservation_id'];
+        $rows[$idx]['_stage_times'] = [];
+        $rows[$idx]['_stage_results'] = [];
+        $rows[$idx]['_stage_comments'] = [];
+
+        $logStmt = mysqli_prepare($link, 'SELECT al.reviewed_at, al.review_result, al.review_comment, u.role_name FROM approval_logs al JOIN users u ON u.user_id = al.reviewer_id WHERE al.reservation_id = ? ORDER BY al.reviewed_at ASC');
+        if ($logStmt) {
+            mysqli_stmt_bind_param($logStmt, 'i', $reservationId);
+            mysqli_stmt_execute($logStmt);
+            $logRes = mysqli_stmt_get_result($logStmt);
+            if ($logRes) {
+                while ($logRow = mysqli_fetch_assoc($logRes)) {
+                    $role = (string)($logRow['role_name'] ?? '');
+                    $reviewedAt = $logRow['reviewed_at'] ?? null;
+                    $result = $logRow['review_result'] ?? null;
+                    $comment = $logRow['review_comment'] ?? null;
+                    if ($role !== '') {
+                        // normalize roles '2' acting as '3' handled elsewhere
+                        $rows[$idx]['_stage_times'][$role] = $reviewedAt;
+                        $rows[$idx]['_stage_results'][$role] = $result;
+                        $rows[$idx]['_stage_comments'][$role] = $comment;
+                    }
+                }
+            }
+            mysqli_stmt_close($logStmt);
+        }
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -319,6 +352,11 @@ if ($dbError === '') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>借還管理｜校園資源租借系統</title>
     <link rel="stylesheet" href="styles.css?v=<?php echo time(); ?>">
+    <style>
+        /* Prevent step labels from wrapping */
+        .stepper-text { white-space: nowrap; }
+        .stepper-subtext { white-space: nowrap; }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -372,26 +410,37 @@ if ($dbError === '') {
                                             $isPickup = (int)$row['pickup_confirmed'] === 1;
                                             $isReturned = (int)$row['return_confirmed'] === 1;
                                             $approvalStatus = (string)$row['approval_status'];
-                                            
-                                            // 根據批准狀態與報到狀態計算進度：1=申請送出 2=審核中/補件 3=使用中 4=已歸還
-                                            if ($approvalStatus === 'rejected') {
-                                                $progressStatus = 0;  // 已拒絕
-                                            } elseif ($approvalStatus === 'revision_overdue') {
-                                                $progressStatus = 0;  // 補件逾期同拒絕概念
+                                            $approvalStage = (string)($row['approval_stage'] ?? 'a');
+
+                                            // Map approval stages to step indices:
+                                            // 1 = 申請送出
+                                            // 2 = 學務長 (a)
+                                            // 3 = 軍訓室 (b)
+                                            // 4 = 輔導人員 (c)
+                                            // 5 = 課指組 (d)
+                                            // 6 = 最終審核 (role 3)
+                                            // 7 = 使用中
+                                            // 8 = 已歸還
+                                            $stageMap = ['a' => 2, 'b' => 3, 'c' => 4, 'd' => 5, '3' => 6];
+
+                                            if ($approvalStatus === 'rejected' || $approvalStatus === 'revision_overdue') {
+                                                $progressStatus = 0; // 已拒絕或逾期視為失敗
                                             } elseif ($approvalStatus === 'need_revision') {
-                                                $progressStatus = 1;  // 待補件 (卡在步驟2)
+                                                // 停留在目前審核階段
+                                                $progressStatus = $stageMap[$approvalStage] ?? 2;
                                             } elseif ($approvalStatus === 'pending') {
-                                                $progressStatus = 1;  // 待審核
+                                                // 依據目前 approval_stage 顯示在哪一階段等待審核
+                                                $progressStatus = $stageMap[$approvalStage] ?? 2;
                                             } elseif ($approvalStatus === 'approved') {
                                                 if ($isReturned) {
-                                                    $progressStatus = 4;  // 已歸還
+                                                    $progressStatus = 8; // 已歸還
                                                 } elseif ($isPickup) {
-                                                    $progressStatus = 3;  // 使用中
+                                                    $progressStatus = 7; // 使用中
                                                 } else {
-                                                    $progressStatus = 2;  // 審核中（已批准但未報到）
+                                                    $progressStatus = 6; // 所有審核完成，等待報到
                                                 }
                                             } else {
-                                                $progressStatus = 1;  // 預設
+                                                $progressStatus = 1; // 預設：剛送出
                                             }
                                         ?>
                                         <tr class="accordion-trigger" onclick="toggleAccordion(this, <?php echo (int)$row['reservation_id']; ?>)">
@@ -442,7 +491,53 @@ if ($dbError === '') {
                                         <!-- 展開式進度條 -->
                                         <tr class="accordion-content" id="accordion-<?php echo (int)$row['reservation_id']; ?>" style="display: none;">
                                             <td colspan="6">
-                                                <div class="stepper-simple" data-status="<?php echo $progressStatus; ?>" data-approval="<?php echo htmlspecialchars($approvalStatus, ENT_QUOTES, 'UTF-8'); ?>">
+                                                <?php
+                                                    // Prepare approved/rejected stage lists and timestamps for this row
+                                                    $approvedStages = [];
+                                                    $rejectedStages = [];
+                                                    $stageTimes = [];
+                                                    if (!empty($row['_stage_results'])) {
+                                                        foreach ($row['_stage_results'] as $rRole => $rResult) {
+                                                            if ($rResult === 'approved') $approvedStages[] = $rRole;
+                                                            if ($rResult === 'rejected') $rejectedStages[] = $rRole;
+                                                        }
+                                                    }
+                                                    if (!empty($row['_stage_times'])) {
+                                                        foreach ($row['_stage_times'] as $rRole => $rTime) {
+                                                            $stageTimes[$rRole] = $rTime;
+                                                        }
+                                                    }
+
+                                                    // If a later stage has been approved (e.g. role '3'), mark all prior stages as approved for visual clarity
+                                                    $order = ['a','b','c','d','3'];
+                                                    if (!empty($approvedStages)) {
+                                                        $approvedMap = array_fill_keys($approvedStages, true);
+                                                        $maxIdx = -1;
+                                                        foreach ($order as $i => $r) {
+                                                            if (isset($approvedMap[$r])) {
+                                                                $maxIdx = max($maxIdx, $i);
+                                                            }
+                                                        }
+                                                        if ($maxIdx >= 0) {
+                                                            for ($j = 0; $j <= $maxIdx; $j++) {
+                                                                $approvedMap[$order[$j]] = true;
+                                                                // if earlier stage lacks a timestamp, use the latest approved stage's time
+                                                                if (empty($stageTimes[$order[$j]])) {
+                                                                    // pick time from the furthest approved stage available (search backwards)
+                                                                    for ($k = $maxIdx; $k >= 0; $k--) {
+                                                                        $candidate = $order[$k];
+                                                                        if (!empty($stageTimes[$candidate])) {
+                                                                            $stageTimes[$order[$j]] = $stageTimes[$candidate];
+                                                                            break;
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                        $approvedStages = array_keys($approvedMap);
+                                                    }
+                                                ?>
+                                                <div class="stepper-simple" data-status="<?php echo $progressStatus; ?>" data-approval="<?php echo htmlspecialchars($approvalStatus, ENT_QUOTES, 'UTF-8'); ?>" data-stage="<?php echo htmlspecialchars($approvalStage, ENT_QUOTES, 'UTF-8'); ?>" data-approved="<?php echo htmlspecialchars(implode(',', $approvedStages), ENT_QUOTES, 'UTF-8'); ?>" data-rejected="<?php echo htmlspecialchars(implode(',', $rejectedStages), ENT_QUOTES, 'UTF-8'); ?>">
                                                     <div class="stepper-track">
                                                         <div class="stepper-step" data-step="1">
                                                             <div class="stepper-dot"></div>
@@ -452,31 +547,118 @@ if ($dbError === '') {
                                                             </div>
                                                         </div>
                                                         <div class="stepper-line"></div>
-                                                        
-                                                        <div class="stepper-step" data-step="2">
+
+                                                        <div class="stepper-step" data-step="2" data-role="a">
                                                             <div class="stepper-dot"></div>
                                                             <div class="stepper-time">
-                                                                <span class="stepper-text approval-text">
-                                                                    <?php 
-                                                                        if ($approvalStatus === 'pending') {
-                                                                            echo '審核中';
-                                                                        } elseif ($approvalStatus === 'approved') {
+                                                                <span class="stepper-text">學務長審核</span>
+                                                                <span class="stepper-subtext approval-text">
+                                                                    <?php
+                                                                        $t = $stageTimes['a'] ?? null;
+                                                                        $res = in_array('a', $approvedStages, true) ? 'approved' : (in_array('a', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['a'] ?? null));
+                                                                        if ($res === 'approved') {
                                                                             echo '審核通過';
-                                                                        } elseif ($approvalStatus === 'rejected') {
+                                                                        } elseif ($res === 'rejected') {
                                                                             echo '審核未通過';
-                                                                        } elseif ($approvalStatus === 'revision_overdue') {
-                                                                            echo '補件逾期';
-                                                                        } elseif ($approvalStatus === 'need_revision') {
-                                                                            echo '<button type="button" onclick="location.href=\'#\';" style="background-color:#ffc107;color:#000;border:none;padding:2px 8px;border-radius:4px;cursor:pointer;font-size:0.9em;margin-top:4px;">補件</button>';
+                                                                        } elseif ($approvalStage === 'a' && $approvalStatus === 'pending') {
+                                                                            echo '審核中';
                                                                         }
                                                                     ?>
                                                                 </span>
-                                                                <span class="stepper-timestamp"><?php echo htmlspecialchars((string)$row['updated_at'], ENT_QUOTES, 'UTF-8'); ?></span>
+                                                                <span class="stepper-timestamp"><?php echo $stageTimes['a'] ? htmlspecialchars((string)$stageTimes['a'], ENT_QUOTES, 'UTF-8') : htmlspecialchars((string)$row['submitted_at'], ENT_QUOTES, 'UTF-8'); ?></span>
                                                             </div>
                                                         </div>
                                                         <div class="stepper-line"></div>
-                                                        
-                                                        <div class="stepper-step" data-step="3">
+
+                                                        <div class="stepper-step" data-step="3" data-role="b">
+                                                            <div class="stepper-dot"></div>
+                                                            <div class="stepper-time">
+                                                                <span class="stepper-text">軍訓室審核</span>
+                                                                <span class="stepper-subtext">
+                                                                    <?php
+                                                                        $t = $stageTimes['b'] ?? null;
+                                                                        $res = in_array('b', $approvedStages, true) ? 'approved' : (in_array('b', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['b'] ?? null));
+                                                                        if ($res === 'approved') {
+                                                                            echo '審核通過';
+                                                                        } elseif ($res === 'rejected') {
+                                                                            echo '審核未通過';
+                                                                        } elseif ($approvalStage === 'b' && $approvalStatus === 'pending') {
+                                                                            echo '審核中';
+                                                                        }
+                                                                    ?>
+                                                                </span>
+                                                                <span class="stepper-timestamp"><?php echo $stageTimes['b'] ? htmlspecialchars((string)$stageTimes['b'], ENT_QUOTES, 'UTF-8') : '-'; ?></span>
+                                                            </div>
+                                                        </div>
+                                                        <div class="stepper-line"></div>
+
+                                                        <div class="stepper-step" data-step="4" data-role="c">
+                                                            <div class="stepper-dot"></div>
+                                                            <div class="stepper-time">
+                                                                <span class="stepper-text">輔導人員審核</span>
+                                                                <span class="stepper-subtext">
+                                                                    <?php
+                                                                        $t = $stageTimes['c'] ?? null;
+                                                                        $res = in_array('c', $approvedStages, true) ? 'approved' : (in_array('c', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['c'] ?? null));
+                                                                        if ($res === 'approved') {
+                                                                            echo '審核通過';
+                                                                        } elseif ($res === 'rejected') {
+                                                                            echo '審核未通過';
+                                                                        } elseif ($approvalStage === 'c' && $approvalStatus === 'pending') {
+                                                                            echo '審核中';
+                                                                        }
+                                                                    ?>
+                                                                </span>
+                                                                <span class="stepper-timestamp"><?php echo $stageTimes['c'] ? htmlspecialchars((string)$stageTimes['c'], ENT_QUOTES, 'UTF-8') : '-'; ?></span>
+                                                            </div>
+                                                        </div>
+                                                        <div class="stepper-line"></div>
+
+                                                        <div class="stepper-step" data-step="5" data-role="d">
+                                                            <div class="stepper-dot"></div>
+                                                            <div class="stepper-time">
+                                                                <span class="stepper-text">課指組審核</span>
+                                                                <span class="stepper-subtext">
+                                                                    <?php
+                                                                        $t = $stageTimes['d'] ?? null;
+                                                                        $res = in_array('d', $approvedStages, true) ? 'approved' : (in_array('d', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['d'] ?? null));
+                                                                        if ($res === 'approved') {
+                                                                            echo '審核通過';
+                                                                        } elseif ($res === 'rejected') {
+                                                                            echo '審核未通過';
+                                                                        } elseif ($approvalStage === 'd' && $approvalStatus === 'pending') {
+                                                                            echo '審核中';
+                                                                        }
+                                                                    ?>
+                                                                </span>
+                                                                <span class="stepper-timestamp"><?php echo $stageTimes['d'] ? htmlspecialchars((string)$stageTimes['d'], ENT_QUOTES, 'UTF-8') : '-'; ?></span>
+                                                            </div>
+                                                        </div>
+                                                        <div class="stepper-line"></div>
+
+                                                        <div class="stepper-step" data-step="6" data-role="3">
+                                                            <div class="stepper-dot"></div>
+                                                            <div class="stepper-time">
+                                                                <span class="stepper-text">最終審核</span>
+                                                                <span class="stepper-subtext">
+                                                                    <?php
+                                                                        $t = $stageTimes['3'] ?? null;
+                                                                        $res = in_array('3', $approvedStages, true) ? 'approved' : (in_array('3', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['3'] ?? null));
+                                                                        if ($res === 'approved') {
+                                                                            echo '審核通過';
+                                                                        } elseif ($res === 'rejected') {
+                                                                            echo '審核未通過';
+                                                                        } elseif ($approvalStage === '3' && $approvalStatus === 'pending') {
+                                                                            echo '審核中';
+                                                                        }
+                                                                    ?>
+                                                                </span>
+                                                                <span class="stepper-timestamp"><?php echo $stageTimes['3'] ? htmlspecialchars((string)$stageTimes['3'], ENT_QUOTES, 'UTF-8') : '-'; ?></span>
+                                                            </div>
+                                                        </div>
+                                                        <div class="stepper-line"></div>
+
+                                                        <div class="stepper-step" data-step="7">
                                                             <div class="stepper-dot"></div>
                                                             <div class="stepper-time">
                                                                 <span class="stepper-text">使用中</span>
@@ -484,8 +666,8 @@ if ($dbError === '') {
                                                             </div>
                                                         </div>
                                                         <div class="stepper-line"></div>
-                                                        
-                                                        <div class="stepper-step" data-step="4">
+
+                                                        <div class="stepper-step" data-step="8">
                                                             <div class="stepper-dot"></div>
                                                             <div class="stepper-time">
                                                                 <span class="stepper-text">已歸還</span>
@@ -574,9 +756,16 @@ if ($dbError === '') {
         function updateStepper(stepper) {
             const status = parseInt(stepper.getAttribute('data-status'));
             const approval = stepper.getAttribute('data-approval');
+            const stage = (stepper.getAttribute('data-stage') || 'a');
             const dots = stepper.querySelectorAll('.stepper-dot');
             const lines = stepper.querySelectorAll('.stepper-line');
             const approvalText = stepper.querySelector('.approval-text');
+
+            // parse per-stage approved/rejected lists from data attributes
+            const approvedRaw = (stepper.getAttribute('data-approved') || '').trim();
+            const rejectedRaw = (stepper.getAttribute('data-rejected') || '').trim();
+            const approvedStages = approvedRaw ? approvedRaw.split(',').map(s=>s.trim()).filter(Boolean) : [];
+            const rejectedStages = rejectedRaw ? rejectedRaw.split(',').map(s=>s.trim()).filter(Boolean) : [];
             
             // 先清除所有樣式
             dots.forEach(dot => {
@@ -587,63 +776,62 @@ if ($dbError === '') {
             });
             
             // 第1步：始終完成（藍色✓ - 申請送出）
-            dots[0].classList.add('active');
-            
+            if (dots[0]) dots[0].classList.add('active');
+
+            // Apply per-stage approved/rejected markers first
+            const roleIndexMap = { 'a':1, 'b':2, 'c':3, 'd':4, '3':5 };
+            approvedStages.forEach(r => {
+                const idx = roleIndexMap[r];
+                if (idx !== undefined && dots[idx]) {
+                    dots[idx].classList.add('approved');
+                    if (lines[idx - 1]) lines[idx - 1].classList.add('approved');
+                }
+            });
+            rejectedStages.forEach(r => {
+                const idx = roleIndexMap[r];
+                if (idx !== undefined && dots[idx]) {
+                    dots[idx].classList.add('rejected');
+                    if (lines[idx - 1]) lines[idx - 1].classList.add('rejected');
+                }
+            });
+
+            // map stage to dot index (dots: 0..7 for steps 1..8)
+            const stageIndexMap = { 'a': 1, 'b': 2, 'c': 3, 'd': 4, '3': 5 };
+            const currentStageIndex = stageIndexMap[stage] !== undefined ? stageIndexMap[stage] : 1;
+
             if (approval === 'pending') {
-                // 待審核：第1步完成，第2步為藍色圓點（閃爍）
-                dots[1].classList.add('pending');
-                lines[0].classList.add('active');
-                
-                // 更新審核文字顏色為藍色
-                if (approvalText) {
-                    approvalText.style.color = '#3498db';
-                }
+                // 顯示目前階段為待審
+                if (dots[currentStageIndex]) dots[currentStageIndex].classList.add('pending');
+                if (lines[0]) lines[0].classList.add('active');
             } else if (approval === 'need_revision') {
-                // 待補件：顯示黃色提醒
-                dots[1].classList.add('pending'); // 可借用 pending 樣式或自定義閃爍
-                dots[1].style.borderColor = '#ffc107';
-                dots[1].style.backgroundColor = '#fff3cd';
-                lines[0].classList.add('active');
+                // 停在目前階段，標示補件（黃色）
+                if (dots[currentStageIndex]) {
+                    dots[currentStageIndex].classList.add('pending');
+                    dots[currentStageIndex].style.borderColor = '#ffc107';
+                    dots[currentStageIndex].style.backgroundColor = '#fff3cd';
+                }
+                if (lines[0]) lines[0].classList.add('active');
             } else if (approval === 'approved') {
-                // 審核通過：第1、2步完成（綠色✓），可能往第3、4步進行
-                dots[1].classList.add('approved');
-                lines[0].classList.add('approved');
-                
-                // 根據進度繼續點亮後續節點
-                if (status >= 3) {
-                    dots[2].classList.add('active');
-                    lines[1].classList.add('active');
+                // 已通過（final）: already handled per-stage above; ensure usage/returned reflect status
+                if (status >= 7) {
+                    if (dots[6]) dots[6].classList.add('active');
+                    if (lines[5]) lines[5].classList.add('active');
                 }
-                if (status >= 4) {
-                    dots[3].classList.add('active');
+                if (status >= 8) {
+                    if (dots[7]) dots[7].classList.add('active');
+                    if (lines[6]) lines[6].classList.add('active');
                 }
-                
-                // 更新審核文字顏色為綠色
-                if (approvalText) {
-                    approvalText.style.color = '#27ae60';
-                }
+
+                // keep subtext color default; per-step dot/line indicate approval
             } else if (approval === 'rejected') {
-                // 審核未通過：第1步完成，第2步為紅色✕
-                dots[1].classList.add('rejected');
-                lines[0].classList.add('rejected');
-                
-                // 第3、4步保持灰色失焦
-                
-                // 更新審核文字顏色為紅色
-                if (approvalText) {
-                    approvalText.style.color = '#e74c3c';
-                }
+                // 在拒絕的階段顯示紅色
+                if (dots[currentStageIndex]) dots[currentStageIndex].classList.add('rejected');
+                if (lines[currentStageIndex - 1]) lines[currentStageIndex - 1].classList.add('rejected');
+                // keep subtext color default for rejected status
             } else if (approval === 'revision_overdue') {
-                // 補件逾期：第1步完成，第2步為黑色✕
-                dots[1].classList.add('overdue');
-                lines[0].classList.add('overdue');
-                
-                // 第3、4步保持灰色失焦
-                
-                // 更新審核文字顏色為黑色
-                if (approvalText) {
-                    approvalText.style.color = '#333333';
-                }
+                if (dots[currentStageIndex]) dots[currentStageIndex].classList.add('overdue');
+                if (lines[currentStageIndex - 1]) lines[currentStageIndex - 1].classList.add('overdue');
+                // keep subtext color default for overdue
             }
         }
     </script>

@@ -513,6 +513,7 @@ SQL;
                 $hasCertificateIdCol = in_array('certificate_id', $reservationCols, true);
 
                 $hasSubmittedAtCol = in_array('submitted_at', $reservationCols, true);
+                $hasApprovalStageCol = in_array('approval_stage', $reservationCols, true);
                 
                 $submittedAtVal = date('Y-m-d H:i:s'); // 保證同一批次提交時間一致
                 $insertCols = [$applicantColumn, 'borrow_start_at', 'borrow_end_at'];
@@ -528,6 +529,13 @@ SQL;
                 if ($hasSubmittedAtCol) {
                     $insertCols[] = 'submitted_at';
                     $bindValuesTemplate[] = $submittedAtVal;
+                    $bindTypesTemplate .= 's';
+                }
+
+                if ($hasApprovalStageCol) {
+                    // new submissions start at stage 'a'
+                    $insertCols[] = 'approval_stage';
+                    $bindValuesTemplate[] = 'a';
                     $bindTypesTemplate .= 's';
                 }
 

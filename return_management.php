@@ -417,11 +417,10 @@ if ($dbError === '' && count($rows) > 0) {
                                             // 2 = 學務長 (a)
                                             // 3 = 軍訓室 (b)
                                             // 4 = 輔導人員 (c)
-                                            // 5 = 課指組 (d)
-                                            // 6 = 最終審核 (role 3)
-                                            // 7 = 使用中
-                                            // 8 = 已歸還
-                                            $stageMap = ['a' => 2, 'b' => 3, 'c' => 4, 'd' => 5, '3' => 6];
+                                            // 5 = 課指組 (d)  <-- final approval now
+                                            // 6 = 使用中
+                                            // 7 = 已歸還
+                                            $stageMap = ['a' => 2, 'b' => 3, 'c' => 4, 'd' => 5];
 
                                             if ($approvalStatus === 'rejected' || $approvalStatus === 'revision_overdue') {
                                                 $progressStatus = 0; // 已拒絕或逾期視為失敗
@@ -433,11 +432,11 @@ if ($dbError === '' && count($rows) > 0) {
                                                 $progressStatus = $stageMap[$approvalStage] ?? 2;
                                             } elseif ($approvalStatus === 'approved') {
                                                 if ($isReturned) {
-                                                    $progressStatus = 8; // 已歸還
+                                                    $progressStatus = 7; // 已歸還
                                                 } elseif ($isPickup) {
-                                                    $progressStatus = 7; // 使用中
+                                                    $progressStatus = 6; // 使用中
                                                 } else {
-                                                    $progressStatus = 6; // 所有審核完成，等待報到
+                                                    $progressStatus = 5; // 所有審核完成（課指組已通過）
                                                 }
                                             } else {
                                                 $progressStatus = 1; // 預設：剛送出
@@ -507,6 +506,17 @@ if ($dbError === '' && count($rows) > 0) {
                                                             $stageTimes[$rRole] = $rTime;
                                                         }
                                                     }
+
+                                                    // Normalize legacy '3' (old final approver) to 'd' so UI shows properly
+                                                    if (in_array('3', $approvedStages, true)) {
+                                                        $approvedStages[] = 'd';
+                                                    }
+                                                    if (in_array('3', $rejectedStages, true)) {
+                                                        $rejectedStages[] = 'd';
+                                                    }
+                                                    // remove duplicates
+                                                    $approvedStages = array_values(array_unique($approvedStages));
+                                                    $rejectedStages = array_values(array_unique($rejectedStages));
 
                                                     // If a later stage has been approved (e.g. role '3'), mark all prior stages as approved for visual clarity
                                                     $order = ['a','b','c','d','3'];
@@ -636,27 +646,7 @@ if ($dbError === '' && count($rows) > 0) {
                                                         </div>
                                                         <div class="stepper-line"></div>
 
-                                                        <div class="stepper-step" data-step="6" data-role="3">
-                                                            <div class="stepper-dot"></div>
-                                                            <div class="stepper-time">
-                                                                <span class="stepper-text">最終審核</span>
-                                                                <span class="stepper-subtext">
-                                                                    <?php
-                                                                        $t = $stageTimes['3'] ?? null;
-                                                                        $res = in_array('3', $approvedStages, true) ? 'approved' : (in_array('3', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['3'] ?? null));
-                                                                        if ($res === 'approved') {
-                                                                            echo '審核通過';
-                                                                        } elseif ($res === 'rejected') {
-                                                                            echo '審核未通過';
-                                                                        } elseif ($approvalStage === '3' && $approvalStatus === 'pending') {
-                                                                            echo '審核中';
-                                                                        }
-                                                                    ?>
-                                                                </span>
-                                                                <span class="stepper-timestamp"><?php echo $stageTimes['3'] ? htmlspecialchars((string)$stageTimes['3'], ENT_QUOTES, 'UTF-8') : '-'; ?></span>
-                                                            </div>
-                                                        </div>
-                                                        <div class="stepper-line"></div>
+                                                        <!-- role 3 final approval removed;課指組(d) is final -->
 
                                                         <div class="stepper-step" data-step="7">
                                                             <div class="stepper-dot"></div>
@@ -779,7 +769,7 @@ if ($dbError === '' && count($rows) > 0) {
             if (dots[0]) dots[0].classList.add('active');
 
             // Apply per-stage approved/rejected markers first
-            const roleIndexMap = { 'a':1, 'b':2, 'c':3, 'd':4, '3':5 };
+            const roleIndexMap = { 'a':1, 'b':2, 'c':3, 'd':4 };
             approvedStages.forEach(r => {
                 const idx = roleIndexMap[r];
                 if (idx !== undefined && dots[idx]) {
@@ -796,7 +786,7 @@ if ($dbError === '' && count($rows) > 0) {
             });
 
             // map stage to dot index (dots: 0..7 for steps 1..8)
-            const stageIndexMap = { 'a': 1, 'b': 2, 'c': 3, 'd': 4, '3': 5 };
+            const stageIndexMap = { 'a': 1, 'b': 2, 'c': 3, 'd': 4 };
             const currentStageIndex = stageIndexMap[stage] !== undefined ? stageIndexMap[stage] : 1;
 
             if (approval === 'pending') {
@@ -813,13 +803,13 @@ if ($dbError === '' && count($rows) > 0) {
                 if (lines[0]) lines[0].classList.add('active');
             } else if (approval === 'approved') {
                 // 已通過（final）: already handled per-stage above; ensure usage/returned reflect status
+                if (status >= 6) {
+                    if (dots[5]) dots[5].classList.add('active');
+                    if (lines[4]) lines[4].classList.add('active');
+                }
                 if (status >= 7) {
                     if (dots[6]) dots[6].classList.add('active');
                     if (lines[5]) lines[5].classList.add('active');
-                }
-                if (status >= 8) {
-                    if (dots[7]) dots[7].classList.add('active');
-                    if (lines[6]) lines[6].classList.add('active');
                 }
 
                 // keep subtext color default; per-step dot/line indicate approval

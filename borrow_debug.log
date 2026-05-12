@@ -1,0 +1,4 @@
+2026-05-11T16:30:00+00:00 POST handler invoked
+POST:{"resource_type":"both","borrow_date":"2026-05-18","start_period_code":"D1","end_period_code":"D2","phone":"0900000000","purpose":"123","cart_items":"[{\"code\":\"A2\",\"name\":\"\u6709\u7dda\u9ea5\u514b\u98a8\",\"quantity\":1,\"type\":\"equipment\"}]"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+

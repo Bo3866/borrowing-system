@@ -1855,6 +1855,19 @@ h3 {
     color: white;
 }
 
+/* 補件逾期狀態：黑色 */
+.stepper-dot.overdue {
+    background-color: #333333 !important;
+    box-shadow: 0 0 0 1px #333333 !important;
+    color: white !important;
+}
+
+.stepper-dot.overdue::before {
+    content: '✕';
+    font-weight: 900;
+    color: white;
+}
+
 /* 進度文字和時間 */
 .stepper-time {
     display: flex;
@@ -1900,6 +1913,11 @@ h3 {
 /* 審核未通過狀態連接線：紅色 */
 .stepper-line.rejected {
     background-color: #e74c3c;
+}
+
+/* 補件逾期狀態連接線：黑色 */
+.stepper-line.overdue {
+    background-color: #333333;
 }
 
 /* 拒絕提示框 */

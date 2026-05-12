@@ -1470,6 +1470,8 @@ h3 {
 /* 簡化進度條容器 */
 .stepper-simple {
     padding: 1.2rem 1rem;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 /* ===== 草稿管理中心 (Draft Management) ===== */
@@ -1779,14 +1781,72 @@ h3 {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0;
+    gap: 0.5rem;
+    flex-wrap: nowrap;
+    width: 100%;
+}
+
+/* Force horizontal layout for the stepper in edge cases where other CSS may override it */
+.stepper-simple .stepper-track {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 0.5rem !important;
+    flex-wrap: nowrap !important;
+    position: relative !important;
+}
+
+.stepper-simple .stepper-step {
+    flex: 0 0 auto !important;
+    min-width: 110px !important;
+}
+
+.stepper-simple .stepper-line {
+    flex: 1 1 auto !important;
+    width: auto !important;
+    height: 2px !important;
+    background-color: #bdc3c7 !important;
+    margin: 0 0.6rem !important;
+    top: 0 !important;
+    position: relative !important;
+    align-self: center !important;
+    z-index: 1 !important;
+}
+
+/* Temporary debug overrides: make connectors very visible and show element outlines */
+.stepper-simple .stepper-line {
+    display: none !important; /* hide individual segment elements while using baseline */
+}
+
+/* Baseline connector: full-width visible line behind dots */
+.stepper-simple .stepper-track::before {
+    content: '';
+    position: absolute !important;
+    left: 12px !important;
+    right: 12px !important;
+    height: 4px !important;
+    background: linear-gradient(90deg, #e0e0e0 0%, #e0e0e0 100%) !important;
+    top: calc( (24px / 2) + 0px ) !important; /* align with dot center */
+    z-index: 1 !important;
+    border-radius: 2px !important;
+}
+.stepper-simple .stepper-track {
+    outline: 1px dashed rgba(0,0,0,0.06) !important;
+}
+.stepper-simple .stepper-step {
+    outline: 1px dashed rgba(0,0,255,0.06) !important;
+}
+.stepper-simple .stepper-dot {
+    z-index: 3 !important;
 }
 
 .stepper-step {
     display: flex;
     flex-direction: column;
     align-items: center;
-    flex: 1;
+    flex: 1 0 auto;
+    min-width: 120px;
     position: relative;
     z-index: 2;
 }
@@ -2026,7 +2086,7 @@ h3 {
 
 
 /* =========================================
-   Stepper �˦� (borrow.php �Ĥ@�B)
+   Stepper �˦� (borrow.php �Ĥ@�B)
 ========================================= */
 .stepper-container {
     display: flex;

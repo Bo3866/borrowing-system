@@ -203,6 +203,13 @@ $formData = [
     'participant_count' => '',
     'staff_count' => '',
     'club_president' => '',
+    'activity_coordinator' => '',
+    'coordinator_department' => '',
+    'coordinator_phone' => '',
+    'coordinator_other_contact' => '',
+    'vehicle_entry' => 'no',
+    'setup_flags' => 'no',
+    'flag_details' => '',
     'resource_type' => 'equipment',
     'equipment_code' => '',
     'space_id' => '',
@@ -232,6 +239,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['participant_count'] = trim((string)($_POST['participant_count'] ?? ''));
     $formData['staff_count'] = trim((string)($_POST['staff_count'] ?? ''));
     $formData['club_president'] = trim((string)($_POST['club_president'] ?? ''));
+    $formData['activity_coordinator'] = trim((string)($_POST['activity_coordinator'] ?? ''));
+    $formData['coordinator_department'] = trim((string)($_POST['coordinator_department'] ?? ''));
+    $formData['coordinator_phone'] = trim((string)($_POST['coordinator_phone'] ?? ''));
+    $formData['coordinator_other_contact'] = trim((string)($_POST['coordinator_other_contact'] ?? ''));
+    $formData['vehicle_entry'] = trim((string)($_POST['vehicle_entry'] ?? 'no'));
+    $formData['setup_flags'] = trim((string)($_POST['setup_flags'] ?? 'no'));
+    $formData['flag_details'] = trim((string)($_POST['flag_details'] ?? ''));
     $formData['space_id'] = trim((string)($_POST['space_id'] ?? ''));
     $formData['borrow_start_date'] = trim((string)($_POST['borrow_start_date'] ?? ''));
     
@@ -538,9 +552,9 @@ SQL;
                 $hasApprovalStageCol = in_array('approval_stage', $reservationCols, true);
                 
                 $submittedAtVal = date('Y-m-d H:i:s'); // 保證同一批次提交時間一致
-                $insertCols = [$applicantColumn, 'borrow_start_at', 'borrow_end_at', 'organization_name', 'activity_name', 'participant_count', 'staff_count', 'club_president'];
-                $bindValuesTemplate = [$userId, $borrowStartAtSql, $borrowEndAtSql, $formData['organization_name'], $formData['activity_name'], $formData['participant_count'], (int)$formData['staff_count'], $formData['club_president']];
-                $bindTypesTemplate = 'ssssssis';
+                $insertCols = [$applicantColumn, 'borrow_start_at', 'borrow_end_at', 'organization_name', 'activity_name', 'participant_count', 'staff_count', 'club_president', 'activity_coordinator', 'coordinator_department', 'coordinator_phone', 'coordinator_other_contact', 'vehicle_entry', 'setup_flags', 'flag_details'];
+                $bindValuesTemplate = [$userId, $borrowStartAtSql, $borrowEndAtSql, $formData['organization_name'], $formData['activity_name'], $formData['participant_count'], (int)$formData['staff_count'], $formData['club_president'], $formData['activity_coordinator'], $formData['coordinator_department'], $formData['coordinator_phone'], $formData['coordinator_other_contact'], $formData['vehicle_entry'], $formData['setup_flags'], $formData['flag_details']];
+                $bindTypesTemplate = 'ssssssissssssss';
 
                 if ($hasPurposeCol) {
                     $insertCols[] = 'purpose';
@@ -1070,7 +1084,7 @@ SQL;
 
         <main class="main-content">
             <section class="borrow-page">
-                <h2>器材借用申請</h2>
+                <h2>申請</h2>
                 <p class="borrow-subtitle">角色：<?php echo htmlspecialchars($roleName, ENT_QUOTES, 'UTF-8'); ?>。填寫申請後將送出審核。</p>
 
                 <?php if ($dbError !== '') { ?>
@@ -1091,33 +1105,46 @@ SQL;
                         <div class="stepper-container">
                             <div class="stepper-item active" id="stepper-1">
                                 <div class="step-circle">1</div>
-                                <div class="step-label">活動日期</div>
+                                <div class="step-label">活動申請(1/2)</div>
                             </div>
                             <div class="stepper-line"></div>
                             <div class="stepper-item" id="stepper-2">
                                 <div class="step-circle">2</div>
-                                <div class="step-label">器材與場地</div>
+                                <div class="step-label">活動申請(2/2)</div>
                             </div>
                             <div class="stepper-line"></div>
                             <div class="stepper-item" id="stepper-3">
                                 <div class="step-circle">3</div>
-                                <div class="step-label">聯絡資訊</div>
+                                <div class="step-label">器材與場地</div>
                             </div>
                             <div class="stepper-line"></div>
                             <div class="stepper-item" id="stepper-4">
                                 <div class="step-circle">4</div>
+                                <div class="step-label">聯絡資訊</div>
+                            </div>
+                            <div class="stepper-line"></div>
+                            <div class="stepper-item" id="stepper-5">
+                                <div class="step-circle">5</div>
                                 <div class="step-label">確認送出</div>
                             </div>
                         </div>
 
-                        <h3>申請資料</h3>
                         <form method="post" enctype="multipart/form-data" class="borrow-form" action="borrow.php" novalidate id="multistep_form">
+                            <input type="file" id="proposal_file" name="proposal_file" accept=".pdf,application/pdf" style="opacity: 0; position: absolute; z-index: -1; width: 0; height: 0;" onchange="document.getElementById('proposal_file_name_display').innerText = this.files.length > 0 ? this.files[0].name : '';">
                             <!-- ========== 步驟 1 內容區 ========== -->
                             <div class="step-content active" id="step-content-1">
                                 <h3 class="step-title" style="margin-bottom: 10px;">第一步：活動基本資料</h3>
-                                <p class="step-desc" style="color: #7f8c8d;">請填寫活動相關資訊與申請日期。</p>
+                                <p class="step-desc" style="color: #7f8c8d; margin-bottom: 20px;">請填寫活動相關資訊與申請日期。</p>
 
-                                <div class="form-group" style="margin-top: 20px;">
+                                <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap; margin-bottom: 20px; background: #eef2ff; padding: 15px; border-radius: 8px; border: 1px solid #c7d2fe;">
+                                    <h4 style="margin: 0; color: #1e40af; font-size: 16px;">企劃書</h4>
+                                    <label for="proposal_file" style="margin: 0; background-color: #1554b9; color: white; padding: 6px 15px; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: normal; transition: background 0.2s;">
+                                        📤 按此上傳活動企劃書 (僅接受PDF檔)
+                                    </label>
+                                    <span id="proposal_file_name_display" style="font-size: 14px; color: #1554b9; font-weight: 500;"></span>
+                                </div>
+
+                                <div class="form-group" style="margin-top: 10px;">
                                     <label for="organization_name">單位名稱 / 主辦社團 <span style="color:red">*</span></label>
                                     <input type="text" id="organization_name" name="organization_name" class="form-control" placeholder="請輸入主辦單位名稱" required>
                                 </div>
@@ -1142,9 +1169,29 @@ SQL;
                                         <input type="number" id="staff_count" name="staff_count" class="form-control" placeholder="請輸入人數" min="1" required>
                                     </div>
                                 </div>
+                                <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
+                                    <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
+                                        <label for="club_president">社 / 會長 <span style="color:red">*</span></label>
+                                        <input type="text" id="club_president" name="club_president" class="form-control" placeholder="請輸入姓名" required>
+                                    </div>
+                                    <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
+                                        <label for="activity_coordinator">活動負責人<span style="color:red">*</span></label>
+                                        <input type="text" id="activity_coordinator" name="activity_coordinator" class="form-control" placeholder="請輸入活動負責人姓名">
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
+                                    <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
+                                        <label for="coordinator_department">系級<span style="color:red">*</span></label>
+                                        <input type="text" id="coordinator_department" name="coordinator_department" class="form-control" placeholder="請輸入系級">
+                                    </div>
+                                    <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
+                                        <label for="coordinator_phone">聯絡電話<span style="color:red">*</span></label>
+                                        <input type="text" id="coordinator_phone" name="coordinator_phone" class="form-control" placeholder="請輸入聯絡電話">
+                                    </div>
+                                </div>
                                 <div class="form-group">
-                                    <label for="club_president">社 / 會長 (負責人) <span style="color:red">*</span></label>
-                                    <input type="text" id="club_president" name="club_president" class="form-control" placeholder="請輸入負責人姓名" required>
+                                    <label for="coordinator_other_contact">其他聯絡方式</label>
+                                    <input type="text" id="coordinator_other_contact" name="coordinator_other_contact" class="form-control" placeholder="請輸入其他聯絡方式（如 Email）">
                                 </div>
 
                                 <div class="form-group" style="margin-top: 20px; border-top: 1px solid #ccc; padding-top: 15px;">
@@ -1173,7 +1220,7 @@ SQL;
                                         
                                         <select name="borrow_start_time_m" class="form-control" required style="padding: 8px; width: 80px;">
                                             <option value="">選擇</option>
-                                            <option value="0" <?php echo ($curBsm !== '' && $curBsm === 0) ? 'selected' : ''; ?>>0</option>
+                                            <option value="00" <?php echo ($curBsm !== '' && $curBsm === 00) ? 'selected' : ''; ?>>00</option>
                                             <option value="30" <?php echo ($curBsm !== '' && $curBsm === 30) ? 'selected' : ''; ?>>30</option>
                                         </select>
                                         <span>分</span>
@@ -1204,7 +1251,7 @@ SQL;
                                         
                                         <select name="borrow_end_time_m" class="form-control" required style="padding: 8px; width: 80px;">
                                             <option value="">選擇</option>
-                                            <option value="0" <?php echo ($curBem !== '' && $curBem === 0) ? 'selected' : ''; ?>>0</option>
+                                            <option value="00" <?php echo ($curBem !== '' && $curBem === 00) ? 'selected' : ''; ?>>00</option>
                                             <option value="30" <?php echo ($curBem !== '' && $curBem === 30) ? 'selected' : ''; ?>>30</option>
                                         </select>
                                         <span>分</span>
@@ -1230,13 +1277,121 @@ SQL;
                                 </div>
 
                                 <div class="step-actions">
-                                    <button type="button" class="btn btn-primary btn-next" onclick="goToStep(2)">下一步：選擇場地設備 ➔</button>
+                                    <button type="button" class="btn btn-primary btn-next" onclick="goToStep(2)">下一步 ➔ 場地需求 </button>
                                 </div>
                             </div>
-
-                            <!-- ========== 步驟 2 內容區準備的地方 ========== -->
+                            
+                            <!-- ========== 步驟 2 內容區 ========== -->
                             <div class="step-content" id="step-content-2">
-                                <h3 class="step-title" style="margin-bottom: 10px;">第二步：挑選器材與場地</h3>
+                                <h3 class="step-title" style="margin-bottom: 10px;">第二步：場地需求</h3>
+                                <div class="form-group" style="margin-top: 20px;">
+                                    <label>車輛進出 <span style="color:red">*</span></label>
+                                    <div style="margin-top: 8px; display: flex; align-items: center; gap: 20px;">
+                                        <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
+                                            <input type="radio" name="vehicle_entry" value="no" style="margin: 0;" <?php echo ($formData['vehicle_entry'] === 'no' || empty($formData['vehicle_entry'])) ? 'checked' : ''; ?>> 否
+                                        </label>
+                                        <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
+                                            <input type="radio" name="vehicle_entry" value="yes" style="margin: 0;" <?php echo ($formData['vehicle_entry'] === 'yes') ? 'checked' : ''; ?>> 是
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="form-group" style="margin-top: 20px;">
+                                    <label>插立旗幟 <span style="color:red">*</span></label>
+                                    <div style="margin-top: 8px; display: flex; align-items: center; gap: 20px;">
+                                        <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
+                                            <input type="radio" name="setup_flags" value="no" id="flagOptionNo" style="margin: 0;" <?php echo ($formData['setup_flags'] === 'no' || empty($formData['setup_flags'])) ? 'checked' : ''; ?> onchange="toggleFlagDetails()"> 否
+                                        </label>
+                                        <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
+                                            <input type="radio" name="setup_flags" value="yes" id="flagOptionYes" style="margin: 0;" <?php echo ($formData['setup_flags'] === 'yes') ? 'checked' : ''; ?> onchange="toggleFlagDetails()"> 是
+                                        </label>
+                                    </div>
+                                </div>
+                                
+                                <div class="form-group" id="flagDetailsSection" style="margin-top: 15px; display: <?php echo ($formData['setup_flags'] === 'yes') ? 'block' : 'none'; ?>; padding: 20px; background: #fdfdfd; border-radius: 8px; border: 1px solid #d1d5db; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
+                                    <h4 style="margin-top: 0; margin-bottom: 20px; color: #1e293b; border-bottom: 2px solid #cbd5e1; padding-bottom: 10px; font-weight: bold;">旗幟插立申請表</h4>
+                                    
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                                        <div>
+                                            <label>申請單位 <span style="color:red">*</span></label>
+                                            <input type="text" name="flag_applicant_unit" class="form-control" placeholder="請輸入申請單位">
+                                        </div>
+                                        <div>
+                                            <label>負責人 <span style="color:red">*</span></label>
+                                            <input type="text" name="flag_manager" class="form-control" placeholder="請輸入負責人姓名">
+                                        </div>
+                                        <div>
+                                            <label>連絡電話 <span style="color:red">*</span></label>
+                                            <input type="text" name="flag_phone" class="form-control" placeholder="請輸入連絡電話">
+                                        </div>
+                                        <div>
+                                            <label>活動名稱 <span style="color:red">*</span></label>
+                                            <input type="text" name="flag_activity_name" class="form-control" placeholder="請輸入活動名稱">
+                                        </div>
+                                    </div>
+
+                                    <div style="margin-bottom: 15px;">
+                                        <?php
+                                        // 計算7個工作天之後的日期
+                                        $flagWorkDays = 0;
+                                        $flagDateObj = new DateTime();
+                                        while ($flagWorkDays < 7) {
+                                            $flagDateObj->modify('+1 day');
+                                            // 1 (週一) 到 5 (週五) 視為工作天
+                                            if ($flagDateObj->format('N') < 6) {
+                                                $flagWorkDays++;
+                                            }
+                                        }
+                                        $flagMinDate = $flagDateObj->format('Y-m-d');
+                                        ?>
+                                        <label>使用日期 <span style="font-size: 0.85em; color: #64748b; font-weight: normal;">(系統已限制需於7個工作天前申請)</span> <span style="color:red">*</span></label>
+                                        <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
+                                            <input type="date" name="flag_start_date" id="flag_start_date" class="form-control" style="width: auto;" min="<?php echo $flagMinDate; ?>" onchange="document.getElementById('flag_end_date').min = this.value || '<?php echo $flagMinDate; ?>'"> 
+                                            <span>至</span> 
+                                            <input type="date" name="flag_end_date" id="flag_end_date" class="form-control" style="width: auto;" min="<?php echo $flagMinDate; ?>">
+                                        </div>
+                                    </div>
+
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                                        <div>
+                                            <label>宣傳旗幟 (共幾支) <span style="color:red">*</span></label>
+                                            <div style="display: flex; align-items: center; gap: 5px;">
+                                                <span>共</span>
+                                                <input type="number" name="flag_count" class="form-control" min="1" style="width: 100px;" placeholder="0">
+                                                <span>支</span>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label>懸掛位置 <span style="color:red">*</span></label>
+                                            <input type="text" name="flag_location" class="form-control" value="中央走道" placeholder="例如：中央走道">
+                                        </div>
+                                    </div>
+
+                                    <div style="background: #fff; padding: 15px; border: 1px solid #cbd5e1; border-radius: 5px; margin-top: 10px;">
+                                        <label style="display: flex; align-items: flex-start; justify-content: flex-start; gap: 8px; margin: 0; cursor: pointer; font-weight: normal; text-align: left;">
+                                            <input type="checkbox" name="flag_agreement" value="1" style="margin: 4px 0 0 0; width: auto; height: auto; flex-shrink: 0; display: inline-block;">
+                                            <span style="line-height: 1.5; color: #334155; display: inline-block; text-align: left;">本人為旗幟插立總負責人，已詳細閱讀並遵守以下各項注意事項，為維護校園安全與景觀，願無條件承擔所插旗幟所致之一切賠償責任，特此聲明。</span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <script>
+                                function toggleFlagDetails() {
+                                    const flagYes = document.getElementById('flagOptionYes');
+                                    const detailsSection = document.getElementById('flagDetailsSection');
+                                    if(flagYes && detailsSection) {
+                                        detailsSection.style.display = flagYes.checked ? 'block' : 'none';
+                                    }
+                                }
+                                </script>
+
+                                <div class="step-actions">
+                                    <button type="button" class="btn btn-secondary" onclick="goToStep(1)"> ⬅ 回上一步</button>
+                                    <button type="button" class="btn btn-primary btn-next" onclick="goToStep(3)">下一步 ➔ 挑選器材與場地</button>
+                                </div>
+                            </div>
+                            <!-- ========== 步驟 3 內容區 ========== -->
+                            <div class="step-content" id="step-content-3">
+                                <h3 class="step-title" style="margin-bottom: 10px;">第三步：挑選器材與場地</h3>
                                 
                                 <!-- 隱藏或不需要重新顯示的部分 -->
                                 <div class="form-group" style="display:none;">
@@ -1246,10 +1401,7 @@ SQL;
                                     </select>
                                 </div>
 
-                            <div class="form-group" id="proposalGroup" style="display: none; margin-bottom: 20px;">
-                                <label for="proposal_file">活動企劃書（申請場地時必填，僅接受 PDF，限 5MB）</label>
-                                <input type="file" id="proposal_file" name="proposal_file" accept="application/pdf">
-                            </div>
+                            <!-- Old proposalGroup removed -->
 
                             <div class="form-group">
                                 <label for="applicant_user_id">申請人帳號</label>
@@ -1377,10 +1529,10 @@ SQL;
                             </div>
 
                             <div class="step-actions">
-                                <button type="button" class="btn btn-secondary" onclick="goToStep(1)"> ⬅ 回上一步</button>
+                                <button type="button" class="btn btn-secondary" onclick="goToStep(2)"> ⬅ 回上一步</button>
                                 <button type="submit" class="btn btn-primary btn-next" id="borrowSubmitBtn">確認借用</button>
                             </div>
-                        </div> <!-- end of step-content-2 -->
+                        </div> <!-- end of step-content-3 -->
 
                         <!-- 草稿功能保留可放至其他位置, 或暫時隱藏, 為了簡化, 先放著 -->
                         <!-- <div class="form-buttons">
@@ -1455,8 +1607,20 @@ SQL;
             const spaceGroup = document.getElementById('spaceGroup');
             const equipmentSelectorContainer = document.getElementById('equipmentSelectorContainer');
             const proposalFileInput = document.getElementById('proposal_file');
-            const proposalGroup = document.getElementById('proposalGroup');
+            const proposalFileNameDisplay = document.getElementById('proposal_file_name_display');
             const submitDebugMsg = document.getElementById('submitDebugMsg');
+
+            if (proposalFileInput) {
+                proposalFileInput.addEventListener('change', function(e) {
+                    if (proposalFileNameDisplay) {
+                        if (e.target.files && e.target.files.length > 0) {
+                            proposalFileNameDisplay.textContent = e.target.files[0].name;
+                        } else {
+                            proposalFileNameDisplay.textContent = '';
+                        }
+                    }
+                });
+            }
 
             // --- Missing cart logic re-added ---
             const esEquipmentList = document.getElementById('esEquipmentList');
@@ -1808,11 +1972,8 @@ SQL;
             function refreshModeUI() {
                 const hasSpace = cartItems.some(i => i.type === 'space');
                 
-                if (proposalGroup) {
-                    proposalGroup.style.display = hasSpace ? 'block' : 'none';
-                    if (proposalFileInput) {
-                        proposalFileInput.required = hasSpace;
-                    }
+                if (proposalFileInput) {
+                    proposalFileInput.required = hasSpace;
                 }
                 
                 if (typeof window.updatePeriodOptions === 'function') {
@@ -2694,7 +2855,7 @@ function goToStep(stepNo) {
         nextStep.classList.add('active');
     }
 
-    for(let i=1; i<=4; i++) {
+    for(let i=1; i<=5; i++) {
         let st = document.getElementById('stepper-' + i);
         if (st) st.classList.remove('active');
     }

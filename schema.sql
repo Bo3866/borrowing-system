@@ -294,3 +294,11 @@ INSERT IGNORE INTO equipments (equipment_code, operation_status, added_date) VAL
 -- ALTER TABLE reservations ADD COLUMN staff_count INT NULL COMMENT '¤u§@¤H­û¤H¼Æ';
 -- ALTER TABLE reservations ADD COLUMN club_president VARCHAR(50) NULL COMMENT 'ªÀ / ·|ªø';
 
+- -   A L T E R   T A B L E   r e s e r v a t i o n s   A D D   C O L U M N   a c t i v i t y _ c o o r d i n a t o r   V A R C H A R ( 5 0 )   N U L L   C O M M E N T   ' ;mÕR Œ¬ŒºN' ; 
+ - -   A L T E R   T A B L E   r e s e r v a t i o n s   A D D   C O L U M N   c o o r d i n a t o r _ d e p a r t m e n t   V A R C H A R ( 5 0 )   N U L L   C O M M E N T   ' û|}' ; 
+ - -   A L T E R   T A B L E   r e s e r v a t i o n s   A D D   C O L U M N   c o o r d i n a t o r _ p h o n e   V A R C H A R ( 5 0 )   N U L L   C O M M E N T   ' o€a}û–qŠ' ; 
+ - -   A L T E R   T A B L E   r e s e r v a t i o n s   A D D   C O L U M N   c o o r d i n a t o r _ o t h e r _ c o n t a c t   V A R C H A R ( 2 5 5 )   N U L L   C O M M E N T   ' vQÖNo€a}¹e_' ;  
+ - -   A L T E R   T A B L E   r e s e r v a t i o n s   A D D   C O L U M N   v e h i c l e _ e n t r y   E N U M ( ' n o ' ,   ' y e s ' )   N O T   N U L L   D E F A U L T   ' n o ' ; 
+ - -   A L T E R   T A B L E   r e s e r v a t i o n s   A D D   C O L U M N   s e t u p _ f l a g s   E N U M ( ' n o ' ,   ' y e s ' )   N O T   N U L L   D E F A U L T   ' n o ' ; 
+ - -   A L T E R   T A B L E   r e s e r v a t i o n s   A D D   C O L U M N   f l a g _ d e t a i l s   V A R C H A R ( 2 5 5 )   N U L L ;  
+ 

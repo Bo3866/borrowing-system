@@ -283,3 +283,59 @@ POST:{"resource_type":"both","borrow_date":"2026-05-18","start_period_code":"D1"
 >>>>>>> e73da17c7f8f3e4f84940d129cc5d57076ec698c
 FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
 
+2026-05-13T12:34:20+00:00 POST handler invoked
+POST:{"organization_name":"","activity_name":"","participant_count":"","staff_count":"","club_president":"","activity_coordinator":"","coordinator_department":"","coordinator_phone":"","coordinator_other_contact":"","borrow_start_date":"2026-05-20","borrow_start_time_h":"","borrow_start_time_m":"","borrow_end_date":"2026-05-22","borrow_end_time_h":"","borrow_end_time_m":"","vehicle_entry":"no","setup_flags":"no","flag_details":"","resource_type":"both","phone":"0900000000","purpose":""}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-13T12:34:20+00:00 VALIDATION ERROR: 請選擇至少一項器材或一個場地。
+POST:{"organization_name":"","activity_name":"","participant_count":"","staff_count":"","club_president":"","activity_coordinator":"","coordinator_department":"","coordinator_phone":"","coordinator_other_contact":"","borrow_start_date":"2026-05-20","borrow_start_time_h":"","borrow_start_time_m":"","borrow_end_date":"2026-05-22","borrow_end_time_h":"","borrow_end_time_m":"","vehicle_entry":"no","setup_flags":"no","flag_details":"","resource_type":"both","phone":"0900000000","purpose":""}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-13T12:41:39+00:00 POST handler invoked
+POST:{"organization_name":"","activity_name":"","participant_count":"","staff_count":"","club_president":"","activity_coordinator":"","coordinator_department":"","coordinator_phone":"","coordinator_other_contact":"","borrow_start_date":"2026-05-20","borrow_start_time_h":"","borrow_start_time_m":"","borrow_end_date":"2026-05-22","borrow_end_time_h":"","borrow_end_time_m":"","vehicle_entry":"no","setup_flags":"no","flag_details":"","resource_type":"both","phone":"0900000000","purpose":""}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-13T12:41:39+00:00 VALIDATION ERROR: 請選擇至少一項器材或一個場地。
+POST:{"organization_name":"","activity_name":"","participant_count":"","staff_count":"","club_president":"","activity_coordinator":"","coordinator_department":"","coordinator_phone":"","coordinator_other_contact":"","borrow_start_date":"2026-05-20","borrow_start_time_h":"","borrow_start_time_m":"","borrow_end_date":"2026-05-22","borrow_end_time_h":"","borrow_end_time_m":"","vehicle_entry":"no","setup_flags":"no","flag_details":"","resource_type":"both","phone":"0900000000","purpose":""}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-13T12:46:29+00:00 POST handler invoked
+POST:{"organization_name":"","activity_name":"","participant_count":"","staff_count":"","club_president":"","activity_coordinator":"","coordinator_department":"","coordinator_phone":"","coordinator_other_contact":"","borrow_start_date":"2026-05-20","borrow_start_time_h":"","borrow_start_time_m":"","borrow_end_date":"2026-05-22","borrow_end_time_h":"","borrow_end_time_m":"","vehicle_entry":"no","setup_flags":"no","flag_details":"","resource_type":"both","phone":"0900000000","purpose":""}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-13T12:46:29+00:00 VALIDATION ERROR: 請選擇至少一項器材或一個場地。
+POST:{"organization_name":"","activity_name":"","participant_count":"","staff_count":"","club_president":"","activity_coordinator":"","coordinator_department":"","coordinator_phone":"","coordinator_other_contact":"","borrow_start_date":"2026-05-20","borrow_start_time_h":"","borrow_start_time_m":"","borrow_end_date":"2026-05-22","borrow_end_time_h":"","borrow_end_time_m":"","vehicle_entry":"no","setup_flags":"no","flag_details":"","resource_type":"both","phone":"0900000000","purpose":""}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-13T12:49:09+00:00 POST handler invoked
+POST:{"organization_name":"","activity_name":"","participant_count":"","staff_count":"","club_president":"","activity_coordinator":"","coordinator_department":"","coordinator_phone":"","coordinator_other_contact":"","borrow_start_date":"2026-05-20","borrow_start_time_h":"","borrow_start_time_m":"","borrow_end_date":"2026-05-22","borrow_end_time_h":"","borrow_end_time_m":"","vehicle_entry":"no","setup_flags":"no","flag_details":"","resource_type":"both","phone":"0900000000","purpose":""}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-13T12:49:09+00:00 VALIDATION ERROR: 請選擇至少一項器材或一個場地。
+POST:{"organization_name":"","activity_name":"","participant_count":"","staff_count":"","club_president":"","activity_coordinator":"","coordinator_department":"","coordinator_phone":"","coordinator_other_contact":"","borrow_start_date":"2026-05-20","borrow_start_time_h":"","borrow_start_time_m":"","borrow_end_date":"2026-05-22","borrow_end_time_h":"","borrow_end_time_m":"","vehicle_entry":"no","setup_flags":"no","flag_details":"","resource_type":"both","phone":"0900000000","purpose":""}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-13T12:54:29+00:00 POST handler invoked
+POST:{"organization_name":"","activity_name":"","participant_count":"","staff_count":"","club_president":"","activity_coordinator":"","coordinator_department":"","coordinator_phone":"","coordinator_other_contact":"","borrow_start_date":"2026-05-20","borrow_start_time_h":"","borrow_start_time_m":"","borrow_end_date":"2026-05-22","borrow_end_time_h":"","borrow_end_time_m":"","vehicle_entry":"no","setup_flags":"no","flag_details":"","resource_type":"both","phone":"0900000000","purpose":""}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-13T12:54:29+00:00 VALIDATION ERROR: 請選擇至少一項器材或一個場地。
+POST:{"organization_name":"","activity_name":"","participant_count":"","staff_count":"","club_president":"","activity_coordinator":"","coordinator_department":"","coordinator_phone":"","coordinator_other_contact":"","borrow_start_date":"2026-05-20","borrow_start_time_h":"","borrow_start_time_m":"","borrow_end_date":"2026-05-22","borrow_end_time_h":"","borrow_end_time_m":"","vehicle_entry":"no","setup_flags":"no","flag_details":"","resource_type":"both","phone":"0900000000","purpose":""}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-13T12:55:08+00:00 POST handler invoked
+POST:{"organization_name":"","activity_name":"","participant_count":"","staff_count":"","club_president":"","activity_coordinator":"","coordinator_department":"","coordinator_phone":"","coordinator_other_contact":"","borrow_start_date":"2026-05-20","borrow_start_time_h":"","borrow_start_time_m":"","borrow_end_date":"2026-05-22","borrow_end_time_h":"","borrow_end_time_m":"","vehicle_entry":"no","setup_flags":"no","flag_details":"","resource_type":"both","phone":"0900000000","purpose":""}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-13T12:55:08+00:00 VALIDATION ERROR: 請選擇至少一項器材或一個場地。
+POST:{"organization_name":"","activity_name":"","participant_count":"","staff_count":"","club_president":"","activity_coordinator":"","coordinator_department":"","coordinator_phone":"","coordinator_other_contact":"","borrow_start_date":"2026-05-20","borrow_start_time_h":"","borrow_start_time_m":"","borrow_end_date":"2026-05-22","borrow_end_time_h":"","borrow_end_time_m":"","vehicle_entry":"no","setup_flags":"no","flag_details":"","resource_type":"both","phone":"0900000000","purpose":""}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-13T13:03:31+00:00 POST handler invoked
+POST:{"organization_name":"","activity_name":"","participant_count":"","staff_count":"","club_president":"","activity_coordinator":"","coordinator_department":"","coordinator_phone":"","coordinator_other_contact":"","borrow_start_date":"2026-05-20","borrow_start_time_h":"","borrow_start_time_m":"","borrow_end_date":"2026-05-22","borrow_end_time_h":"","borrow_end_time_m":"","vehicle_entry":"no","setup_flags":"no","flag_details":"","resource_type":"both","phone":"0900000000","purpose":""}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-13T13:03:31+00:00 VALIDATION ERROR: 請選擇至少一項器材或一個場地。
+POST:{"organization_name":"","activity_name":"","participant_count":"","staff_count":"","club_president":"","activity_coordinator":"","coordinator_department":"","coordinator_phone":"","coordinator_other_contact":"","borrow_start_date":"2026-05-20","borrow_start_time_h":"","borrow_start_time_m":"","borrow_end_date":"2026-05-22","borrow_end_time_h":"","borrow_end_time_m":"","vehicle_entry":"no","setup_flags":"no","flag_details":"","resource_type":"both","phone":"0900000000","purpose":""}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+

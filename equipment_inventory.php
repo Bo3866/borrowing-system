@@ -143,134 +143,151 @@ try {
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         .inventory-wrapper {
-            max-width: 1200px; /* 拉寬原本的 800px */
+            max-width: 1200px;
             width: 100%;
             margin: 0 auto;
-            padding: 0 15px;
+            padding: 20px 15px;
+        }
+        h2 {
+            color: var(--primary-color);
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.02);
+            margin-bottom: 2rem;
+        }
+        .card {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.04);
+            padding: 2.5rem;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(226, 232, 240, 0.6);
+        }
+        .card:hover {
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.08);
         }
         .form-group {
-            margin-bottom: 1.5rem;
+            margin-bottom: 1.8rem;
         }
         .form-group label {
             display: block;
-            margin-bottom: 0.5rem;
+            margin-bottom: 0.6rem;
             font-weight: 600;
-            color: var(--primary-color);
+            color: #475569;
+            font-size: 0.95rem;
         }
         .form-group input[type="text"], 
         .form-group input[type="number"], 
         .form-group input[type="date"], 
         .form-group select {
             width: 100%;
-            padding: 0.75rem;
-            border: 1px solid #ccd1d9;
-            border-radius: var(--border-radius);
+            padding: 0.85rem 1rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
             font-family: inherit;
             font-size: 1rem;
-            transition: var(--transition);
+            background-color: #f8fafc;
+            color: #334155;
+            transition: all 0.25s ease;
         }
         .form-group input:focus,
         .form-group select:focus {
             outline: none;
-            border-color: var(--secondary-color);
-            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+            background-color: #fff;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
         }
         button.btn-primary {
-            padding: 0.75rem 1.5rem;
-            background: var(--secondary-color);
+            padding: 0.85rem 1.8rem;
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
             color: #fff;
             border: none;
-            border-radius: var(--border-radius);
+            border-radius: 10px;
             cursor: pointer;
             font-size: 1rem;
-            font-weight: 500;
-            transition: var(--transition);
+            font-weight: 600;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+            transition: all 0.25s ease;
         }
         button.btn-primary:hover {
-            background: #2980b9;
             transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.3);
+        }
+        button.btn-primary:active {
+            transform: translateY(0);
         }
         button.btn-danger {
-            padding: 0.75rem 1.5rem;
-            background: var(--danger-color);
+            padding: 0.85rem 1.8rem;
+            background: linear-gradient(135deg, #ef4444, #dc2626);
             color: #fff;
             border: none;
-            border-radius: var(--border-radius);
+            border-radius: 10px;
             cursor: pointer;
             font-size: 1rem;
-            font-weight: 500;
-            transition: var(--transition);
+            font-weight: 600;
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
+            transition: all 0.25s ease;
         }
         button.btn-danger:hover {
-            background: #c0392b;
             transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(239, 68, 68, 0.3);
         }
         button.btn-secondary {
-            padding: 0.75rem 1.5rem;
-            background: #95a5a6;
+            padding: 0.85rem 1.8rem;
+            background: linear-gradient(135deg, #94a3b8, #64748b);
             color: #fff;
             border: none;
-            border-radius: var(--border-radius);
+            border-radius: 10px;
             cursor: pointer;
             font-size: 1rem;
-            font-weight: 500;
-            transition: var(--transition);
+            font-weight: 600;
+            box-shadow: 0 4px 12px rgba(100, 116, 139, 0.2);
+            transition: all 0.25s ease;
         }
         button.btn-secondary:hover {
-            background: #7f8c8d;
             transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(100, 116, 139, 0.3);
         }
         .msg-alert {
             padding: 1rem 1.5rem;
-            border-radius: var(--border-radius);
-            margin-bottom: 1.5rem;
+            border-radius: 10px;
+            margin-bottom: 2rem;
             font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.02);
+            animation: slideDown 0.3s ease-out;
+        }
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
         .msg-success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
+            background: #f0fdf4;
+            color: #166534;
+            border: 1px solid #bbf7d0;
         }
         .msg-error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
+            background: #fef2f2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
         }
         
-        /* 下拉選單懸浮變色 */
-        #category_select option {
-            transition: background 0.2s;
-            cursor: pointer;
-        }
-        #category_select option:hover, #category_select option:focus {
-            background-color: var(--secondary-color) !important;
-            color: #fff !important;
-        }
-        
-        #delete-confirm-box {
-            display: none;
-            background: #fff3cd;
-            padding: 1.5rem;
-            border-left: 4px solid var(--danger-color);
-            border-radius: 0 var(--border-radius) var(--border-radius) 0;
-            margin-top: 1.5rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        }
-        #delete-confirm-box ul {
-            margin: 1rem 0;
-            padding-left: 2rem;
-        }
-        #delete-confirm-box li {
-            margin-bottom: 0.5rem;
-        }
-
         /* 購物車區塊樣式 */
         .equipment-selector-container {
             display: flex;
+            background: #fff;
             border: 1px solid #e2e8f0;
-            border-radius: 8px;
+            border-radius: 16px;
             overflow: hidden;
             flex-direction: column;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+            transition: all 0.3s ease;
+        }
+        .equipment-selector-container:hover {
+            border-color: #cbd5e1;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.06);
         }
         @media(min-width: 768px) {
             .equipment-selector-container { flex-direction: row; height: 500px; }
@@ -280,113 +297,197 @@ try {
             flex-direction: column;
             flex: 1;
         }
-        .es-left { border-right: 1px solid #e2e8f0; }
+        .es-left { border-right: 1px solid #f1f5f9; }
         .es-title {
-            padding: 15px;
-            font-weight: bold;
+            padding: 18px 20px;
+            font-weight: 700;
             background: #f8fafc;
-            border-bottom: 1px solid #e2e8f0;
+            border-bottom: 1px solid #f1f5f9;
             display: flex;
             align-items: center;
+            color: #334155;
+            font-size: 1.05rem;
         }
-        .es-search { padding: 10px; border-bottom: 1px solid #e2e8f0; }
+        .es-search { padding: 15px; border-bottom: 1px solid #f1f5f9; background: #fff; }
         .es-search input {
             width: 100%;
-            padding: 8px 12px;
-            border: 1px solid #cbd5e1;
-            border-radius: 6px;
+            padding: 10px 15px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background-color: #f8fafc;
+            transition: all 0.2s ease;
+        }
+        .es-search input:focus {
+            outline: none;
+            background-color: #fff;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
         }
         .es-list {
             list-style: none;
-            padding: 0;
+            padding: 15px;
             margin: 0;
             overflow-y: auto;
             flex: 1;
+            background: #fff;
+        }
+        .es-list::-webkit-scrollbar {
+            width: 6px;
+        }
+        .es-list::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1;
+            border-radius: 10px;
         }
         .es-item {
-            border-bottom: 1px solid #f1f5f9;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            background: #fff;
+            transition: all 0.2s ease;
+            overflow: hidden;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+            /* 使其不受 Flex 影響而被壓扁 */
+            flex-shrink: 0;
+        }
+        .es-item:last-child {
+            margin-bottom: 0;
+        }
+        .es-item:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            border-color: #cbd5e1;
         }
         .es-item-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 12px 15px;
+            padding: 15px 20px;
             cursor: pointer;
-            transition: background 0.15s;
+            transition: all 0.2s ease;
+            /* 避免換行時卡片高度錯亂 */
+            min-height: 70px;
         }
-        .es-item-header:hover { background: #f8fafc; }
+        .es-item-header:hover { 
+            background: #f8fafc; 
+        }
         .es-item-body {
             display: none;
-            padding: 10px 15px;
-            background: #f1f5f9;
-            border-top: 1px solid #e2e8f0;
-            animation: fadeIn 0.2s;
+            padding: 15px 20px;
+            background: #f8fafc;
+            border-top: 1px dashed #eee;
+            animation: fadeIn 0.25s ease-out;
         }
         .es-btn-invite {
-            padding: 6px 12px;
+            padding: 6px 0;
+            width: 75px !important;
+            height: 32px;
+            display: inline-flex;
+            justify-content: center;
+            align-items: center;
             background: #fff;
-            border: 1px solid #cbd5e1;
-            border-radius: 4px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
             color: #3b82f6;
             cursor: pointer;
-            font-size: 13px;
-            font-weight: bold;
+            font-size: 14px;
+            font-weight: 500;
+            white-space: nowrap;
+            flex-shrink: 0;
+            transition: all 0.2s ease;
         }
         .es-btn-invite:hover {
-            background: #eff6ff;
-            border-color: #3b82f6;
+            background: #f8fafc !important;
+            border-color: #3b82f6 !important;
+            color: #2563eb !important;
         }
         .cart-header, .cart-row {
             display: flex;
-            padding: 10px;
+            padding: 12px 20px;
             align-items: center;
-            border-bottom: 1px solid #e2e8f0;
+            gap: 15px; /* 加入間距避免過度擁擠 */
+            border-bottom: 1px solid #f1f5f9;
         }
-        .cart-header { font-weight: bold; background: #e2e8f0; }
-        .cart-item { background: #fff; }
-        .col-name { flex: 2; font-weight: bold; }
-        .col-qty { flex: 1; text-align: center; }
-        .col-qty input { width: 60px; text-align: center; padding: 4px; border: 1px solid #cbd5e1; border-radius:4px; }
-        .col-action { flex: 1; text-align: center; }
+        .cart-header { 
+            font-weight: 600; 
+            background: #f8fafc; 
+            color: #64748b;
+            font-size: 0.9rem;
+        }
+        .cart-item { background: #fff; transition: background 0.2s; }
+        .cart-item:hover { background: #fdfef8; }
+        .col-name { flex: 2; font-weight: 600; color: #334155; min-width: 0; word-break: break-word; } /* 防止名稱過長撐破 */
+        .col-qty { flex: 1; display: flex; justify-content: center; }
+        .col-qty input { 
+            width: 70px !important; 
+            text-align: center; 
+            padding: 6px; 
+            border: 1px solid #e2e8f0; 
+            border-radius: 6px; 
+            background: #f8fafc;
+            transition: all 0.2s;
+        }
+        .col-qty input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            background: #fff;
+        }
+        .col-action { flex: 1; display: flex; justify-content: flex-end; }
         .btn-remove {
-            color: #ef4444; border: none; background: none; cursor: pointer; font-weight: bold;
+            color: #ef4444; 
+            border: none; 
+            background: #fef2f2;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer; 
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: all 0.2s;
         }
-        .btn-remove:hover { text-decoration: underline; }
+        .btn-remove:hover { 
+            background: #fee2e2;
+            color: #dc2626;
+        }
 
         /* 頁籤樣式 */
         .tabs-header {
             display: flex;
             border-bottom: 2px solid #e2e8f0;
-            margin-bottom: 1.5rem;
+            margin-bottom: 2rem;
+            gap: 1rem;
         }
         .tab-btn {
-            padding: 10px 20px;
-            font-size: 1.1rem;
-            font-weight: bold;
+            padding: 12px 24px;
+            font-size: 1.05rem;
+            font-weight: 600;
             color: #64748b;
-            background: none;
-            border: none;
+            background: transparent !important;
+            border: none !important;
             cursor: pointer;
-            border-bottom: 3px solid transparent;
+            border-bottom: 3px solid transparent !important;
             margin-bottom: -2px;
-            transition: all 0.2s;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-radius: 8px 8px 0 0 !important;
         }
         .tab-btn:hover {
-            color: var(--secondary-color);
+            color: #3b82f6 !important;
+            background: #f8fafc !important;
         }
         .tab-btn.active {
-            color: var(--secondary-color);
-            border-bottom-color: var(--secondary-color);
+            color: #3b82f6 !important;
+            border-bottom-color: #3b82f6 !important;
+            background: transparent !important;
         }
         .tab-content {
             display: none;
-            animation: fadeIn 0.3s;
+            animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
         }
         .tab-content.active {
             display: block;
         }
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(5px); }
+            from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
         }
     </style>
@@ -418,8 +519,8 @@ try {
 
             <!-- 頁籤按鈕 -->
             <div class="tabs-header">
-                <button class="tab-btn active" onclick="switchTab('tab-add', this)">📥 器材入庫</button>
-                <button class="tab-btn" onclick="switchTab('tab-delete', this)">🗑️ 刪除庫存</button>
+                <button class="tab-btn active" onclick="switchTab('tab-add', this)">器材入庫</button>
+                <button class="tab-btn" onclick="switchTab('tab-delete', this)">刪除庫存</button>
             </div>
 
             <!-- 入庫區塊 -->
@@ -435,7 +536,6 @@ try {
                         <div id="equipmentSelectorContainer" class="equipment-selector-container form-group">
                         <div class="es-left">
                             <div class="es-title">
-                                <span style="color: #3b82f6; margin-right: 8px;">➕</span>
                                 點擊選擇入庫項目
                             </div>
                             <div class="es-search">
@@ -445,9 +545,9 @@ try {
                                 <?php foreach ($categories as $cat) { ?>
                                     <li class="es-item" data-name="<?php echo htmlspecialchars($cat['equipment_name']); ?>" data-code="<?php echo htmlspecialchars($cat['equipment_code']); ?>">
                                         <div class="es-item-header" onclick="toggleItemBody(this.parentElement)">
-                                            <div>
-                                                <strong><?php echo htmlspecialchars($cat['equipment_name']); ?></strong>
-                                                <div style="font-size: 13px; color: #64748b;">型號: <?php echo htmlspecialchars($cat['equipment_code']); ?></div>
+                                            <div style="flex: 1; padding-right: 15px; display: flex; flex-direction: column;">
+                                                <strong style="color: #333; font-size: 14px; margin-bottom: 4px;"><?php echo htmlspecialchars($cat['equipment_name']); ?></strong>
+                                                <span style="font-size: 13px; color: #64748b;">型號: <?php echo htmlspecialchars($cat['equipment_code']); ?></span>
                                             </div>
                                             <button type="button" class="es-btn-invite">選擇</button>
                                         </div>
@@ -465,7 +565,6 @@ try {
                         
                         <div class="es-right">
                             <div class="es-title">
-                                <span style="color: #f59e0b; margin-right: 8px;">📦</span>
                                 本次欲入庫清單
                             </div>
                             <div style="flex: 1; display: flex; flex-direction: column; min-height: 0; background:#f8fafc;">

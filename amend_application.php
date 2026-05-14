@@ -5,6 +5,20 @@ session_start();
 
 require_once __DIR__ . '/config/database.php';
 
+function formatDatetimeLocalValue(?string $value): string {
+    $value = trim((string)$value);
+    if ($value === '') {
+        return '';
+    }
+
+    $timestamp = strtotime($value);
+    if ($timestamp === false) {
+        return '';
+    }
+
+    return date('Y-m-d\TH:i', $timestamp);
+}
+
 if (!isset($_SESSION['user_id'])) {
     header('Location: login.php?next=amend_application.php');
     exit;
@@ -29,12 +43,11 @@ $revisionData = [];
 if ($dbError === '') {
     // 查詢該預約是否屬於當前用戶且狀態為 need_revision
     $checkStmt = mysqli_prepare($link, '
-        SELECT r.reservation_id, r.user_id, r.approval_status, r.revision_data_json, r.revision_deadline,
-               r.organization_name, r.activity_name, r.participant_count, r.staff_count, r.club_president,
-               r.activity_coordinator, r.coordinator_department, r.coordinator_phone, r.coordinator_other_contact,
-               r.vehicle_entry, r.setup_flags, r.flag_details, r.flag_applicant_unit, r.flag_manager, r.flag_phone,
-               r.flag_activity_name, r.flag_start_date, r.flag_end_date, r.flag_count, r.flag_location, r.flag_agreement,
-               r.has_alcohol, r.has_fire, r.has_sales, r.purpose, r.phone, r.borrow_start_at, r.borrow_end_at, r.space_id
+         SELECT r.reservation_id, r.user_id, r.approval_status, r.revision_data_json, r.revision_deadline,
+             r.organization_name, r.activity_name, r.participant_count, r.staff_count, r.club_president,
+             r.activity_coordinator, r.coordinator_department, r.coordinator_phone, r.coordinator_other_contact,
+             r.vehicle_entry, r.setup_flags, r.flag_details,
+             r.has_alcohol, r.has_fire, r.has_sales, r.purpose, r.phone, r.borrow_start_at, r.borrow_end_at, r.space_id
         FROM reservations r
         WHERE r.reservation_id = ? AND r.user_id = ? LIMIT 1
     ');
@@ -109,15 +122,6 @@ if ($dbError === '') {
                     'vehicle_entry' => $reservationRow['vehicle_entry'] ?? 'no',
                     'setup_flags' => $reservationRow['setup_flags'] ?? 'no',
                     'flag_details' => $reservationRow['flag_details'] ?? '',
-                    'flag_applicant_unit' => $reservationRow['flag_applicant_unit'] ?? '',
-                    'flag_manager' => $reservationRow['flag_manager'] ?? '',
-                    'flag_phone' => $reservationRow['flag_phone'] ?? '',
-                    'flag_activity_name' => $reservationRow['flag_activity_name'] ?? '',
-                    'flag_start_date' => $reservationRow['flag_start_date'] ?? '',
-                    'flag_end_date' => $reservationRow['flag_end_date'] ?? '',
-                    'flag_count' => $reservationRow['flag_count'] ?? 0,
-                    'flag_location' => $reservationRow['flag_location'] ?? '',
-                    'flag_agreement' => $reservationRow['flag_agreement'] ?? '',
                     'has_alcohol' => $reservationRow['has_alcohol'] ?? '',
                     'has_fire' => $reservationRow['has_fire'] ?? '',
                     'has_sales' => $reservationRow['has_sales'] ?? '',
@@ -148,15 +152,6 @@ if ($dbError === '') {
                     'vehicle_entry' => trim((string)($_POST['vehicle_entry'] ?? 'no')),
                     'setup_flags' => trim((string)($_POST['setup_flags'] ?? 'no')),
                     'flag_details' => trim((string)($_POST['flag_details'] ?? '')),
-                    'flag_applicant_unit' => trim((string)($_POST['flag_applicant_unit'] ?? '')),
-                    'flag_manager' => trim((string)($_POST['flag_manager'] ?? '')),
-                    'flag_phone' => trim((string)($_POST['flag_phone'] ?? '')),
-                    'flag_activity_name' => trim((string)($_POST['flag_activity_name'] ?? '')),
-                    'flag_start_date' => trim((string)($_POST['flag_start_date'] ?? '')),
-                    'flag_end_date' => trim((string)($_POST['flag_end_date'] ?? '')),
-                    'flag_count' => (int)($_POST['flag_count'] ?? 0),
-                    'flag_location' => trim((string)($_POST['flag_location'] ?? '')),
-                    'flag_agreement' => isset($_POST['flag_agreement']) ? '1' : '',
                     'has_alcohol' => isset($_POST['has_alcohol']) ? '1' : '',
                     'has_fire' => isset($_POST['has_fire']) ? '1' : '',
                     'has_sales' => isset($_POST['has_sales']) ? '1' : '',
@@ -171,8 +166,6 @@ if ($dbError === '') {
                     $amendError = '請填寫活動名稱。';
                 } elseif ($updatedFields['purpose'] === '') {
                     $amendError = '請填寫用途說明。';
-                } elseif ($updatedFields['flag_count'] > 20 && $updatedFields['setup_flags'] === 'yes') {
-                    $amendError = '宣傳旗幟最多只能選 20 支。';
                 } else {
                     // 更新預約
                     mysqli_begin_transaction($link);
@@ -203,10 +196,9 @@ if ($dbError === '') {
                         
                         mysqli_stmt_bind_param($updateStmt, $updateTypes, ...$updateValues);
                         mysqli_stmt_execute($updateStmt);
-                        $affected = mysqli_stmt_affected_rows($updateStmt);
                         mysqli_stmt_close($updateStmt);
-                        
-                        if ($affected <= 0) {
+
+                        if (mysqli_errno($link) !== 0) {
                             throw new RuntimeException('更新失敗，請稍後再試。');
                         }
                         
@@ -381,11 +373,11 @@ if ($dbError === '') {
                             <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-top: 20px;">
                                 <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                                     <label for="borrow_start_at">借用開始時間</label>
-                                    <input type="datetime-local" id="borrow_start_at" name="borrow_start_at" class="form-control" value="<?php echo htmlspecialchars((string)($revisionData['borrow_start_at'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" readonly style="background-color: #f5f5f5;">
+                                    <input type="datetime-local" id="borrow_start_at" name="borrow_start_at" class="form-control" value="<?php echo htmlspecialchars(formatDatetimeLocalValue((string)($revisionData['borrow_start_at'] ?? '')), ENT_QUOTES, 'UTF-8'); ?>" readonly style="background-color: #f5f5f5;">
                                 </div>
                                 <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                                     <label for="borrow_end_at">借用結束時間</label>
-                                    <input type="datetime-local" id="borrow_end_at" name="borrow_end_at" class="form-control" value="<?php echo htmlspecialchars((string)($revisionData['borrow_end_at'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" readonly style="background-color: #f5f5f5;">
+                                    <input type="datetime-local" id="borrow_end_at" name="borrow_end_at" class="form-control" value="<?php echo htmlspecialchars(formatDatetimeLocalValue((string)($revisionData['borrow_end_at'] ?? '')), ENT_QUOTES, 'UTF-8'); ?>" readonly style="background-color: #f5f5f5;">
                                 </div>
                             </div>
 

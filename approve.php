@@ -230,8 +230,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
                         organization_name, activity_name, participant_count, staff_count, 
                         club_president, activity_coordinator, coordinator_department, coordinator_phone, 
                         coordinator_other_contact, vehicle_entry, setup_flags, flag_details,
-                        flag_applicant_unit, flag_manager, flag_phone, flag_activity_name,
-                        flag_start_date, flag_end_date, flag_count, flag_location, flag_agreement,
                         has_alcohol, has_fire, has_sales, purpose, phone, borrow_start_at, borrow_end_at,
                         space_id
                     FROM reservations WHERE reservation_id = ?';

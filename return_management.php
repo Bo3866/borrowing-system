@@ -99,6 +99,19 @@ if ($dbError === '') {
         }
     }
 
+    // 自動遷移：新增 revision_data_json 欄位以存儲補件用的原始申請數據
+    if ($dbError === '') {
+        try {
+            if (!in_array('revision_data_json', $reservationColumns, true)) {
+                $migrationSql = 'ALTER TABLE reservations ADD COLUMN revision_data_json LONGTEXT NULL COMMENT "補件時的原始申請數據(JSON格式)" AFTER revision_deadline';
+                mysqli_query($link, $migrationSql);
+                $reservationColumns[] = 'revision_data_json';
+            }
+        } catch (Throwable $e) {
+            // 忽略列已存在錯誤
+        }
+    }
+
     // 報到狀態：使用 checkin_logs（無需再查 pickup 欄位）
     // 歸還狀態：使用 returned_at 欄位
 
@@ -688,6 +701,10 @@ if ($dbError === '' && count($rows) > 0) {
                                                             <?php if (!empty($row['rejection_reason'])) { ?>
                                                                 <br/><strong>備註：</strong><?php echo htmlspecialchars($row['rejection_reason'], ENT_QUOTES, 'UTF-8'); ?>
                                                             <?php } ?>
+                                                            <br/><strong>補件期限：</strong><?php echo htmlspecialchars((string)$row['revision_deadline'], ENT_QUOTES, 'UTF-8'); ?>
+                                                        </div>
+                                                        <div style="margin-top: 12px; display: flex; gap: 10px;">
+                                                            <a href="amend_application.php?reservation_id=<?php echo (int)$row['reservation_id']; ?>" class="btn-primary" style="display: inline-block; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-size: 14px;">修改補件</a>
                                                         </div>
                                                     </div>                                                <?php } ?>
                                             </td>

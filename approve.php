@@ -225,15 +225,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
 
                 // If no approval_stage column, fallback to existing behavior (single-step)
                 if ($action === 'need_revision') {
-                    $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET approval_status = ?, updated_at = NOW(), revision_deadline = CONCAT(DATE_ADD(CURDATE(), INTERVAL 1 DAY), " 23:59:59") WHERE reservation_id = ? AND approval_status = "pending"');
+                    // 當要求補件時，保存原始申請數據快照（只保存申請表單欄位）
+                    $snapshotSql = 'SELECT 
+                        organization_name, activity_name, participant_count, staff_count, 
+                        club_president, activity_coordinator, coordinator_department, coordinator_phone, 
+                        coordinator_other_contact, vehicle_entry, setup_flags, flag_details,
+                        flag_applicant_unit, flag_manager, flag_phone, flag_activity_name,
+                        flag_start_date, flag_end_date, flag_count, flag_location, flag_agreement,
+                        has_alcohol, has_fire, has_sales, purpose, phone, borrow_start_at, borrow_end_at,
+                        space_id
+                    FROM reservations WHERE reservation_id = ?';
+                    $snapshotStmt = mysqli_prepare($link, $snapshotSql);
+                    if (!$snapshotStmt) {
+                        throw new RuntimeException('查詢原始申請數據失敗：' . mysqli_error($link));
+                    }
+                    mysqli_stmt_bind_param($snapshotStmt, 'i', $reservationId);
+                    mysqli_stmt_execute($snapshotStmt);
+                    $snapshotResult = mysqli_stmt_get_result($snapshotStmt);
+                    $snapshotData = $snapshotResult ? mysqli_fetch_assoc($snapshotResult) : null;
+                    mysqli_stmt_close($snapshotStmt);
+                    
+                    $revisionDataJson = null;
+                    if ($snapshotData) {
+                        $revisionDataJson = json_encode($snapshotData, JSON_UNESCAPED_UNICODE);
+                    }
+                    
+                    $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET approval_status = ?, updated_at = NOW(), revision_deadline = CONCAT(DATE_ADD(CURDATE(), INTERVAL 1 DAY), " 23:59:59"), revision_data_json = ? WHERE reservation_id = ? AND approval_status = "pending"');
+                    if (!$updateStmt) {
+                        throw new RuntimeException('更新預約狀態準備失敗：' . mysqli_error($link));
+                    }
+                    mysqli_stmt_bind_param($updateStmt, 'ssi', $action, $revisionDataJson, $reservationId);
                 } else {
                     $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET approval_status = ?, updated_at = NOW() WHERE reservation_id = ? AND approval_status = "pending"');
+                    if (!$updateStmt) {
+                        throw new RuntimeException('更新預約狀態準備失敗：' . mysqli_error($link));
+                    }
+                    mysqli_stmt_bind_param($updateStmt, 'si', $action, $reservationId);
                 }
 
-                if (!$updateStmt) {
-                    throw new RuntimeException('更新預約狀態準備失敗：' . mysqli_error($link));
-                }
-                mysqli_stmt_bind_param($updateStmt, 'si', $action, $reservationId);
                 mysqli_stmt_execute($updateStmt);
                 $affected = mysqli_stmt_affected_rows($updateStmt);
                 mysqli_stmt_close($updateStmt);

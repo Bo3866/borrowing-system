@@ -210,6 +210,15 @@ $formData = [
     'vehicle_entry' => 'no',
     'setup_flags' => 'no',
     'flag_details' => '',
+    'flag_applicant_unit' => '',
+    'flag_manager' => '',
+    'flag_phone' => '',
+    'flag_activity_name' => '',
+    'flag_start_date' => '',
+    'flag_end_date' => '',
+    'flag_count' => 0,
+    'flag_location' => '',
+    'flag_agreement' => '',
     'resource_type' => 'equipment',
     'equipment_code' => '',
     'space_id' => '',
@@ -246,6 +255,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['vehicle_entry'] = trim((string)($_POST['vehicle_entry'] ?? 'no'));
     $formData['setup_flags'] = trim((string)($_POST['setup_flags'] ?? 'no'));
     $formData['flag_details'] = trim((string)($_POST['flag_details'] ?? ''));
+    $formData['flag_applicant_unit'] = trim((string)($_POST['flag_applicant_unit'] ?? ''));
+    $formData['flag_manager'] = trim((string)($_POST['flag_manager'] ?? ''));
+    $formData['flag_phone'] = trim((string)($_POST['flag_phone'] ?? ''));
+    $formData['flag_activity_name'] = trim((string)($_POST['flag_activity_name'] ?? ''));
+    $formData['flag_start_date'] = trim((string)($_POST['flag_start_date'] ?? ''));
+    $formData['flag_end_date'] = trim((string)($_POST['flag_end_date'] ?? ''));
+    $formData['flag_count'] = (int)($_POST['flag_count'] ?? 0);
+    $formData['flag_location'] = trim((string)($_POST['flag_location'] ?? ''));
+    $formData['flag_agreement'] = isset($_POST['flag_agreement']) ? '1' : '';
     $formData['space_id'] = trim((string)($_POST['space_id'] ?? ''));
     $formData['borrow_start_date'] = trim((string)($_POST['borrow_start_date'] ?? ''));
     
@@ -423,6 +441,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $borrowError = '請完整填寫借用起訖日期與時間。';
         } elseif ($formData['purpose'] === '') {
             $borrowError = '請填寫用途說明。';
+        } elseif ($formData['setup_flags'] === 'yes' && $formData['flag_count'] > 20) {
+            $borrowError = '宣傳旗幟最多只能選 20 支。';
         } else {
             $submittedResourceType = $formData['resource_type'];
         }
@@ -1140,7 +1160,7 @@ SQL;
 
                                 <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
                                     <div class="form-group" style="flex: 1; min-width: 150px;">
-                                        <label for="participant_count">活動對象人數 <span style="color:red">*</span></label>
+                                        <label for="participant_count">活動對象人數 (100人以上的活動只能選擇30天後的日期) <span style="color:red">*</span></label>
                                         <select id="participant_count" name="participant_count" class="form-control" required style="padding: 8px;">
                                             <option value="" <?php echo (($formData['participant_count'] ?? '') === '') ? 'selected' : ''; ?>>請選擇</option>
                                             <option value="50人以下" <?php echo (($formData['participant_count'] ?? '') === '50人以下') ? 'selected' : ''; ?>>50人以下</option>
@@ -1281,7 +1301,7 @@ SQL;
                                     </div>
                                 </div>
                                 <div class="form-group" style="margin-top: 20px;">
-                                    <label>插立旗幟 <span style="color:red">*</span></label>
+                                    <label>插立旗幟(選擇"是"將填寫旗幟插立表單) <span style="color:red">*</span></label>
                                     <div style="margin-top: 8px; display: flex; align-items: center; gap: 20px;">
                                         <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
                                             <input type="radio" name="setup_flags" value="no" id="flagOptionNo" style="margin: 0;" <?php echo ($formData['setup_flags'] === 'no' || empty($formData['setup_flags'])) ? 'checked' : ''; ?> onchange="toggleFlagDetails()"> 否
@@ -1338,16 +1358,16 @@ SQL;
 
                                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
                                         <div>
-                                            <label>宣傳旗幟 (共幾支) <span style="color:red">*</span></label>
+                                            <label>宣傳旗幟 (至多20支) <span style="color:red">*</span></label>
                                             <div style="display: flex; align-items: center; gap: 5px;">
                                                 <span>共</span>
-                                                <input type="number" name="flag_count" class="form-control" min="1" style="width: 100px;" placeholder="0">
+                                                <input type="number" name="flag_count" class="form-control" min="1" max="20" step="1" style="width: 100px;" placeholder="0" value="<?php echo htmlspecialchars((string)($formData['flag_count'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" oninput="if (this.value !== '' && Number(this.value) > 20) this.value = 20; if (this.value !== '' && Number(this.value) < 1) this.value = 1;">
                                                 <span>支</span>
                                             </div>
                                         </div>
                                         <div>
-                                            <label>懸掛位置 <span style="color:red">*</span></label>
-                                            <input type="text" name="flag_location" class="form-control" value="中央走道" placeholder="例如：中央走道">
+                                            <label>懸掛位置-中央走道 <span style="color:red">*</span></label>
+                                            
                                         </div>
                                     </div>
 

@@ -1,1 +1,0 @@
-const fs = require('fs'); let c = fs.readFileSync('borrow.php', 'utf8'); c = c.replace(/'borrow_date' => '',[\s\S]*?'end_period_code' => '',/, 'borrow_start_date' => '',\n      'borrow_start_time' => '',\n      'borrow_end_date' => '',\n      'borrow_end_time' => '',); fs.writeFileSync('borrow.php', c);

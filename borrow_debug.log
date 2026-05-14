@@ -351,3 +351,35 @@ FILES:{"proposal_file":{"name":"\u8ab2\u6307\u7d44\u5834\u5730\u6536\u8cbb\u4e00
 POST:{"current_step":"3","organization_name":"\u5b78\u751f\u6703","activity_name":"123","participant_count":"100~200\u4eba","staff_count":"20","club_president":"xxx","activity_coordinator":"xx","coordinator_department":"xxxx","coordinator_phone":"09000000","coordinator_other_contact":"","borrow_start_date":"2026-06-15","borrow_start_time_h":"8","borrow_start_time_m":"00","borrow_end_date":"2026-06-18","borrow_end_time_h":"16","borrow_end_time_m":"30","vehicle_entry":"no","setup_flags":"yes","flag_applicant_unit":"xxxx","flag_manager":"xxx","flag_phone":"0900000000","flag_activity_name":"xxxxx","flag_start_date":"2026-06-15","flag_end_date":"2026-06-18","flag_count":"10","flag_agreement":"1","resource_type":"both","purpose":"123","cart_items":"[{\"code\":\"A2\",\"name\":\"\u6709\u7dda\u9ea5\u514b\u98a8\",\"quantity\":1,\"type\":\"equipment\"},{\"code\":\"OUT001\",\"name\":\"\u6236\u5916\u7a7a\u9593 \u771f\u5584\u7f8e\u8056\u5ee3\u5834\",\"quantity\":1,\"type\":\"space\"}]"}
 FILES:{"proposal_file":{"name":"\u8ab2\u6307\u7d44\u5834\u5730\u6536\u8cbb\u4e00\u89bd\u8868.pdf","type":"application\/pdf","tmp_name":"...","error":0,"size":105184}}
 
+2026-05-14T15:15:45+00:00 POST handler invoked
+POST:{"resource_type":"both","current_step":"1","organization_name":"","activity_name":"","borrow_date":"","start_period_code":"D2","end_period_code":"","purpose":""}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-14T15:15:45+00:00 VALIDATION ERROR: 請選擇至少一項器材或一個場地。
+POST:{"resource_type":"both","current_step":"1","organization_name":"","activity_name":"","borrow_date":"","start_period_code":"D2","end_period_code":"","purpose":""}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-14T15:29:57+00:00 POST handler invoked
+POST:{"current_step":"1","organization_name":"122","activity_name":"122","participant_count":"","staff_count":"","club_president":"","activity_coordinator":"","coordinator_department":"","coordinator_phone":"","coordinator_other_contact":"","borrow_start_date":"","borrow_start_time_h":"","borrow_start_time_m":"","borrow_end_date":"","borrow_end_time_h":"","borrow_end_time_m":"","vehicle_entry":"no","setup_flags":"no","flag_applicant_unit":"","flag_manager":"","flag_phone":"","flag_activity_name":"","flag_start_date":"","flag_end_date":"","flag_count":"0","resource_type":"both","purpose":"","cart_items":"","action":"save_draft"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-14T15:29:57+00:00 VALIDATION ERROR: 請選擇至少一項器材或一個場地。
+POST:{"current_step":"1","organization_name":"122","activity_name":"122","participant_count":"","staff_count":"","club_president":"","activity_coordinator":"","coordinator_department":"","coordinator_phone":"","coordinator_other_contact":"","borrow_start_date":"","borrow_start_time_h":"","borrow_start_time_m":"","borrow_end_date":"","borrow_end_time_h":"","borrow_end_time_m":"","vehicle_entry":"no","setup_flags":"no","flag_applicant_unit":"","flag_manager":"","flag_phone":"","flag_activity_name":"","flag_start_date":"","flag_end_date":"","flag_count":"0","resource_type":"both","purpose":"","cart_items":"","action":"save_draft"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-14T15:30:03+00:00 POST handler invoked
+POST:{"current_step":"1","organization_name":"122","activity_name":"122","participant_count":"","staff_count":"","club_president":"","activity_coordinator":"","coordinator_department":"","coordinator_phone":"","coordinator_other_contact":"","borrow_start_date":"","borrow_start_time_h":"","borrow_start_time_m":"","borrow_end_date":"","borrow_end_time_h":"","borrow_end_time_m":"","vehicle_entry":"no","setup_flags":"no","flag_applicant_unit":"","flag_manager":"","flag_phone":"","flag_activity_name":"","flag_start_date":"","flag_end_date":"","flag_count":"0","resource_type":"both","purpose":"","cart_items":"","action":"save_draft"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-14T15:30:03+00:00 VALIDATION ERROR: 請選擇至少一項器材或一個場地。
+POST:{"current_step":"1","organization_name":"122","activity_name":"122","participant_count":"","staff_count":"","club_president":"","activity_coordinator":"","coordinator_department":"","coordinator_phone":"","coordinator_other_contact":"","borrow_start_date":"","borrow_start_time_h":"","borrow_start_time_m":"","borrow_end_date":"","borrow_end_time_h":"","borrow_end_time_m":"","vehicle_entry":"no","setup_flags":"no","flag_applicant_unit":"","flag_manager":"","flag_phone":"","flag_activity_name":"","flag_start_date":"","flag_end_date":"","flag_count":"0","resource_type":"both","purpose":"","cart_items":"","action":"save_draft"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-14T15:31:38+00:00 POST handler invoked
+POST:{"current_step":"1","organization_name":"","activity_name":"","participant_count":"","staff_count":"","club_president":"","activity_coordinator":"","coordinator_department":"","coordinator_phone":"","coordinator_other_contact":"","borrow_start_date":"","borrow_start_time_h":"","borrow_start_time_m":"","borrow_end_date":"","borrow_end_time_h":"","borrow_end_time_m":"","vehicle_entry":"no","setup_flags":"no","flag_applicant_unit":"","flag_manager":"","flag_phone":"","flag_activity_name":"","flag_start_date":"","flag_end_date":"","flag_count":"0","resource_type":"both","purpose":"","cart_items":"","action":"save_draft"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+
+2026-05-14T15:31:38+00:00 VALIDATION ERROR: 請選擇至少一項器材或一個場地。
+POST:{"current_step":"1","organization_name":"","activity_name":"","participant_count":"","staff_count":"","club_president":"","activity_coordinator":"","coordinator_department":"","coordinator_phone":"","coordinator_other_contact":"","borrow_start_date":"","borrow_start_time_h":"","borrow_start_time_m":"","borrow_end_date":"","borrow_end_time_h":"","borrow_end_time_m":"","vehicle_entry":"no","setup_flags":"no","flag_applicant_unit":"","flag_manager":"","flag_phone":"","flag_activity_name":"","flag_start_date":"","flag_end_date":"","flag_count":"0","resource_type":"both","purpose":"","cart_items":"","action":"save_draft"}
+FILES:{"proposal_file":{"name":"","type":"","tmp_name":"...","error":4,"size":0}}
+

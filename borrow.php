@@ -1076,6 +1076,55 @@ SQL;
         .period-item { padding:12px; border-radius:8px; font-size:13px; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,0.05); transition:transform 0.2s; }
         .period-item:hover { transform:translateY(-2px); }
         .calendar-card { width:100%; border-top:4px solid #3b82f6; }
+
+
+                /* 草稿功能區 */
+        .draft-action-row{
+            display:flex;
+            gap:15px;
+            margin-top:15px;
+            width:100%;
+        }
+
+        .draft-btn{
+            flex:1;
+            border:none;
+            border-radius:10px;
+            padding:14px 20px;
+            font-size:15px;
+            font-weight:600;
+            cursor:pointer;
+            transition:all .25s ease;
+        }
+
+        .save-btn{
+            background:#f59e0b;
+            color:#fff;
+        }
+
+        .save-btn:hover{
+            background:#d97706;
+            transform:translateY(-2px);
+        }
+
+        .draft-box-btn{
+            background:#6366f1;
+            color:#fff;
+        }
+
+        .draft-box-btn:hover{
+            background:#4338ca;
+            transform:translateY(-2px);
+        }
+
+        .draft-message{
+            margin-top:10px;
+            font-size:14px;
+            color:#64748b;
+        }
+
+
+
     </style>
     <!-- 引入 Flatpickr -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
@@ -1284,6 +1333,19 @@ SQL;
                                 <div class="step-actions">
                                     <button type="button" class="btn btn-primary btn-next" onclick="goToStep(2)">下一步 ➔ 場地需求 </button>
                                 </div>
+
+
+                                <div class="draft-action-row">
+                                    <button type="button" id="saveDraftBtn" class="draft-btn save-btn">
+                                        暫存申請
+                                    </button>
+                                    <button type="button" id="openDraftBoxBtn" class="draft-btn draft-box-btn">
+                                        草稿箱
+                                    </button>
+                                </div>
+                                <div id="submitDebugMsg" class="draft-message"></div>
+
+
                             </div>
                             
                             <!-- ========== 步驟 2 內容區 ========== -->
@@ -1412,6 +1474,55 @@ SQL;
                                     // 初始化同步
                                     syncFlagDates();
                                 });
+
+                                // 暫存申請
+                                const saveBtn = document.getElementById('saveDraftBtn');
+
+                                if(saveBtn){
+
+                                    saveBtn.addEventListener('click', function(){
+
+                                        alert('暫存成功');
+
+                                        localStorage.setItem(
+                                            'borrow_draft_' + Date.now(),
+                                            JSON.stringify({
+                                                time: new Date().toLocaleString()
+                                            })
+                                        );
+
+                                    });
+
+                                }
+
+                                // 草稿箱
+                                const draftBtn = document.getElementById('openDraftBoxBtn');
+
+                                if(draftBtn){
+
+                                    draftBtn.addEventListener('click', function(){
+
+                                        window.location.href = 'draft_box.php';
+
+                                    });
+
+                                }
+
+                                    });
+
+                                }
+
+                                // 草稿箱
+                                const openDraftBoxBtn = document.getElementById('openDraftBoxBtn');
+                                if(openDraftBoxBtn){
+                                    openDraftBoxBtn.addEventListener('click', function(){
+                                        window.location.href = 'draft_box.php';
+                                    });
+                                }
+                                // 草稿箱按鈕
+                                document.getElementById('openDraftBoxBtn')
+                                .addEventListener('click', function () {
+                                    window.location.href = 'draft_box.php';
                                 </script>
 
                                 <div class="step-actions">
@@ -1602,6 +1713,125 @@ SQL;
 
     <!-- 草稿管理 JavaScript 模組 - 必須在 borrow.php 邏輯之前加載 -->
     <script src="DraftManager.js"></script>
+    <script>
+        window.draftManager = new DraftManager();
+    </script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const form = document.getElementById('multistep_form');
+            const saveBtn = document.getElementById('saveDraftBtn');
+            const draftBoxBtn = document.getElementById('openDraftBoxBtn');
+            const msg = document.getElementById('submitDebugMsg');
+
+            const STORAGE_KEY = 'borrow_drafts';
+
+            function getDrafts() {
+                return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+            }
+
+            function saveDrafts(drafts) {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(drafts));
+            }
+
+            function collectFormData() {
+                const data = {};
+
+                form.querySelectorAll('input, select, textarea').forEach(el => {
+                    if (!el.name) return;
+
+                    if (el.type === 'file') return;
+
+                    if (el.type === 'checkbox') {
+                        data[el.name] = el.checked ? '1' : '';
+                    } else if (el.type === 'radio') {
+                        if (el.checked) data[el.name] = el.value;
+                    } else {
+                        data[el.name] = el.value;
+                    }
+                });
+
+                return data;
+            }
+
+            function clearFormAfterSave() {
+                form.reset();
+
+                const cartInput = document.querySelector('input[name="cart_items"]');
+                if (cartInput) cartInput.value = '[]';
+
+                const selectedList = document.getElementById('esSelectedList');
+                if (selectedList) selectedList.innerHTML = '';
+
+                const proposalName = document.getElementById('proposal_file_name_display');
+                if (proposalName) proposalName.textContent = '';
+
+                const currentStep = document.getElementById('current_step');
+                if (currentStep) currentStep.value = '1';
+
+                document.querySelectorAll('.step-content').forEach(el => el.classList.remove('active'));
+                const step1 = document.getElementById('step-content-1');
+                if (step1) step1.classList.add('active');
+            }
+
+            if (saveBtn) {
+                saveBtn.addEventListener('click', function () {
+                    const drafts = getDrafts();
+
+                    const formData = collectFormData();
+
+                    const draft = {
+                        draftId: 'draft_' + Date.now(),
+                        timestamp: new Date().toLocaleString('zh-TW'),
+                        activityName: formData.activity_name || '未填寫活動名稱',
+                        purpose: formData.purpose || '',
+                        formData: formData
+                    };
+
+                    drafts.unshift(draft);
+                    saveDrafts(drafts);
+
+                    if (msg) msg.textContent = '✅ 草稿已暫存，表單已清空';
+
+                    clearFormAfterSave();
+                });
+            }
+
+            if (draftBoxBtn) {
+                draftBoxBtn.addEventListener('click', function () {
+                    window.location.href = 'draft_box.php';
+                });
+            }
+
+            // 從草稿箱載入草稿
+            const params = new URLSearchParams(window.location.search);
+            const loadId = params.get('draft_id');
+
+            if (loadId) {
+                const drafts = getDrafts();
+                const draft = drafts.find(d => d.draftId === loadId);
+
+                if (draft && draft.formData) {
+                    Object.keys(draft.formData).forEach(name => {
+                        const els = form.querySelectorAll(`[name="${name}"]`);
+
+                        els.forEach(el => {
+                            if (el.type === 'checkbox') {
+                                el.checked = draft.formData[name] === '1';
+                            } else if (el.type === 'radio') {
+                                el.checked = el.value === draft.formData[name];
+                            } else if (el.type !== 'file') {
+                                el.value = draft.formData[name];
+                            }
+                        });
+                    });
+
+                    if (msg) msg.textContent = '✅ 已載入草稿，可繼續申請';
+                }
+            }
+        });
+    </script>
+
 
     <script>
         // 確保在 DOM 完全加載後執行

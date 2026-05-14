@@ -257,14 +257,14 @@ class DraftManager {
             return;
         }
 
-        try {
-            // 清空基本欄位
-            form.querySelector('select[name="resource_type"]')!.value = 'equipment';
-            form.querySelector('input[name="borrow_date"]')!.value = '';
-            form.querySelector('select[name="start_period_code"]')!.value = '';
-            form.querySelector('select[name="end_period_code"]')!.value = '';
-            form.querySelector('input[name="phone"]')!.value = '';
-            form.querySelector('textarea[name="purpose"]')!.value = '';
+try {
+    // 清空基本欄位
+    form.querySelector('select[name="resource_type"]').value = 'equipment';
+    form.querySelector('input[name="borrow_date"]').value = '';
+    form.querySelector('select[name="start_period_code"]').value = '';
+    form.querySelector('select[name="end_period_code"]').value = '';
+    form.querySelector('input[name="phone"]').value = '';
+    form.querySelector('textarea[name="purpose"]').value = '';
 
             // 清空購物車
             const cartItemsInput = form.querySelector('input[name="cart_items"]');

@@ -574,7 +574,7 @@ if ($dbError === '' && count($rows) > 0) {
                                                                         }
                                                                     ?>
                                                                 </span>
-                                                                <span class="stepper-timestamp"><?php echo $stageTimes['a'] ? htmlspecialchars((string)$stageTimes['a'], ENT_QUOTES, 'UTF-8') : htmlspecialchars((string)$row['submitted_at'], ENT_QUOTES, 'UTF-8'); ?></span>
+                                                                <span class="stepper-timestamp"><?php echo $t ? htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8') : htmlspecialchars((string)$row['submitted_at'], ENT_QUOTES, 'UTF-8'); ?></span>
                                                             </div>
                                                         </div>
                                                         <div class="stepper-line"></div>
@@ -596,7 +596,7 @@ if ($dbError === '' && count($rows) > 0) {
                                                                         }
                                                                     ?>
                                                                 </span>
-                                                                <span class="stepper-timestamp"><?php echo $stageTimes['b'] ? htmlspecialchars((string)$stageTimes['b'], ENT_QUOTES, 'UTF-8') : '-'; ?></span>
+                                                                <span class="stepper-timestamp"><?php echo $t ? htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8') : '-'; ?></span>
                                                             </div>
                                                         </div>
                                                         <div class="stepper-line"></div>
@@ -618,7 +618,7 @@ if ($dbError === '' && count($rows) > 0) {
                                                                         }
                                                                     ?>
                                                                 </span>
-                                                                <span class="stepper-timestamp"><?php echo $stageTimes['c'] ? htmlspecialchars((string)$stageTimes['c'], ENT_QUOTES, 'UTF-8') : '-'; ?></span>
+                                                                <span class="stepper-timestamp"><?php echo $t ? htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8') : '-'; ?></span>
                                                             </div>
                                                         </div>
                                                         <div class="stepper-line"></div>
@@ -640,7 +640,7 @@ if ($dbError === '' && count($rows) > 0) {
                                                                         }
                                                                     ?>
                                                                 </span>
-                                                                <span class="stepper-timestamp"><?php echo $stageTimes['d'] ? htmlspecialchars((string)$stageTimes['d'], ENT_QUOTES, 'UTF-8') : '-'; ?></span>
+                                                                <span class="stepper-timestamp"><?php echo $t ? htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8') : '-'; ?></span>
                                                             </div>
                                                         </div>
                                                         <div class="stepper-line"></div>

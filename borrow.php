@@ -589,6 +589,18 @@ SQL;
                 $proposalFileForSpace = null;
                 $proposalUploadedAtForSpace = null;
 
+                // 只建立一張預約單 (不論是借器材還是場地)
+                $reservationStmt = mysqli_prepare($link, $insertReservationSql);
+                if (!$reservationStmt) {
+                    throw new RuntimeException('建立預約主檔失敗：' . mysqli_error($link));
+                }
+                mysqli_stmt_bind_param($reservationStmt, $bindTypesTemplate, ...$bindValuesTemplate);
+                mysqli_stmt_execute($reservationStmt);
+                $commonReservationId = (int)mysqli_insert_id($link);
+                mysqli_stmt_close($reservationStmt);
+
+                $createdReservationIds = [$commonReservationId];
+
                 if (!empty($cartEquipments)) {
                     $stockCheckStmt = mysqli_prepare(
                         $link,
@@ -690,17 +702,8 @@ SQL;
                             throw new RuntimeException("器材 {$cCode} 實際可取得數量不足。");
                         }
 
-                        // 新增 Reservations (每一款器材一張預約單，但 submitted_at 完全一樣)
-                        $reservationStmt = mysqli_prepare($link, $insertReservationSql);
-                        if (!$reservationStmt) {
-                            throw new RuntimeException('建立預約主檔失敗：' . mysqli_error($link));
-                        }
-                        mysqli_stmt_bind_param($reservationStmt, $bindTypesTemplate, ...$bindValuesTemplate);
-                        mysqli_stmt_execute($reservationStmt);
-                        $itemReservationId = (int)mysqli_insert_id($link);
-                        mysqli_stmt_close($reservationStmt);
-
-                        $createdReservationIds[] = $itemReservationId;
+                        // 使用共用的預約單 ID（同一筆申請共用一個 reservation）
+                        $itemReservationId = $commonReservationId;
 
                         // 將實體器材加入該預約單
                         foreach ($equipmentIds as $equipmentId) {
@@ -799,17 +802,8 @@ SQL;
                     $proposalUploadedAtForSpace = date('Y-m-d H:i:s');
                     $uploadedProposalPath = $targetPath;
 
-                    // Space 共用 1 張預約單
-                    $reservationStmt = mysqli_prepare($link, $insertReservationSql);
-                    if (!$reservationStmt) {
-                        throw new RuntimeException('建立預約主檔失敗：' . mysqli_error($link));
-                    }
-                    mysqli_stmt_bind_param($reservationStmt, $bindTypesTemplate, ...$bindValuesTemplate);
-                    mysqli_stmt_execute($reservationStmt);
-                    $reservationId = (int)mysqli_insert_id($link);
-                    mysqli_stmt_close($reservationStmt);
-
-                    $createdReservationIds[] = $reservationId;
+                    // 使用共用的預約單 ID（同一筆申請共用一個 reservation）
+                    $reservationId = $commonReservationId;
 
                                                 $spaceConflictStmt = mysqli_prepare(
                                                                 $link,
@@ -840,7 +834,7 @@ SQL;
                     if (!$spaceItemStmt) {
                         throw new RuntimeException('建立空間預約明細失敗：' . mysqli_error($link));
                     }
-                    mysqli_stmt_bind_param($spaceItemStmt, 'isss', $createdReservationIds[0], $formData['space_id'], $proposalFileForSpace, $proposalUploadedAtForSpace);
+                    mysqli_stmt_bind_param($spaceItemStmt, 'isss', $reservationId, $formData['space_id'], $proposalFileForSpace, $proposalUploadedAtForSpace);
                     mysqli_stmt_execute($spaceItemStmt);
                     mysqli_stmt_close($spaceItemStmt);
                     // 不再更新 spaces 表的營運狀態，因為我們通過查詢衝突來檢查可用性
@@ -1137,22 +1131,22 @@ SQL;
 
                                 <div class="form-group" style="margin-top: 10px;">
                                     <label for="organization_name">單位名稱 / 主辦社團 <span style="color:red">*</span></label>
-                                    <input type="text" id="organization_name" name="organization_name" class="form-control" placeholder="請輸入主辦單位名稱" required>
+                                    <input type="text" id="organization_name" name="organization_name" class="form-control" placeholder="請輸入主辦單位名稱" value="<?php echo htmlspecialchars($formData['organization_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
                                 </div>
                                 <div class="form-group">
                                     <label for="activity_name">活動名稱 <span style="color:red">*</span></label>
-                                    <input type="text" id="activity_name" name="activity_name" class="form-control" placeholder="請輸入活動名稱" required>
+                                    <input type="text" id="activity_name" name="activity_name" class="form-control" placeholder="請輸入活動名稱" value="<?php echo htmlspecialchars($formData['activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
                                 </div>
 
                                 <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
                                     <div class="form-group" style="flex: 1; min-width: 150px;">
                                         <label for="participant_count">活動對象人數 <span style="color:red">*</span></label>
                                         <select id="participant_count" name="participant_count" class="form-control" required style="padding: 8px;">
-                                            <option value="">請選擇</option>
-                                            <option value="50人以下">50人以下</option>
-                                            <option value="50~100人">50~100人</option>
-                                            <option value="100~200人">100~200人</option>
-                                            <option value="200人以上">200人以上</option>
+                                            <option value="" <?php echo (($formData['participant_count'] ?? '') === '') ? 'selected' : ''; ?>>請選擇</option>
+                                            <option value="50人以下" <?php echo (($formData['participant_count'] ?? '') === '50人以下') ? 'selected' : ''; ?>>50人以下</option>
+                                            <option value="50~100人" <?php echo (($formData['participant_count'] ?? '') === '50~100人') ? 'selected' : ''; ?>>50~100人</option>
+                                            <option value="100~200人" <?php echo (($formData['participant_count'] ?? '') === '100~200人') ? 'selected' : ''; ?>>100~200人</option>
+                                            <option value="200人以上" <?php echo (($formData['participant_count'] ?? '') === '200人以上') ? 'selected' : ''; ?>>200人以上</option>
                                         </select>
                                     </div>
                                     <div class="form-group" style="flex: 1; min-width: 150px;">
@@ -1163,26 +1157,26 @@ SQL;
                                 <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
                                     <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                                         <label for="club_president">社 / 會長 <span style="color:red">*</span></label>
-                                        <input type="text" id="club_president" name="club_president" class="form-control" placeholder="請輸入姓名" required>
+                                        <input type="text" id="club_president" name="club_president" class="form-control" placeholder="請輸入姓名" value="<?php echo htmlspecialchars($formData['club_president'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
                                     </div>
                                     <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                                         <label for="activity_coordinator">活動負責人<span style="color:red">*</span></label>
-                                        <input type="text" id="activity_coordinator" name="activity_coordinator" class="form-control" placeholder="請輸入活動負責人姓名">
+                                        <input type="text" id="activity_coordinator" name="activity_coordinator" class="form-control" placeholder="請輸入活動負責人姓名" value="<?php echo htmlspecialchars($formData['activity_coordinator'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
                                 </div>
                                 <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
                                     <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                                         <label for="coordinator_department">系級<span style="color:red">*</span></label>
-                                        <input type="text" id="coordinator_department" name="coordinator_department" class="form-control" placeholder="請輸入系級">
+                                        <input type="text" id="coordinator_department" name="coordinator_department" class="form-control" placeholder="請輸入系級" value="<?php echo htmlspecialchars($formData['coordinator_department'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
                                     <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                                         <label for="coordinator_phone">聯絡電話<span style="color:red">*</span></label>
-                                        <input type="text" id="coordinator_phone" name="coordinator_phone" class="form-control" placeholder="請輸入聯絡電話">
+                                        <input type="text" id="coordinator_phone" name="coordinator_phone" class="form-control" placeholder="請輸入聯絡電話" value="<?php echo htmlspecialchars($formData['coordinator_phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
                                 </div>
                                 <div class="form-group">
                                     <label for="coordinator_other_contact">其他聯絡方式</label>
-                                    <input type="text" id="coordinator_other_contact" name="coordinator_other_contact" class="form-control" placeholder="請輸入其他聯絡方式（如 Email）">
+                                    <input type="text" id="coordinator_other_contact" name="coordinator_other_contact" class="form-control" placeholder="請輸入其他聯絡方式（如 Email）" value="<?php echo htmlspecialchars($formData['coordinator_other_contact'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                 </div>
 
                                 <div class="form-group" style="margin-top: 20px; border-top: 1px solid #ccc; padding-top: 15px;">
@@ -2855,7 +2849,10 @@ if (participantSelect) {
 }
 
 function goToStep(stepNo) {
-    if (stepNo === 2) {
+    const currentStepInput = document.getElementById("current_step");
+    const currentStep = parseInt(currentStepInput ? currentStepInput.value : 1);
+
+    if (stepNo === 2 && currentStep === 1) {
         const proposalFile = document.getElementById('proposal_file');
         if (!proposalFile || !proposalFile.value) {
             alert("請先上傳活動企劃書！");
@@ -2895,7 +2892,6 @@ function goToStep(stepNo) {
         }
     }
 
-    const currentStepInput = document.getElementById('current_step');
     if (currentStepInput) {
         currentStepInput.value = stepNo;
     }
@@ -2920,13 +2916,21 @@ function goToStep(stepNo) {
 }
 </script>
 
-<?php if ($_SERVER['REQUEST_METHOD'] === 'POST' && $borrowError !== '' && isset($_POST['current_step'])) { ?>
+<?php if ($_SERVER['REQUEST_METHOD'] === 'POST' && $borrowError !== '') { 
+    $targetStep = 1;
+    if (mb_strpos($borrowError, '器材') !== false || mb_strpos($borrowError, '場地') !== false || mb_strpos($borrowError, '空間') !== false || mb_strpos($borrowError, '數量') !== false) {
+        $targetStep = 3;
+    } elseif (mb_strpos($borrowError, '駁回') !== false || mb_strpos($borrowError, '酒精') !== false || mb_strpos($borrowError, '明火') !== false || mb_strpos($borrowError, '擺攤') !== false) {
+        $targetStep = 2;
+    } elseif (mb_strpos($borrowError, '時間') !== false || mb_strpos($borrowError, '日期') !== false || mb_strpos($borrowError, '用途') !== false) {
+        $targetStep = 1;
+    } else {
+        $targetStep = (isset($_POST['current_step']) ? (int)$_POST['current_step'] : 1);
+    }
+?>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const errorStep = <?php echo (int)($_POST['current_step']); ?>;
-    if (errorStep > 1) {
-        goToStep(errorStep);
-    }
+    goToStep(<?php echo $targetStep; ?>);
 });
 </script>
 <?php } ?>

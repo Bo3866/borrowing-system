@@ -484,8 +484,6 @@ CREATE TABLE IF NOT EXISTS space_reservation_items (
     space_item_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     reservation_id BIGINT UNSIGNED NOT NULL,
     space_id VARCHAR(30) NOT NULL,
-    proposal_file VARCHAR(255) NULL,
-    proposal_uploaded_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (space_item_id)
@@ -526,24 +524,18 @@ SQL;
             try {
                 $uploadedProposalPath = null;
 
-                // 確保 space_reservation_items 表有 proposal_file 和 proposal_uploaded_at 欄位
-                // NOTE: 如果整個表不存在，跳過 ALTER TABLE 以避免造成所有申請皆失敗。
-                $tableExistsRes = mysqli_query($link, "SHOW TABLES LIKE 'space_reservation_items'");
-                if ($tableExistsRes && mysqli_num_rows($tableExistsRes) > 0) {
-                    $proposalFileColumnResult = mysqli_query($link, "SHOW COLUMNS FROM space_reservation_items LIKE 'proposal_file'");
-                    if (!($proposalFileColumnResult && mysqli_num_rows($proposalFileColumnResult) > 0)) {
-                        if (!mysqli_query($link, "ALTER TABLE space_reservation_items ADD COLUMN proposal_file VARCHAR(255) NULL COMMENT '上傳之活動企劃書檔案路徑' AFTER space_id")) {
-                            throw new RuntimeException('無法建立 space_reservation_items.proposal_file 欄位：' . mysqli_error($link));
-                        }
+                // Ensure `reservations` has `proposal_file` and `proposal_uploaded_at` columns.
+                $reservationColsRes = mysqli_query($link, 'SHOW COLUMNS FROM reservations LIKE \'proposal_file\'');
+                if (!($reservationColsRes && mysqli_num_rows($reservationColsRes) > 0)) {
+                    if (!mysqli_query($link, "ALTER TABLE reservations ADD COLUMN proposal_file VARCHAR(255) NULL")) {
+                        @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " ALTER reservations add proposal_file failed: " . mysqli_error($link) . "\n", FILE_APPEND | LOCK_EX);
                     }
-                    $proposalUploadedAtColumnResult = mysqli_query($link, "SHOW COLUMNS FROM space_reservation_items LIKE 'proposal_uploaded_at'");
-                    if (!($proposalUploadedAtColumnResult && mysqli_num_rows($proposalUploadedAtColumnResult) > 0)) {
-                        if (!mysqli_query($link, "ALTER TABLE space_reservation_items ADD COLUMN proposal_uploaded_at DATETIME NULL COMMENT '活動企劃書上傳時間' AFTER proposal_file")) {
-                            throw new RuntimeException('無法建立 space_reservation_items.proposal_uploaded_at 欄位：' . mysqli_error($link));
-                        }
+                }
+                $reservationUploadedAtRes = mysqli_query($link, 'SHOW COLUMNS FROM reservations LIKE \'proposal_uploaded_at\'');
+                if (!($reservationUploadedAtRes && mysqli_num_rows($reservationUploadedAtRes) > 0)) {
+                    if (!mysqli_query($link, "ALTER TABLE reservations ADD COLUMN proposal_uploaded_at DATETIME NULL")) {
+                        @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " ALTER reservations add proposal_uploaded_at failed: " . mysqli_error($link) . "\n", FILE_APPEND | LOCK_EX);
                     }
-                } else {
-                    @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " SKIP ALTER: space_reservation_items table not found, skipping ALTER TABLE checks.\n", FILE_APPEND | LOCK_EX);
                 }
 
                 if ($formData['phone'] !== '') {
@@ -829,7 +821,7 @@ SQL;
                     if (!$updateProposalStmt) {
                         throw new RuntimeException('更新企劃書資訊失敗：' . mysqli_error($link));
                     }
-                    mysqli_stmt_bind_param($updateProposalStmt, 'ssi', $proposalFileForReservation, $proposalUploadedAtForReservation, $reservationId);
+                    mysqli_stmt_bind_param($updateProposalStmt, 'ssi', $proposalFileForReservation, $proposalUploadedAtForReservation, $commonReservationId);
                     mysqli_stmt_execute($updateProposalStmt);
                     mysqli_stmt_close($updateProposalStmt);
 

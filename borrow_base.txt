@@ -1,254 +1,926 @@
-<?php
-declare(strict_types=1);
-
+﻿<?php
 session_start();
+
+function getEquipmentIcon($name) {
+    if (mb_strpos($name, '麥克風') !== false) return '🎤';
+    if (mb_strpos($name, '擴音') !== false || mb_strpos($name, '音響') !== false || mb_strpos($name, '喊話器') !== false) return '🔊';
+    if (mb_strpos($name, '相機') !== false || mb_strpos($name, '攝影機') !== false) return '📷';
+    if (mb_strpos($name, '腳架') !== false) return '🔭';
+    if (mb_strpos($name, '布幕') !== false || mb_strpos($name, '投影') !== false) return '📽️';
+    if (mb_strpos($name, '鋼琴') !== false) return '🎹';
+    if (mb_strpos($name, '看板') !== false) return '📋';
+    if (mb_strpos($name, '桌') !== false) return '🪚';
+    if (mb_strpos($name, '椅') !== false) return '🪑';
+    if (mb_strpos($name, '帳') !== false) return '⛺';
+    if (mb_strpos($name, '警示') !== false || mb_strpos($name, '交通') !== false) return '🚧';
+    if (mb_strpos($name, '旗') !== false) return '🚩';
+    if (mb_strpos($name, '燈') !== false) return '💡';
+    if (mb_strpos($name, '對講機') !== false) return '📻';
+    if (mb_strpos($name, '電') !== false || mb_strpos($name, '線') !== false) return '🔌';
+    if (mb_strpos($name, '睡袋') !== false) return '🛌';
+    if (mb_strpos($name, '茶桶') !== false) return '🫖';
+    return '📦';
+}
+
+function getSpaceIcon($name) {
+    return '📍';
+}
 
 require_once __DIR__ . '/config/database.php';
 
-function formatDatetimeLocalValue(?string $value): string {
-    $value = trim((string)$value);
-    if ($value === '') {
-        return '';
-    }
-
-    $timestamp = strtotime($value);
-    if ($timestamp === false) {
-        return '';
-    }
-
-    return date('Y-m-d\TH:i', $timestamp);
-}
-
 if (!isset($_SESSION['user_id'])) {
-    header('Location: login.php?next=amend_application.php');
+    header('Location: login.php?next=borrow.php');
     exit;
 }
 
-$currentUserId = (string)$_SESSION['user_id'];
+$userId = (string)$_SESSION['user_id'];
 $displayName = (string)($_SESSION['full_name'] ?? $_SESSION['user_id']);
-$reservationId = (int)($_GET['reservation_id'] ?? 0);
-// role name for display in the UI (copied from borrow.php)
 $roleName = (string)($_SESSION['role_name'] ?? '');
 
-// Borrow page compatibility variables
-$borrowError = '';
-$borrowSuccess = '';
-
-if ($reservationId <= 0) {
-    header('Location: return_management.php');
-    exit;
-}
+// 節次設定：可依附件節次代號與時間調整
+$periodSlots = [
+    'D0' => ['label' => '日間第0節', 'start' => '07:10:00', 'end' => '08:00:00'],
+    'D1' => ['label' => '日間第1節', 'start' => '08:10:00', 'end' => '09:00:00'],
+    'D2' => ['label' => '日間第2節', 'start' => '09:10:00', 'end' => '10:00:00'],
+    'D3' => ['label' => '日間第3節', 'start' => '10:10:00', 'end' => '11:00:00'],
+    'D4' => ['label' => '日間第4節', 'start' => '11:10:00', 'end' => '12:00:00'],
+    'DN' => ['label' => '日間第5節', 'start' => '12:40:00', 'end' => '13:30:00'],
+    'D5' => ['label' => '日間第6節', 'start' => '13:40:00', 'end' => '14:30:00'],
+    'D6' => ['label' => '日間第7節', 'start' => '14:40:00', 'end' => '15:30:00'],
+    'D7' => ['label' => '日間第8節', 'start' => '15:40:00', 'end' => '16:30:00'],
+    'D8' => ['label' => '夜間第1節', 'start' => '16:40:00', 'end' => '17:30:00'],
+    'E0' => ['label' => '夜間第2節', 'start' => '17:40:00', 'end' => '18:30:00'],
+    'E1' => ['label' => '夜間第3節', 'start' => '18:40:00', 'end' => '19:30:00'],
+    'E2' => ['label' => '夜間第4節', 'start' => '19:35:00', 'end' => '20:20:00'],
+    'E3' => ['label' => '夜間第5節', 'start' => '20:30:00', 'end' => '21:20:00'],
+    'E4' => ['label' => '夜間第6節', 'start' => '21:25:00', 'end' => '22:10:00'],
+];
+$periodOrder = array_keys($periodSlots);
 
 $dbError = '';
 $link = getMysqliConnection($dbError);
 
-$amendError = '';
-$amendSuccess = '';
-$revisionData = [];
-
+$userPhone = '';
 if ($dbError === '') {
-    // 查詢該預約是否屬於當前用戶且狀態為 need_revision
-    // Build SELECT dynamically based on existing columns to avoid unknown column errors
-    $availableCols = [];
-    $colRes = mysqli_query($link, "SHOW COLUMNS FROM reservations");
-    if ($colRes) {
-        while ($crow = mysqli_fetch_assoc($colRes)) {
-            $availableCols[] = (string)$crow['Field'];
+    $phoneStmt = mysqli_prepare($link, 'SELECT phone FROM users WHERE user_id = ? LIMIT 1');
+    if ($phoneStmt) {
+        mysqli_stmt_bind_param($phoneStmt, 's', $userId);
+        mysqli_stmt_execute($phoneStmt);
+        $phoneResult = mysqli_stmt_get_result($phoneStmt);
+        if ($phoneResult) {
+            $phoneRow = mysqli_fetch_assoc($phoneResult);
+            if ($phoneRow && isset($phoneRow['phone'])) {
+                $userPhone = trim((string)$phoneRow['phone']);
+            }
         }
-        mysqli_free_result($colRes);
+        mysqli_stmt_close($phoneStmt);
     }
+}
 
-    $wanted = [
-        'reservation_id','user_id','approval_status','revision_data_json','revision_deadline',
-        'organization_name','activity_name','participant_count','staff_count','club_president',
-        'activity_coordinator','coordinator_department','coordinator_phone','coordinator_other_contact',
-        'vehicle_entry','setup_flags','flag_details',
-        'has_alcohol','has_fire','has_sales','purpose','phone','borrow_start_at','borrow_end_at','space_id'
-    ];
-    $selectCols = [];
-    foreach ($wanted as $c) {
-                        // If a proposal PDF is uploaded during amend, save it to reservations.proposal_file
-                        if (isset($_FILES['proposal_file']) && $_FILES['proposal_file']['error'] !== UPLOAD_ERR_NO_FILE) {
-                            $file = $_FILES['proposal_file'];
-        if (in_array($c, $availableCols, true)) {
-            $selectCols[] = "r." . $c;
+$equipmentMap = [];
+$spaceMap = [];
+$existingSpaceReservations = [];
+$existingEquipmentReservations = [];
+if ($dbError === '') {
+    $equipmentSql = "
+        SELECT
+            ec.equipment_code,
+            ec.equipment_name,
+            ec.borrow_limit_quantity,
+            COALESCE(SUM(CASE WHEN e.operation_status = 1 THEN 1 ELSE 0 END), 0) - COALESCE(COUNT(eri.equipment_id), 0) AS available_quantity
+        FROM equipment_categories ec
+        LEFT JOIN equipments e ON e.equipment_code = ec.equipment_code
+        LEFT JOIN equipment_reservation_items eri ON e.equipment_id = eri.equipment_id
+        LEFT JOIN reservations r ON eri.reservation_id = r.reservation_id
+            AND r.borrow_start_at <= NOW()
+            AND r.borrow_end_at > NOW()
+            AND r.approval_status IN ('pending', 'approved')
+        GROUP BY ec.equipment_code, ec.equipment_name, ec.borrow_limit_quantity
+        ORDER BY ec.equipment_code ASC
+    ";
+
+    $equipmentResult = mysqli_query($link, $equipmentSql);
+    if ($equipmentResult) {
+        while ($row = mysqli_fetch_assoc($equipmentResult)) {
+            $code = (string)$row['equipment_code'];
+            $limit = $row['borrow_limit_quantity'] !== null ? (int)$row['borrow_limit_quantity'] : null;
+            $equipmentMap[$code] = [
+                'equipment_code' => $code,
+                'equipment_name' => (string)$row['equipment_name'],
+                'borrow_limit_quantity' => $limit,
+                'available_quantity' => (int)$row['available_quantity'],
+            ];
         }
-    }
-    if (empty($selectCols)) {
-        $amendError = '資料表欄位不足，無法讀取申請資料。';
-        $reservationRow = null;
     } else {
-        $sql = 'SELECT ' . implode(', ', $selectCols) . ' FROM reservations r WHERE r.reservation_id = ? AND r.user_id = ? LIMIT 1';
-                        $maxBytes = 5 * 1024 * 1024; // 5MB
-                        if ($file['size'] > $maxBytes) {
-                            throw new RuntimeException('企劃書大小超過 5MB 限制。');
-                        }
-        $checkStmt = mysqli_prepare($link, $sql);
-        if ($checkStmt) {
-            mysqli_stmt_bind_param($checkStmt, 'is', $reservationId, $currentUserId);
-            mysqli_stmt_execute($checkStmt);
-            $checkResult = mysqli_stmt_get_result($checkStmt);
-            $reservationRow = $checkResult ? mysqli_fetch_assoc($checkResult) : null;
-            mysqli_stmt_close($checkStmt);
+        $dbError = '讀取器材資料失敗：' . mysqli_error($link);
+    }
+
+    if ($dbError === '') {
+        $spaceSql = "
+            SELECT
+                s.space_id,
+                s.space_name,
+                s.capacity,
+                s.space_status
+            FROM spaces s
+            WHERE s.space_status IN ('available', '1')
+            ORDER BY s.space_id ASC
+        ";
+
+        $spaceResult = mysqli_query($link, $spaceSql);
+        if ($spaceResult) {
+            while ($row = mysqli_fetch_assoc($spaceResult)) {
+                $spaceId = (string)$row['space_id'];
+                $spaceMap[$spaceId] = [
+                    'space_id' => $spaceId,
+                    'space_name' => (string)$row['space_name'],
+                    'capacity' => (int)$row['capacity'],
+                    'space_status' => (string)$row['space_status'],
+                ];
+            }
         } else {
-            $reservationRow = null;
+            $dbError = '讀取空間資料失敗：' . mysqli_error($link);
+        }
+
+        // 讀取既有空間預約，提供前端節次衝突提示使用
+        // 若資料表尚未建立，維持空陣列即可，不中斷頁面。
+        $spaceItemsTableRes = mysqli_query($link, "SHOW TABLES LIKE 'space_reservation_items'");
+        if ($spaceItemsTableRes && mysqli_num_rows($spaceItemsTableRes) > 0) {
+            $existingReservationsSql = "
+                SELECT
+                    sri.space_id,
+                    DATE(r.borrow_start_at) AS reserve_date,
+                    TIME(r.borrow_start_at) AS reserve_start,
+                    TIME(r.borrow_end_at) AS reserve_end
+                FROM space_reservation_items sri
+                JOIN reservations r ON r.reservation_id = sri.reservation_id
+                WHERE r.approval_status IN ('pending', 'approved')
+            ";
+            $existingReservationsResult = mysqli_query($link, $existingReservationsSql);
+            if ($existingReservationsResult) {
+                while ($existingRow = mysqli_fetch_assoc($existingReservationsResult)) {
+                    $existingSpaceReservations[] = [
+                        'space_id' => (string)$existingRow['space_id'],
+                        'date' => (string)$existingRow['reserve_date'],
+                        'start' => (string)$existingRow['reserve_start'],
+                        'end' => (string)$existingRow['reserve_end'],
+                    ];
+                }
+            }
+        }
+        // 讀取既有器材預約（按日），提供前端當日是否已借出判定
+        $equipItemsTableRes = mysqli_query($link, "SHOW TABLES LIKE 'equipment_reservation_items'");
+        if ($equipItemsTableRes && mysqli_num_rows($equipItemsTableRes) > 0) {
+            $existingEquipSql = "
+                SELECT
+                    e.equipment_code,
+                    DATE(r.borrow_start_at) AS reserve_date
+                FROM equipment_reservation_items eri
+                JOIN reservations r ON r.reservation_id = eri.reservation_id
+                JOIN equipments e ON eri.equipment_id = e.equipment_id
+                WHERE r.approval_status IN ('pending', 'approved')
+            ";
+            $existingEquipResult = mysqli_query($link, $existingEquipSql);
+            if ($existingEquipResult) {
+                while ($erow = mysqli_fetch_assoc($existingEquipResult)) {
+                    $existingEquipmentReservations[] = [
+                        'equipment_code' => (string)$erow['equipment_code'],
+                        'date' => (string)$erow['reserve_date'],
+                    ];
+                }
+            }
         }
     }
-        
-        // 查詢該預約的設備項目
-        $equipmentItems = [];
-        $equipStmt = mysqli_prepare($link, '
-            SELECT eri.equipment_id, e.equipment_code, ec.equipment_name, eri.borrow_quantity
-            FROM equipment_reservation_items eri
-            JOIN equipments e ON e.equipment_id = eri.equipment_id
-            JOIN equipment_categories ec ON ec.equipment_code = e.equipment_code
-            WHERE eri.reservation_id = ?
-            ORDER BY ec.equipment_code ASC
-        ');
-        if ($equipStmt) {
-            mysqli_stmt_bind_param($equipStmt, 'i', $reservationId);
-            mysqli_stmt_execute($equipStmt);
-            $equipResult = mysqli_stmt_get_result($equipStmt);
-            while ($equipRow = $equipResult ? mysqli_fetch_assoc($equipResult) : null) {
-                $equipmentItems[] = $equipRow;
-            }
-            mysqli_stmt_close($equipStmt);
-        }
-        
-        // 查詢該預約的空間項目
-        $spaceItems = [];
-        $spaceStmt = mysqli_prepare($link, '
-            SELECT sri.space_id, s.space_name, s.capacity
-            FROM space_reservation_items sri
-            JOIN spaces s ON s.space_id = sri.space_id
-            WHERE sri.reservation_id = ?
-            ORDER BY s.space_id ASC
-        ');
-        if ($spaceStmt) {
-            mysqli_stmt_bind_param($spaceStmt, 'i', $reservationId);
-            mysqli_stmt_execute($spaceStmt);
-            $spaceResult = mysqli_stmt_get_result($spaceStmt);
-            while ($spaceRow = $spaceResult ? mysqli_fetch_assoc($spaceResult) : null) {
-                $spaceItems[] = $spaceRow;
-            }
-            mysqli_stmt_close($spaceStmt);
-        }
-        
-        if (!$reservationRow) {
-            $amendError = '找不到該申請或無權限修改。';
-        } elseif ($reservationRow['approval_status'] !== 'need_revision') {
-            $amendError = '該申請不在補件狀態，無法修改。';
-        } else {
-            // 解析原始申請數據（優先用 revision_data_json，如果為空則用當前欄位值）
-            if (!empty($reservationRow['revision_data_json'])) {
-                $revisionData = (array)json_decode($reservationRow['revision_data_json'], true) ?: [];
-            }
-            
-            // 如果 revisionData 仍為空，直接從 reservationRow 取當前值作為備用
-            if (empty($revisionData)) {
-                $revisionData = [
-                    'organization_name' => $reservationRow['organization_name'] ?? '',
-                    'activity_name' => $reservationRow['activity_name'] ?? '',
-                    'participant_count' => $reservationRow['participant_count'] ?? '',
-                    'staff_count' => $reservationRow['staff_count'] ?? 0,
-                    'club_president' => $reservationRow['club_president'] ?? '',
-                    'activity_coordinator' => $reservationRow['activity_coordinator'] ?? '',
-                    'coordinator_department' => $reservationRow['coordinator_department'] ?? '',
-                    'coordinator_phone' => $reservationRow['coordinator_phone'] ?? '',
-                    'coordinator_other_contact' => $reservationRow['coordinator_other_contact'] ?? '',
-                    'vehicle_entry' => $reservationRow['vehicle_entry'] ?? 'no',
-                    'setup_flags' => $reservationRow['setup_flags'] ?? 'no',
-                    'flag_details' => $reservationRow['flag_details'] ?? '',
-                    'has_alcohol' => $reservationRow['has_alcohol'] ?? '',
-                    'has_fire' => $reservationRow['has_fire'] ?? '',
-                    'has_sales' => $reservationRow['has_sales'] ?? '',
-                    'purpose' => $reservationRow['purpose'] ?? '',
-                    'phone' => $reservationRow['phone'] ?? '',
-                    }
-                    'borrow_start_at' => $reservationRow['borrow_start_at'] ?? '',
-                    'borrow_end_at' => $reservationRow['borrow_end_at'] ?? '',
-                    'space_id' => $reservationRow['space_id'] ?? '',
-                ];
-            }
-            
-            // 將設備和空間項目存入 revisionData
-            $revisionData['equipment_items'] = $equipmentItems;
-            $revisionData['space_items'] = $spaceItems;
-            
-            if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-                // 收集修改後的表單數據
-                $updatedFields = [
-                    'organization_name' => trim((string)($_POST['organization_name'] ?? '')),
-                    'activity_name' => trim((string)($_POST['activity_name'] ?? '')),
-                    'participant_count' => trim((string)($_POST['participant_count'] ?? '')),
-                    'staff_count' => (int)($_POST['staff_count'] ?? 0),
-                    'club_president' => trim((string)($_POST['club_president'] ?? '')),
-                    'activity_coordinator' => trim((string)($_POST['activity_coordinator'] ?? '')),
-                    'coordinator_department' => trim((string)($_POST['coordinator_department'] ?? '')),
-                    'coordinator_phone' => trim((string)($_POST['coordinator_phone'] ?? '')),
-                    'coordinator_other_contact' => trim((string)($_POST['coordinator_other_contact'] ?? '')),
-                    'vehicle_entry' => trim((string)($_POST['vehicle_entry'] ?? 'no')),
-                    'setup_flags' => trim((string)($_POST['setup_flags'] ?? 'no')),
-                    'flag_details' => trim((string)($_POST['flag_details'] ?? '')),
-                    'has_alcohol' => isset($_POST['has_alcohol']) ? '1' : '',
-                    'has_fire' => isset($_POST['has_fire']) ? '1' : '',
-                    'has_sales' => isset($_POST['has_sales']) ? '1' : '',
-                    'purpose' => trim((string)($_POST['purpose'] ?? '')),
-                    'phone' => trim((string)($_POST['phone'] ?? '')),
-                ];
-                
-                // 驗證必填欄位
-                if ($updatedFields['organization_name'] === '') {
-                    $amendError = '請填寫單位名稱。';
-                } elseif ($updatedFields['activity_name'] === '') {
-                    $amendError = '請填寫活動名稱。';
-                } elseif ($updatedFields['purpose'] === '') {
-                    $amendError = '請填寫用途說明。';
-                } else {
-                    // 更新預約
-                    mysqli_begin_transaction($link);
-                    try {
-                        $updateFields = [];
-                        $updateValues = [];
-                        $updateTypes = '';
-                        
-                        foreach ($updatedFields as $key => $value) {
-                            $updateFields[] = "{$key} = ?";
-                            $updateValues[] = $value;
-                            if (is_int($value)) {
-                                $updateTypes .= 'i';
-                            } else {
-                                $updateTypes .= 's';
-                            }
-                        }
-                        
-                        $updateValues[] = $reservationId;
-                        $updateTypes .= 'i';
-                        
-                        $updateSql = 'UPDATE reservations SET ' . implode(', ', $updateFields) . ', approval_status = "pending", updated_at = NOW() WHERE reservation_id = ?';
-                        $updateStmt = mysqli_prepare($link, $updateSql);
-                        
-                        if (!$updateStmt) {
-                            throw new RuntimeException('準備更新語句失敗：' . mysqli_error($link));
-                        }
-                        
-                        mysqli_stmt_bind_param($updateStmt, $updateTypes, ...$updateValues);
-                        mysqli_stmt_execute($updateStmt);
-                        mysqli_stmt_close($updateStmt);
+}
 
-                        if (mysqli_errno($link) !== 0) {
-                            throw new RuntimeException('更新失敗，請稍後再試。');
-                        }
-                        
-                        mysqli_commit($link);
-                        $amendSuccess = '補件已提交，已重新進入審核流程。';
-                        // 更新顯示數據
-                        $revisionData = $updatedFields;
-                    } catch (Throwable $e) {
-                        mysqli_rollback($link);
-                        $amendError = $e->getMessage();
+$reservationApplicantColumn = 'user_id';
+
+$borrowError = '';
+$borrowSuccess = '';
+$formData = [
+    'organization_name' => '',
+    'activity_name' => '',
+    'participant_count' => '',
+    'staff_count' => '',
+    'club_president' => '',
+    'activity_coordinator' => '',
+    'coordinator_department' => '',
+    'coordinator_phone' => '',
+    'coordinator_other_contact' => '',
+    'vehicle_entry' => 'no',
+    'setup_flags' => 'no',
+    'flag_details' => '',
+    'flag_applicant_unit' => '',
+    'flag_manager' => '',
+    'flag_phone' => '',
+    'flag_activity_name' => '',
+    'flag_start_date' => '',
+    'flag_end_date' => '',
+    'flag_count' => 0,
+    'flag_location' => '',
+    'flag_agreement' => '',
+    'resource_type' => 'equipment',
+    'equipment_code' => '',
+    'space_id' => '',
+    'borrow_start_date' => '',
+    'borrow_start_time' => '',
+    'borrow_end_date' => '',
+    'borrow_end_time' => '',
+    'has_alcohol' => '',
+    'has_fire' => '',
+    'has_sales' => '',
+    'purpose' => '',
+    'phone' => $userPhone,
+];
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " POST handler invoked\nPOST:" . json_encode($_POST) . "\nFILES:" . json_encode(array_map(function($f){ return is_array($f)?array_merge($f,['tmp_name'=>'...']):$f; }, $_FILES)) . "\n\n", FILE_APPEND | LOCK_EX);
+    $formData['resource_type'] = trim((string)($_POST['resource_type'] ?? 'equipment'));
+    $cartItemsRaw = trim((string)($_POST['cart_items'] ?? '[]'));
+    $cartItems = json_decode($cartItemsRaw, true);
+    if (!is_array($cartItems)) {
+        $cartItems = [];
+    }
+    // We override equipment_code since cart_items processes multiple
+    $formData['equipment_code'] = 'unused';
+    $formData['organization_name'] = trim((string)($_POST['organization_name'] ?? ''));
+    $formData['activity_name'] = trim((string)($_POST['activity_name'] ?? ''));
+    $formData['participant_count'] = trim((string)($_POST['participant_count'] ?? ''));
+    $formData['staff_count'] = trim((string)($_POST['staff_count'] ?? ''));
+    $formData['club_president'] = trim((string)($_POST['club_president'] ?? ''));
+    $formData['activity_coordinator'] = trim((string)($_POST['activity_coordinator'] ?? ''));
+    $formData['coordinator_department'] = trim((string)($_POST['coordinator_department'] ?? ''));
+    $formData['coordinator_phone'] = trim((string)($_POST['coordinator_phone'] ?? ''));
+    $formData['coordinator_other_contact'] = trim((string)($_POST['coordinator_other_contact'] ?? ''));
+    $formData['vehicle_entry'] = trim((string)($_POST['vehicle_entry'] ?? 'no'));
+    $formData['setup_flags'] = trim((string)($_POST['setup_flags'] ?? 'no'));
+    $formData['flag_details'] = trim((string)($_POST['flag_details'] ?? ''));
+    $formData['flag_applicant_unit'] = trim((string)($_POST['flag_applicant_unit'] ?? ''));
+    $formData['flag_manager'] = trim((string)($_POST['flag_manager'] ?? ''));
+    $formData['flag_phone'] = trim((string)($_POST['flag_phone'] ?? ''));
+    $formData['flag_activity_name'] = trim((string)($_POST['flag_activity_name'] ?? ''));
+    $formData['flag_start_date'] = trim((string)($_POST['flag_start_date'] ?? ''));
+    $formData['flag_end_date'] = trim((string)($_POST['flag_end_date'] ?? ''));
+    $formData['flag_count'] = (int)($_POST['flag_count'] ?? 0);
+    $formData['flag_location'] = trim((string)($_POST['flag_location'] ?? ''));
+    $formData['flag_agreement'] = isset($_POST['flag_agreement']) ? '1' : '';
+    $formData['space_id'] = trim((string)($_POST['space_id'] ?? ''));
+    $formData['borrow_start_date'] = trim((string)($_POST['borrow_start_date'] ?? ''));
+    
+    $bsh = $_POST['borrow_start_time_h'] ?? '';
+    $bsm = $_POST['borrow_start_time_m'] ?? '';
+    $formData['borrow_start_time'] = ($bsh !== '' && $bsm !== '') ? sprintf('%02d:%02d:00', $bsh, $bsm) : '';
+
+    $formData['borrow_end_date'] = trim((string)($_POST['borrow_end_date'] ?? ''));
+    
+    $beh = $_POST['borrow_end_time_h'] ?? '';
+    $bem = $_POST['borrow_end_time_m'] ?? '';
+    $formData['borrow_end_time'] = ($beh !== '' && $bem !== '') ? sprintf('%02d:%02d:00', $beh, $bem) : '';
+
+    $formData['has_alcohol'] = isset($_POST['has_alcohol']) ? '1' : '';
+    $formData['has_fire'] = isset($_POST['has_fire']) ? '1' : '';
+    $formData['has_sales'] = isset($_POST['has_sales']) ? '1' : '';
+
+    $formData['purpose'] = trim((string)($_POST['purpose'] ?? ''));
+    $formData['phone'] = trim((string)($_POST['phone'] ?? ''));
+
+    $cartEquipments = [];
+    $cartSpaceId = null;
+
+    foreach ($cartItems as $item) {
+        if (isset($item['type']) && $item['type'] === 'space') {
+            $cartSpaceId = trim((string)$item['code']);
+        } else {
+            $cartEquipments[] = $item;
+        }
+    }
+    $formData['cartEquipments'] = $cartEquipments;
+    $formData['space_id'] = $cartSpaceId ?? '';
+
+    if ($dbError !== '') {
+        $borrowError = $dbError;
+    } elseif (empty($cartEquipments) && empty($formData['space_id'])) {
+        $borrowError = '請選擇至少一項器材或一個場地。';
+    } else {
+        // 先計算借用時間（用於後續驗證）
+        $borrowStartAtSql = '';
+        $borrowEndAtSql = '';
+        
+        if (
+            $formData['borrow_start_date'] !== '' &&
+            $formData['borrow_start_time'] !== '' &&
+            $formData['borrow_end_date'] !== '' &&
+            $formData['borrow_end_time'] !== ''
+        ) {
+            $borrowStartAtSql = $formData['borrow_start_date'] . ' ' . $formData['borrow_start_time'];
+            $borrowEndAtSql = $formData['borrow_end_date'] . ' ' . $formData['borrow_end_time'];
+            
+            if (strtotime($borrowStartAtSql) < time()) {
+                $borrowError = '借用開始時間不可為過去時間。';
+            } elseif (strtotime($borrowEndAtSql) <= strtotime($borrowStartAtSql)) {
+                $borrowError = '結束時間不可早於或等於開始時間。';
+            } else {
+                if ($formData['has_alcohol'] === '1' || $formData['has_fire'] === '1' || $formData['has_sales'] === '1') {
+                    $limitTime = strtotime('+30 days', strtotime(date('Y-m-d 00:00:00')));
+                    if (strtotime($borrowStartAtSql) < $limitTime) {
+                        $borrowError = '送出駁回，有酒精、有明火、需擺攤販售者請於一個月以前送出。';
                     }
                 }
+            }
+        }
+
+        $selectedEquipment = null;
+        $selectedSpace = null;
+        $borrowQuantity = 1;
+
+        if (!empty($cartEquipments) && $borrowError === '') {
+            $certificateCheckSql = "
+                SELECT 1
+                FROM equipment_certificates
+                WHERE holder_id = ?
+                  AND validity_status = 'valid'
+                  AND CURDATE() <= valid_until
+            ";
+            $certStmt = mysqli_prepare($link, $certificateCheckSql);
+            mysqli_stmt_bind_param($certStmt, 's', $userId);
+            mysqli_stmt_execute($certStmt);
+            $certResult = mysqli_stmt_get_result($certStmt);
+            $hasValidCertificate = mysqli_num_rows($certResult) > 0;
+            mysqli_stmt_close($certStmt);
+
+            if (!$hasValidCertificate) {
+                $borrowError = '您沒有有效的器材證照，無法借用器材。';
+            } else {
+                foreach ($cartEquipments as $item) {
+                        $cCode = $item['code'] ?? '';
+                        $cQty = (int)($item['quantity'] ?? 0);
+                        if (!isset($equipmentMap[$cCode])) {
+                            $borrowError = "找不到器材：{$cCode}。";
+                            break;
+                        }
+                        $selectedE = $equipmentMap[$cCode];
+                        
+                        $selectedEquipment = $selectedE;
+                        
+                        if ($cQty <= 0) {
+                            $borrowError = "{$selectedE['equipment_name']} 借用數量須大於 0。";
+                            break;
+                        }
+                        if ($selectedE['borrow_limit_quantity'] !== null && $cQty > (int)$selectedE['borrow_limit_quantity']) {
+                            $borrowError = "{$selectedE['equipment_name']} 借用數量超過限借數量。";
+                            break;
+                        }
+                        if ($cQty > (int)$selectedE['available_quantity']) {
+                            $borrowError = "{$selectedE['equipment_name']} 借用數量超過目前可借用數量。";
+                            break;
+                        }
+                        
+                        if ($selectedE['borrow_limit_quantity'] !== null) {
+                            $reservApplicantCol = $reservationApplicantColumn;
+                            $tqSql = sprintf(
+                                'SELECT COALESCE(COUNT(eri.equipment_id), 0) AS total_quantity
+                                 FROM reservations r
+                                 JOIN equipment_reservation_items eri ON r.reservation_id = eri.reservation_id
+                                 JOIN equipments e ON eri.equipment_id = e.equipment_id
+                                 WHERE r.%s = ?
+                                   AND r.approval_status IN ("pending", "approved")
+                                   AND e.equipment_code = ?'
+                                , $reservApplicantCol
+                            );
+                            $tqStmt = mysqli_prepare($link, $tqSql);
+                            if ($tqStmt) {
+                                mysqli_stmt_bind_param($tqStmt, 'ss', $userId, $cCode);
+                                mysqli_stmt_execute($tqStmt);
+                                $tqRes = mysqli_stmt_get_result($tqStmt);
+                                $tqRow = $tqRes ? mysqli_fetch_assoc($tqRes) : null;
+                                mysqli_stmt_close($tqStmt);
+                                
+                                $cTotal = $tqRow ? (int)$tqRow['total_quantity'] : 0;
+                                $nTotal = $cTotal + $cQty;
+                                if ($nTotal > (int)$selectedE['borrow_limit_quantity']) {
+                                    $borrowError = sprintf(
+                                        '%s 未完成預約共 %d 個，加上本次申請 %d 個共 %d 個，超過限借數量 %d 個。',
+                                        $selectedE['equipment_name'],
+                                        $cTotal,
+                                        $cQty,
+                                        $nTotal,
+                                        (int)$selectedE['borrow_limit_quantity']
+                                    );
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (!empty($formData['space_id']) && $borrowError === '') {
+            if (!isset($spaceMap[$formData['space_id']])) {
+                $borrowError = '請選擇有效的空間項目。';
+            } else {
+                $selectedSpace = $spaceMap[$formData['space_id']];
+                $spaceStatusVal = (string)$selectedSpace['space_status'];
+                // Allow borrow when status is textual 'available' or numeric '1'.
+                // Treat other values (eg 'maintenance','disabled','2') as not borrowable.
+                if (!in_array($spaceStatusVal, ['available', '1'], true)) {
+                    $borrowError = '所選空間目前不可借用。';
+                }
+            }
+        }
+
+        if ($borrowError !== '') {
+            // Keep the first validation error.
+            @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " VALIDATION ERROR: " . $borrowError . "\nPOST:" . json_encode($_POST) . "\nFILES:" . json_encode(array_map(function($f){ return is_array($f)?array_merge($f,['tmp_name'=>'...']):$f; }, $_FILES)) . "\n\n", FILE_APPEND | LOCK_EX);
+        } elseif (
+            $formData['borrow_start_date'] === '' ||
+            $formData['borrow_start_time'] === '' ||
+            $formData['borrow_end_date'] === '' ||
+            $formData['borrow_end_time'] === ''
+        ) {
+            $borrowError = '請完整填寫借用起訖日期與時間。';
+        } elseif ($formData['purpose'] === '') {
+            $borrowError = '請填寫用途說明。';
+        } elseif ($formData['setup_flags'] === 'yes' && $formData['flag_count'] > 20) {
+            $borrowError = '宣傳旗幟最多只能選 20 支。';
+        } else {
+            $submittedResourceType = $formData['resource_type'];
+        }
+
+        if ($borrowError === '') {
+
+                        // Ensure essential reservation-related tables exist so inserts won't fail
+                        // (uses safe CREATE TABLE IF NOT EXISTS statements copied from schema)
+                        $createReservationsSql = <<<SQL
+CREATE TABLE IF NOT EXISTS reservations (
+    reservation_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    user_id VARCHAR(10) NOT NULL,
+    proposal_file VARCHAR(255) NULL,
+    proposal_uploaded_at DATETIME NULL,
+    submitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    borrow_start_at DATETIME NOT NULL,
+    borrow_end_at DATETIME NOT NULL,
+    approval_status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+    returned_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (reservation_id)
+) ENGINE=InnoDB;
+SQL;
+
+                        $createEquipItemsSql = <<<SQL
+CREATE TABLE IF NOT EXISTS equipment_reservation_items (
+    equipment_item_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    reservation_id BIGINT UNSIGNED NOT NULL,
+    equipment_id BIGINT UNSIGNED NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (equipment_item_id)
+) ENGINE=InnoDB;
+SQL;
+
+                        $createSpaceItemsSql = <<<SQL
+CREATE TABLE IF NOT EXISTS space_reservation_items (
+    space_item_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    reservation_id BIGINT UNSIGNED NOT NULL,
+    space_id VARCHAR(30) NOT NULL,
+    proposal_file VARCHAR(255) NULL,
+    proposal_uploaded_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (space_item_id)
+) ENGINE=InnoDB;
+SQL;
+
+                        $createSignoffsSql = <<<SQL
+CREATE TABLE IF NOT EXISTS equipment_signoffs (
+    signoff_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    reservation_id BIGINT UNSIGNED NOT NULL,
+    certificate_id BIGINT UNSIGNED NULL,
+    reviewer_id VARCHAR(10) NOT NULL,
+    signoff_status ENUM('approved','rejected','pending') NOT NULL DEFAULT 'pending',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (signoff_id)
+) ENGINE=InnoDB;
+SQL;
+
+                        // Run creates but do not fail the whole flow on DDL error; log instead
+                        if ($link) {
+                                if (!mysqli_query($link, $createReservationsSql)) {
+                                        @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " CREATE reservations failed: " . mysqli_error($link) . "\n", FILE_APPEND | LOCK_EX);
+                                }
+                                if (!mysqli_query($link, $createEquipItemsSql)) {
+                                        @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " CREATE equipment_reservation_items failed: " . mysqli_error($link) . "\n", FILE_APPEND | LOCK_EX);
+                                }
+                                if (!mysqli_query($link, $createSpaceItemsSql)) {
+                                        @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " CREATE space_reservation_items failed: " . mysqli_error($link) . "\n", FILE_APPEND | LOCK_EX);
+                                }
+                                if (!mysqli_query($link, $createSignoffsSql)) {
+                                        @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " CREATE equipment_signoffs failed: " . mysqli_error($link) . "\n", FILE_APPEND | LOCK_EX);
+                                }
+                        }
+
+                        mysqli_begin_transaction($link);
+
+            try {
+                $uploadedProposalPath = null;
+
+                // 確保 space_reservation_items 表有 proposal_file 和 proposal_uploaded_at 欄位
+                // NOTE: 如果整個表不存在，跳過 ALTER TABLE 以避免造成所有申請皆失敗。
+                $tableExistsRes = mysqli_query($link, "SHOW TABLES LIKE 'space_reservation_items'");
+                if ($tableExistsRes && mysqli_num_rows($tableExistsRes) > 0) {
+                    $proposalFileColumnResult = mysqli_query($link, "SHOW COLUMNS FROM space_reservation_items LIKE 'proposal_file'");
+                    if (!($proposalFileColumnResult && mysqli_num_rows($proposalFileColumnResult) > 0)) {
+                        if (!mysqli_query($link, "ALTER TABLE space_reservation_items ADD COLUMN proposal_file VARCHAR(255) NULL COMMENT '上傳之活動企劃書檔案路徑' AFTER space_id")) {
+                            throw new RuntimeException('無法建立 space_reservation_items.proposal_file 欄位：' . mysqli_error($link));
+                        }
+                    }
+                    $proposalUploadedAtColumnResult = mysqli_query($link, "SHOW COLUMNS FROM space_reservation_items LIKE 'proposal_uploaded_at'");
+                    if (!($proposalUploadedAtColumnResult && mysqli_num_rows($proposalUploadedAtColumnResult) > 0)) {
+                        if (!mysqli_query($link, "ALTER TABLE space_reservation_items ADD COLUMN proposal_uploaded_at DATETIME NULL COMMENT '活動企劃書上傳時間' AFTER proposal_file")) {
+                            throw new RuntimeException('無法建立 space_reservation_items.proposal_uploaded_at 欄位：' . mysqli_error($link));
+                        }
+                    }
+                } else {
+                    @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " SKIP ALTER: space_reservation_items table not found, skipping ALTER TABLE checks.\n", FILE_APPEND | LOCK_EX);
+                }
+
+                if ($formData['phone'] !== '') {
+                    $updatePhoneStmt = mysqli_prepare($link, 'UPDATE users SET phone = ? WHERE user_id = ?');
+                    if (!$updatePhoneStmt) {
+                        throw new RuntimeException('更新聯絡電話失敗：' . mysqli_error($link));
+                    }
+                    mysqli_stmt_bind_param($updatePhoneStmt, 'ss', $formData['phone'], $userId);
+                    mysqli_stmt_execute($updatePhoneStmt);
+                    mysqli_stmt_close($updatePhoneStmt);
+                }
+                $applicantColumn = $reservationApplicantColumn;
+
+                // 檢查 reservations 表是否有 purpose 與 certificate_id 欄位，視情況決定 INSERT 欄位
+                $reservationCols = [];
+                $colRes = mysqli_query($link, 'SHOW COLUMNS FROM reservations');
+                if ($colRes) {
+                    while ($crow = mysqli_fetch_assoc($colRes)) {
+                        $reservationCols[] = (string)$crow['Field'];
+                    }
+                }
+                $hasPurposeCol = in_array('purpose', $reservationCols, true);
+                $hasCertificateIdCol = in_array('certificate_id', $reservationCols, true);
+
+                $hasSubmittedAtCol = in_array('submitted_at', $reservationCols, true);
+                $hasApprovalStageCol = in_array('approval_stage', $reservationCols, true);
+                
+                $submittedAtVal = date('Y-m-d H:i:s'); // 保證同一批次提交時間一致
+                $insertCols = [$applicantColumn, 'borrow_start_at', 'borrow_end_at', 'organization_name', 'activity_name', 'participant_count', 'staff_count', 'club_president', 'activity_coordinator', 'coordinator_department', 'coordinator_phone', 'coordinator_other_contact', 'vehicle_entry', 'setup_flags', 'flag_details'];
+                $bindValuesTemplate = [$userId, $borrowStartAtSql, $borrowEndAtSql, $formData['organization_name'], $formData['activity_name'], $formData['participant_count'], (int)$formData['staff_count'], $formData['club_president'], $formData['activity_coordinator'], $formData['coordinator_department'], $formData['coordinator_phone'], $formData['coordinator_other_contact'], $formData['vehicle_entry'], $formData['setup_flags'], $formData['flag_details']];
+                $bindTypesTemplate = 'ssssssissssssss';
+
+                if ($hasPurposeCol) {
+                    $insertCols[] = 'purpose';
+                    $bindValuesTemplate[] = $formData['purpose'];
+                    $bindTypesTemplate .= 's';
+                }
+                
+                if ($hasSubmittedAtCol) {
+                    $insertCols[] = 'submitted_at';
+                    $bindValuesTemplate[] = $submittedAtVal;
+                    $bindTypesTemplate .= 's';
+                }
+
+                if ($hasApprovalStageCol) {
+                    // new submissions start at stage 'a'
+                    $insertCols[] = 'approval_stage';
+                    $bindValuesTemplate[] = 'a';
+                    $bindTypesTemplate .= 's';
+                }
+
+                $colsSql = implode(", ", $insertCols) . ", approval_status, created_at";
+                if ($hasCertificateIdCol) {
+                    $colsSql .= ", certificate_id";
+                }
+
+                $placeholders = implode(', ', array_fill(0, count($insertCols), '?')) . ', "pending", NOW()' . ($hasCertificateIdCol ? ', NULL' : '');
+                $insertReservationSql = sprintf("INSERT INTO reservations ( %s ) VALUES (%s)", $colsSql, $placeholders);
+
+                $createdReservationIds = [];
+
+                // 企劃書相關變數
+                $proposalFileForSpace = null;
+                $proposalUploadedAtForSpace = null;
+
+                // 只建立一張預約單 (不論是借器材還是場地)
+                $reservationStmt = mysqli_prepare($link, $insertReservationSql);
+                if (!$reservationStmt) {
+                    throw new RuntimeException('建立預約主檔失敗：' . mysqli_error($link));
+                }
+                mysqli_stmt_bind_param($reservationStmt, $bindTypesTemplate, ...$bindValuesTemplate);
+                mysqli_stmt_execute($reservationStmt);
+                $commonReservationId = (int)mysqli_insert_id($link);
+                mysqli_stmt_close($reservationStmt);
+
+                $createdReservationIds = [$commonReservationId];
+
+                if (!empty($cartEquipments)) {
+                    $stockCheckStmt = mysqli_prepare(
+                        $link,
+                        'SELECT COUNT(*) AS available_count FROM equipments WHERE equipment_code = ? AND operation_status = 1 FOR UPDATE'
+                    );
+                    $selectEquipmentStmt = mysqli_prepare(
+                        $link,
+                        'SELECT e.equipment_id 
+                         FROM equipments e 
+                         WHERE e.equipment_code = ? 
+                           AND e.operation_status = 1 
+                           AND e.equipment_id NOT IN (
+                               SELECT eri.equipment_id
+                               FROM equipment_reservation_items eri
+                               JOIN reservations r ON r.reservation_id = eri.reservation_id
+                               WHERE r.approval_status IN ("pending", "approved")
+                                 AND r.borrow_start_at < ?
+                                 AND r.borrow_end_at > ?
+                           )
+                         ORDER BY e.equipment_id ASC LIMIT ?'
+                    );
+                    $reservationItemStmt = mysqli_prepare(
+                        $link,
+                        'INSERT INTO equipment_reservation_items (reservation_id, equipment_id) VALUES (?, ?)'
+                    );
+                    $updateEquipmentStatusStmt = mysqli_prepare(
+                        $link,
+                        'UPDATE equipments SET operation_status = 2 WHERE equipment_id = ? AND operation_status = 1 AND ? <= NOW()'
+                    );
+                    if (!$stockCheckStmt || !$selectEquipmentStmt || !$reservationItemStmt || !$updateEquipmentStatusStmt) {
+                        throw new RuntimeException('建立器材預約明細指令失敗：' . mysqli_error($link));
+                    }
+
+                    // 嘗試取得有效證照（供器材核簽用）
+                    $certificateId = null;
+                    $certSelectStmt = mysqli_prepare(
+                        $link,
+                        'SELECT certificate_id FROM equipment_certificates WHERE holder_id = ? AND validity_status = "valid" ORDER BY issue_date DESC LIMIT 1'
+                    );
+                    if ($certSelectStmt) {
+                        mysqli_stmt_bind_param($certSelectStmt, 's', $userId);
+                        mysqli_stmt_execute($certSelectStmt);
+                        $certSelectResult = mysqli_stmt_get_result($certSelectStmt);
+                        $certRow = $certSelectResult ? mysqli_fetch_assoc($certSelectResult) : null;
+                        mysqli_stmt_close($certSelectStmt);
+                        if ($certRow && isset($certRow['certificate_id'])) {
+                            $certificateId = (int)$certRow['certificate_id'];
+                        }
+                    }
+
+                    // 針對購物車內【每一個器材項目】建立各自獨立的預約單 (reservation)
+                    foreach ($cartEquipments as $item) {
+                        $cCode = $item['code'];
+                        $cQty = (int)$item['quantity'];
+
+                                                // 檢查該天是否已有任何預約（器材按天單位）
+                                                $overlapCheckSql = "
+                                                        SELECT COALESCE(COUNT(eri.equipment_id), 0) AS used_qty
+                                                        FROM equipment_reservation_items eri
+                                                        JOIN reservations r ON r.reservation_id = eri.reservation_id
+                                                        JOIN equipments e ON e.equipment_id = eri.equipment_id
+                                                        WHERE e.equipment_code = ?
+                                                            AND r.approval_status IN ('pending', 'approved')
+                                                            AND DATE(r.borrow_start_at) = DATE(?)
+                                                ";
+                        $overlapStmt = mysqli_prepare($link, $overlapCheckSql);
+                        mysqli_stmt_bind_param($overlapStmt, 'ss', $cCode, $borrowStartAtSql);
+                        mysqli_stmt_execute($overlapStmt);
+                        $overlapRes = mysqli_stmt_get_result($overlapStmt);
+                        $overlapRow = $overlapRes ? mysqli_fetch_assoc($overlapRes) : null;
+                        mysqli_stmt_close($overlapStmt);
+                        
+                        $usedQty = $overlapRow ? (int)$overlapRow['used_qty'] : 0;
+                        $totalQty = isset($equipmentMap[$cCode]) ? (int)$equipmentMap[$cCode]['available_quantity'] : 0;
+                        if (($usedQty + $cQty) > $totalQty) {
+                            throw new RuntimeException("器材 {$cCode} 在該時段的可借用數量不足，請選擇其他時段。");
+                        }
+
+                        mysqli_stmt_bind_param($stockCheckStmt, 's', $cCode);
+                        mysqli_stmt_execute($stockCheckStmt);
+                        $stockCheckResult = mysqli_stmt_get_result($stockCheckStmt);
+                        $stockRow = $stockCheckResult ? mysqli_fetch_assoc($stockCheckResult) : null;
+
+                        $availableCountInTransaction = $stockRow ? (int)$stockRow['available_count'] : 0;
+                        if ($availableCountInTransaction < $cQty) {
+                            throw new RuntimeException("器材 {$cCode} 目前整體狀態異常或數量不足，無法送出申請。");
+                        }
+
+                        mysqli_stmt_bind_param($selectEquipmentStmt, 'sssi', $cCode, $borrowEndAtSql, $borrowStartAtSql, $cQty);
+                        mysqli_stmt_execute($selectEquipmentStmt);
+                        $availableEquipmentResult = mysqli_stmt_get_result($selectEquipmentStmt);
+
+                        $equipmentIds = [];
+                        while ($equipmentRow = mysqli_fetch_assoc($availableEquipmentResult)) {
+                            $equipmentIds[] = (int)$equipmentRow['equipment_id'];
+                        }
+
+                        if (count($equipmentIds) < $cQty) {
+                            throw new RuntimeException("器材 {$cCode} 實際可取得數量不足。");
+                        }
+
+                        // 使用共用的預約單 ID（同一筆申請共用一個 reservation）
+                        $itemReservationId = $commonReservationId;
+
+                        // 將實體器材加入該預約單
+                        foreach ($equipmentIds as $equipmentId) {
+                            mysqli_stmt_bind_param($reservationItemStmt, 'ii', $itemReservationId, $equipmentId);
+                            mysqli_stmt_execute($reservationItemStmt);
+                            
+                            mysqli_stmt_bind_param($updateEquipmentStatusStmt, 'is', $equipmentId, $borrowStartAtSql);
+                            mysqli_stmt_execute($updateEquipmentStatusStmt);
+                        }
+
+                        // 建立器材核簽紀錄
+                        if ($certificateId !== null) {
+                            $insertSignoffStmt = mysqli_prepare(
+                                $link,
+                                'INSERT INTO equipment_signoffs (reservation_id, certificate_id, reviewer_id, signoff_status) VALUES (?, ?, ?, "pending")'
+                            );
+                            if (!$insertSignoffStmt) {
+                                throw new RuntimeException('建立器材核簽紀錄失敗：' . mysqli_error($link));
+                            }
+                            mysqli_stmt_bind_param($insertSignoffStmt, 'iis', $itemReservationId, $certificateId, $userId);
+                            mysqli_stmt_execute($insertSignoffStmt);
+                            mysqli_stmt_close($insertSignoffStmt);
+                        } else {
+                            $insertSignoffStmt = mysqli_prepare(
+                                $link,
+                                'INSERT INTO equipment_signoffs (reservation_id, certificate_id, reviewer_id, signoff_status) VALUES (?, NULL, ?, "pending")'
+                            );
+                            if (!$insertSignoffStmt) {
+                                throw new RuntimeException('建立器材核簽紀錄失敗：' . mysqli_error($link));
+                            }
+                            mysqli_stmt_bind_param($insertSignoffStmt, 'is', $itemReservationId, $userId);
+                            mysqli_stmt_execute($insertSignoffStmt);
+                            mysqli_stmt_close($insertSignoffStmt);
+                        }
+                    }
+
+                    mysqli_stmt_close($stockCheckStmt);
+                    mysqli_stmt_close($selectEquipmentStmt);
+                    mysqli_stmt_close($reservationItemStmt);
+                    mysqli_stmt_close($updateEquipmentStatusStmt);
+                }
+
+                if (!empty($formData['space_id'])) {
+                    // 若為申請空間且有上傳企劃書，處理上傳並更新 reservations
+                    if (!isset($_FILES['proposal_file']) || $_FILES['proposal_file']['error'] === UPLOAD_ERR_NO_FILE) {
+                        throw new RuntimeException('申請場地需上傳活動企劃書。');
+                    }
+
+                    $file = $_FILES['proposal_file'];
+                    if ($file['error'] !== UPLOAD_ERR_OK) {
+                        throw new RuntimeException('企劃書上傳失敗（錯誤碼：' . (int)$file['error'] . '）。');
+                    }
+
+                    $maxBytes = 5 * 1024 * 1024; // 5MB
+                    if ($file['size'] > $maxBytes) {
+                        throw new RuntimeException('企劃書大小超過 5MB 限制。');
+                    }
+
+                    if (class_exists('finfo')) {
+                        $finfo = new finfo(FILEINFO_MIME_TYPE);
+                        $mime = (string)$finfo->file($file['tmp_name']);
+                    } elseif (function_exists('mime_content_type')) {
+                        $mime = (string)mime_content_type($file['tmp_name']);
+                    } else {
+                        $ext = strtolower(pathinfo((string)$file['name'], PATHINFO_EXTENSION));
+                        if ($ext === 'pdf') {
+                            $mime = 'application/pdf';
+                        } else {
+                            throw new RuntimeException('伺服器未啟用 fileinfo 擴充套件，請上傳副檔名為 .pdf 的檔案。');
+                        }
+                    }
+                    // 僅允許 PDF
+                    $allowed = [
+                        'application/pdf' => 'pdf',
+                    ];
+                    if (!array_key_exists($mime, $allowed)) {
+                        throw new RuntimeException('企劃書格式不支援，僅接受 PDF。');
+                    }
+
+                    $uploadDir = __DIR__ . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'proposals';
+                    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+                        throw new RuntimeException('建立上傳目錄失敗。');
+                    }
+
+                    $ext = $allowed[$mime];
+                    $safeBasename = preg_replace('/[^a-zA-Z0-9_-]/', '_', pathinfo((string)$file['name'], PATHINFO_FILENAME));
+                    $timestampLabel = time();
+                    $targetName = sprintf('%s_%s.%s', $timestampLabel, $safeBasename, $ext);
+                    $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $targetName;
+
+                    if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
+                        throw new RuntimeException('企劃書儲存失敗。');
+                    }
+
+                    $proposalFileForSpace = 'uploads/proposals/' . $targetName;
+                    $proposalUploadedAtForSpace = date('Y-m-d H:i:s');
+                    $uploadedProposalPath = $targetPath;
+
+                    // 使用共用的預約單 ID（同一筆申請共用一個 reservation）
+                    $reservationId = $commonReservationId;
+
+                                                $spaceConflictStmt = mysqli_prepare(
+                                                                $link,
+                                                                'SELECT COUNT(*) AS conflict_count
+                                                         FROM space_reservation_items sri
+                                                         JOIN reservations r ON r.reservation_id = sri.reservation_id
+                                                         WHERE sri.space_id = ?
+                                                             AND r.approval_status IN ("pending", "approved")
+                                                             AND NOT (r.borrow_end_at < ? OR r.borrow_start_at > ?)'
+                                                );
+                        if (!$spaceConflictStmt) {
+                            throw new RuntimeException('檢查空間時段衝突失敗：' . mysqli_error($link));
+                        }
+                        mysqli_stmt_bind_param($spaceConflictStmt, 'sss', $formData['space_id'], $borrowStartAtSql, $borrowEndAtSql);
+                        mysqli_stmt_execute($spaceConflictStmt);
+                        $spaceConflictResult = mysqli_stmt_get_result($spaceConflictStmt);
+                        $spaceConflictRow = $spaceConflictResult ? mysqli_fetch_assoc($spaceConflictResult) : null;
+                        mysqli_stmt_close($spaceConflictStmt);
+
+                        if ($spaceConflictRow && (int)$spaceConflictRow['conflict_count'] > 0) {
+                            throw new RuntimeException('該時段空間已被預約，請改選其他時段或空間。');
+                        }
+
+                    $spaceItemStmt = mysqli_prepare(
+                        $link,
+                        'INSERT INTO space_reservation_items (reservation_id, space_id, proposal_file, proposal_uploaded_at) VALUES (?, ?, ?, ?)'
+                    );
+                    if (!$spaceItemStmt) {
+                        throw new RuntimeException('建立空間預約明細失敗：' . mysqli_error($link));
+                    }
+                    mysqli_stmt_bind_param($spaceItemStmt, 'isss', $reservationId, $formData['space_id'], $proposalFileForSpace, $proposalUploadedAtForSpace);
+                    mysqli_stmt_execute($spaceItemStmt);
+                    mysqli_stmt_close($spaceItemStmt);
+                    // 不再更新 spaces 表的營運狀態，因為我們通過查詢衝突來檢查可用性
+                }
+
+                mysqli_commit($link);
+                $idsStr = implode(', ', $createdReservationIds);
+                $borrowSuccess = '申請已送出，申請編號：' . $idsStr . '。';
+                // ----- 寄送預約成功通知信 -----
+                $userEmailStmt = mysqli_prepare($link, 'SELECT email FROM users WHERE user_id = ?');
+                if ($userEmailStmt) {
+                    mysqli_stmt_bind_param($userEmailStmt, 's', $userId);
+                    mysqli_stmt_execute($userEmailStmt);
+                    $resObj = mysqli_stmt_get_result($userEmailStmt);
+                    if ($rowObj = mysqli_fetch_assoc($resObj)) {
+                        $userEmail = $rowObj['email'];
+                        if (!empty($userEmail)) {
+                            if (!class_exists('PHPMailer\PHPMailer\PHPMailer')) {
+                                require_once __DIR__ . '/lib/PHPMailer/Exception.php';
+                                require_once __DIR__ . '/lib/PHPMailer/PHPMailer.php';
+                                require_once __DIR__ . '/lib/PHPMailer/SMTP.php';
+                            }
+                            $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
+                            try {
+                                $mail->isSMTP();
+                                $mail->Host       = 'smtp.gmail.com'; 
+                                $mail->SMTPAuth   = true;
+                                $mail->Username   = 'sasass041919@gmail.com';
+                                $mail->Password   = 'xogusuplsoapxayc';      
+                                $mail->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
+                                $mail->Port       = 465;
+                                $mail->CharSet    = 'UTF-8';
+                                $mail->setFrom('sasass041919@gmail.com', '器材借用系統');
+                                $mail->addAddress($userEmail, $displayName);
+                                $mail->isHTML(true);
+                                $mail->Subject = '【系統通知】預約申請已成功送出';
+                                $mail->Body    = "您好，{$displayName}：<br><br>您的預約申請（單號：{$idsStr}）已經成功送出，目前狀態為<b>「審核中」</b>。<br><br>系統管理員將會儘速處理您的申請，審核結果出爐後會再次以 Email 通知您。<br><br>感謝您的使用！";
+                                $mail->AltBody = "您好，{$displayName}：\n\n您的預約申請（單號：{$idsStr}）已經成功送出，目前狀態為「審核中」。\n\n系統管理員將會儘速處理您的申請，審核結果出爐後會再次以 Email 通知您。\n\n感謝您的使用！";
+                                $mail->send();
+                            } catch (Exception $e) {
+                                error_log("預約成功信件寄送失敗: " . $mail->ErrorInfo);
+                            }
+                        }
+                    }
+                    mysqli_stmt_close($userEmailStmt);
+                }
+                // ------------------------------
+                $formData['phone'] = $userPhone;
+
+                foreach ($cartEquipments as $item) {
+                    $selectedCode = (string)$item['code'];
+                    $borrowQuantity = (int)$item['quantity'];
+                    if (isset($equipmentMap[$selectedCode])) {
+                        $equipmentMap[$selectedCode]['available_quantity'] -= $borrowQuantity;
+                        if ($equipmentMap[$selectedCode]['available_quantity'] < 0) {
+                            $equipmentMap[$selectedCode]['available_quantity'] = 0;
+                        }
+                    }
+                }
+            } catch (Throwable $exception) {
+                mysqli_rollback($link);
+                if ($uploadedProposalPath !== null && is_file($uploadedProposalPath)) {
+                    @unlink($uploadedProposalPath);
+                }
+                $borrowError = $exception->getMessage();
+                @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " EXCEPTION: " . $exception->getMessage() . "\nTRACE:" . $exception->getTraceAsString() . "\nPOST:" . json_encode($_POST) . "\nFILES:" . json_encode(array_map(function($f){ return is_array($f)?array_merge($f,['tmp_name'=>'...']):$f; }, $_FILES)) . "\n\n", FILE_APPEND | LOCK_EX);
             }
         }
     }
@@ -458,19 +1130,6 @@ if ($dbError === '') {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh-tw.js"></script>
-<script>
-class DraftManager {
-    constructor() {}
-    getDraftStats() { return { total: 0, pending: 0 }; }
-    generatePurposeSummary(p) { return p; }
-    getDraftById() { return null; }
-    loadDraftToForm() { return false; }
-    deleteDraft() { return false; }
-    saveDraft() { return null; }
-    clearForm() {}
-}
-// Remove Draft Modal button
-</script>
 </head>
 <body>
     <div class="container">
@@ -523,7 +1182,7 @@ class DraftManager {
                             </div>
                         </div>
 
-                        <form method="post" enctype="multipart/form-data" class="borrow-form" action="amend_application.php?id=<?php echo htmlspecialchars($id ?? '', ENT_QUOTES, 'UTF-8'); ?>" novalidate id="multistep_form">
+                        <form method="post" enctype="multipart/form-data" class="borrow-form" action="borrow.php" novalidate id="multistep_form">
                             <input type="hidden" name="current_step" id="current_step" value="<?php echo htmlspecialchars($_POST['current_step'] ?? '1', ENT_QUOTES, 'UTF-8'); ?>">
                             <input type="file" id="proposal_file" name="proposal_file" accept=".pdf,application/pdf" style="opacity: 0; position: absolute; z-index: -1; width: 0; height: 0;" onchange="document.getElementById('proposal_file_name_display').innerText = this.files.length > 0 ? this.files[0].name : '';">
                             <!-- ========== 步驟 1 內容區 ========== -->
@@ -541,22 +1200,22 @@ class DraftManager {
 
                                 <div class="form-group" style="margin-top: 10px;">
                                     <label for="organization_name">單位名稱 / 主辦社團 <span style="color:red">*</span></label>
-                                    <input type="text" id="organization_name" name="organization_name" class="form-control" placeholder="請輸入主辦單位名稱" value="<?php echo htmlspecialchars($revisionData['organization_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
+                                    <input type="text" id="organization_name" name="organization_name" class="form-control" placeholder="請輸入主辦單位名稱" value="<?php echo htmlspecialchars($formData['organization_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
                                 </div>
                                 <div class="form-group">
                                     <label for="activity_name">活動名稱 <span style="color:red">*</span></label>
-                                    <input type="text" id="activity_name" name="activity_name" class="form-control" placeholder="請輸入活動名稱" value="<?php echo htmlspecialchars($revisionData['activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
+                                    <input type="text" id="activity_name" name="activity_name" class="form-control" placeholder="請輸入活動名稱" value="<?php echo htmlspecialchars($formData['activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
                                 </div>
 
                                 <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
                                     <div class="form-group" style="flex: 1; min-width: 150px;">
                                         <label for="participant_count">活動對象人數 (100人以上的活動只能選擇30天後的日期) <span style="color:red">*</span></label>
                                         <select id="participant_count" name="participant_count" class="form-control" required style="padding: 8px;">
-                                            <option value="" <?php echo (($revisionData['participant_count'] ?? '') === '') ? 'selected' : ''; ?>>請選擇</option>
-                                            <option value="50人以下" <?php echo (($revisionData['participant_count'] ?? '') === '50人以下') ? 'selected' : ''; ?>>50人以下</option>
-                                            <option value="50~100人" <?php echo (($revisionData['participant_count'] ?? '') === '50~100人') ? 'selected' : ''; ?>>50~100人</option>
-                                            <option value="100~200人" <?php echo (($revisionData['participant_count'] ?? '') === '100~200人') ? 'selected' : ''; ?>>100~200人</option>
-                                            <option value="200人以上" <?php echo (($revisionData['participant_count'] ?? '') === '200人以上') ? 'selected' : ''; ?>>200人以上</option>
+                                            <option value="" <?php echo (($formData['participant_count'] ?? '') === '') ? 'selected' : ''; ?>>請選擇</option>
+                                            <option value="50人以下" <?php echo (($formData['participant_count'] ?? '') === '50人以下') ? 'selected' : ''; ?>>50人以下</option>
+                                            <option value="50~100人" <?php echo (($formData['participant_count'] ?? '') === '50~100人') ? 'selected' : ''; ?>>50~100人</option>
+                                            <option value="100~200人" <?php echo (($formData['participant_count'] ?? '') === '100~200人') ? 'selected' : ''; ?>>100~200人</option>
+                                            <option value="200人以上" <?php echo (($formData['participant_count'] ?? '') === '200人以上') ? 'selected' : ''; ?>>200人以上</option>
                                         </select>
                                     </div>
                                     <div class="form-group" style="flex: 1; min-width: 150px;">
@@ -567,36 +1226,36 @@ class DraftManager {
                                 <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
                                     <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                                         <label for="club_president">社 / 會長 <span style="color:red">*</span></label>
-                                        <input type="text" id="club_president" name="club_president" class="form-control" placeholder="請輸入姓名" value="<?php echo htmlspecialchars($revisionData['club_president'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
+                                        <input type="text" id="club_president" name="club_president" class="form-control" placeholder="請輸入姓名" value="<?php echo htmlspecialchars($formData['club_president'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
                                     </div>
                                     <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                                         <label for="activity_coordinator">活動負責人<span style="color:red">*</span></label>
-                                        <input type="text" id="activity_coordinator" name="activity_coordinator" class="form-control" placeholder="請輸入活動負責人姓名" value="<?php echo htmlspecialchars($revisionData['activity_coordinator'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="text" id="activity_coordinator" name="activity_coordinator" class="form-control" placeholder="請輸入活動負責人姓名" value="<?php echo htmlspecialchars($formData['activity_coordinator'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
                                 </div>
                                 <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
                                     <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                                         <label for="coordinator_department">系級<span style="color:red">*</span></label>
-                                        <input type="text" id="coordinator_department" name="coordinator_department" class="form-control" placeholder="請輸入系級" value="<?php echo htmlspecialchars($revisionData['coordinator_department'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="text" id="coordinator_department" name="coordinator_department" class="form-control" placeholder="請輸入系級" value="<?php echo htmlspecialchars($formData['coordinator_department'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
                                     <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                                         <label for="coordinator_phone">聯絡電話<span style="color:red">*</span></label>
-                                        <input type="text" id="coordinator_phone" name="coordinator_phone" class="form-control" placeholder="請輸入聯絡電話" value="<?php echo htmlspecialchars($revisionData['coordinator_phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="text" id="coordinator_phone" name="coordinator_phone" class="form-control" placeholder="請輸入聯絡電話" value="<?php echo htmlspecialchars($formData['coordinator_phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
                                 </div>
                                 <div class="form-group">
                                     <label for="coordinator_other_contact">其他聯絡方式</label>
-                                    <input type="text" id="coordinator_other_contact" name="coordinator_other_contact" class="form-control" placeholder="請輸入其他聯絡方式（如 Email）" value="<?php echo htmlspecialchars($revisionData['coordinator_other_contact'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                    <input type="text" id="coordinator_other_contact" name="coordinator_other_contact" class="form-control" placeholder="請輸入其他聯絡方式（如 Email）" value="<?php echo htmlspecialchars($formData['coordinator_other_contact'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                 </div>
 
                                 <div class="form-group" style="margin-top: 20px; border-top: 1px solid #ccc; padding-top: 15px;">
                                     <label>活動開始時間 <span style="color:red">*</span></label>
                                     <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center;">
-                                        <input type="date" id="borrow_start_date" name="borrow_start_date" class="form-control" value="<?php echo htmlspecialchars($revisionData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
+                                        <input type="date" id="borrow_start_date" name="borrow_start_date" class="form-control" value="<?php echo htmlspecialchars($formData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
                                         <?php
                                         $curBsh = ''; $curBsm = '';
-                                        if (!empty($revisionData['borrow_start_time'])) {
-                                            $parts = explode(':', $revisionData['borrow_start_time']);
+                                        if (!empty($formData['borrow_start_time'])) {
+                                            $parts = explode(':', $formData['borrow_start_time']);
                                             if (count($parts) >= 2) {
                                                 $curBsh = (int)$parts[0];
                                                 $curBsm = (int)$parts[1];
@@ -623,11 +1282,11 @@ class DraftManager {
                                     
                                     <label>活動結束時間 <span style="color:red">*</span></label>
                                     <div style="display: flex; gap: 10px; align-items: center;">
-                                        <input type="date" id="borrow_end_date" name="borrow_end_date" class="form-control" value="<?php echo htmlspecialchars($revisionData['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
+                                        <input type="date" id="borrow_end_date" name="borrow_end_date" class="form-control" value="<?php echo htmlspecialchars($formData['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
                                         <?php
                                         $curBeh = ''; $curBem = '';
-                                        if (!empty($revisionData['borrow_end_time'])) {
-                                            $parts = explode(':', $revisionData['borrow_end_time']);
+                                        if (!empty($formData['borrow_end_time'])) {
+                                            $parts = explode(':', $formData['borrow_end_time']);
                                             if (count($parts) >= 2) {
                                                 $curBeh = (int)$parts[0];
                                                 $curBem = (int)$parts[1];
@@ -657,15 +1316,15 @@ class DraftManager {
                                     <label>活動特殊性質 (可複選)</label>
                                     <div style="display: flex; gap: 15px; margin-top: 5px;">
                                         <label style="display: inline-flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer; white-space: nowrap;">
-                                            <input type="checkbox" id="has_alcohol" name="has_alcohol" value="1" <?php echo $revisionData['has_alcohol'] ? 'checked' : ''; ?>>
+                                            <input type="checkbox" id="has_alcohol" name="has_alcohol" value="1" <?php echo $formData['has_alcohol'] ? 'checked' : ''; ?>>
                                             有酒精
                                         </label>
                                         <label style="display: inline-flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer; white-space: nowrap;">
-                                            <input type="checkbox" id="has_fire" name="has_fire" value="1" <?php echo $revisionData['has_fire'] ? 'checked' : ''; ?>>
+                                            <input type="checkbox" id="has_fire" name="has_fire" value="1" <?php echo $formData['has_fire'] ? 'checked' : ''; ?>>
                                             有明火
                                         </label>
                                         <label style="display: inline-flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer; white-space: nowrap;">
-                                            <input type="checkbox" id="has_sales" name="has_sales" value="1" <?php echo $revisionData['has_sales'] ? 'checked' : ''; ?>>
+                                            <input type="checkbox" id="has_sales" name="has_sales" value="1" <?php echo $formData['has_sales'] ? 'checked' : ''; ?>>
                                             需擺攤販售
                                         </label>
                                     </div>
@@ -696,10 +1355,10 @@ class DraftManager {
                                     <label>車輛進出 <span style="color:red">*</span></label>
                                     <div style="margin-top: 8px; display: flex; align-items: center; gap: 20px;">
                                         <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
-                                            <input type="radio" name="vehicle_entry" value="no" style="margin: 0;" <?php echo ($revisionData['vehicle_entry'] === 'no' || empty($revisionData['vehicle_entry'])) ? 'checked' : ''; ?>> 否
+                                            <input type="radio" name="vehicle_entry" value="no" style="margin: 0;" <?php echo ($formData['vehicle_entry'] === 'no' || empty($formData['vehicle_entry'])) ? 'checked' : ''; ?>> 否
                                         </label>
                                         <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
-                                            <input type="radio" name="vehicle_entry" value="yes" style="margin: 0;" <?php echo ($revisionData['vehicle_entry'] === 'yes') ? 'checked' : ''; ?>> 是
+                                            <input type="radio" name="vehicle_entry" value="yes" style="margin: 0;" <?php echo ($formData['vehicle_entry'] === 'yes') ? 'checked' : ''; ?>> 是
                                         </label>
                                     </div>
                                 </div>
@@ -707,15 +1366,15 @@ class DraftManager {
                                     <label>插立旗幟(選擇"是"將填寫旗幟插立表單) <span style="color:red">*</span></label>
                                     <div style="margin-top: 8px; display: flex; align-items: center; gap: 20px;">
                                         <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
-                                            <input type="radio" name="setup_flags" value="no" id="flagOptionNo" style="margin: 0;" <?php echo ($revisionData['setup_flags'] === 'no' || empty($revisionData['setup_flags'])) ? 'checked' : ''; ?> onchange="toggleFlagDetails()"> 否
+                                            <input type="radio" name="setup_flags" value="no" id="flagOptionNo" style="margin: 0;" <?php echo ($formData['setup_flags'] === 'no' || empty($formData['setup_flags'])) ? 'checked' : ''; ?> onchange="toggleFlagDetails()"> 否
                                         </label>
                                         <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
-                                            <input type="radio" name="setup_flags" value="yes" id="flagOptionYes" style="margin: 0;" <?php echo ($revisionData['setup_flags'] === 'yes') ? 'checked' : ''; ?> onchange="toggleFlagDetails()"> 是
+                                            <input type="radio" name="setup_flags" value="yes" id="flagOptionYes" style="margin: 0;" <?php echo ($formData['setup_flags'] === 'yes') ? 'checked' : ''; ?> onchange="toggleFlagDetails()"> 是
                                         </label>
                                     </div>
                                 </div>
                                 
-                                <div class="form-group" id="flagDetailsSection" style="margin-top: 15px; display: <?php echo ($revisionData['setup_flags'] === 'yes') ? 'block' : 'none'; ?>; padding: 20px; background: #fdfdfd; border-radius: 8px; border: 1px solid #d1d5db; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
+                                <div class="form-group" id="flagDetailsSection" style="margin-top: 15px; display: <?php echo ($formData['setup_flags'] === 'yes') ? 'block' : 'none'; ?>; padding: 20px; background: #fdfdfd; border-radius: 8px; border: 1px solid #d1d5db; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
                                     <h4 style="margin-top: 0; margin-bottom: 20px; color: #1e293b; border-bottom: 2px solid #cbd5e1; padding-bottom: 10px; font-weight: bold;">旗幟插立申請表</h4>
                                     
                                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
@@ -764,7 +1423,7 @@ class DraftManager {
                                             <label>宣傳旗幟 (至多20支) <span style="color:red">*</span></label>
                                             <div style="display: flex; align-items: center; gap: 5px;">
                                                 <span>共</span>
-                                                <input type="number" name="flag_count" class="form-control" min="1" max="20" step="1" style="width: 100px;" placeholder="0" value="<?php echo htmlspecialchars((string)($revisionData['flag_count'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" oninput="if (this.value !== '' && Number(this.value) > 20) this.value = 20; if (this.value !== '' && Number(this.value) < 1) this.value = 1;">
+                                                <input type="number" name="flag_count" class="form-control" min="1" max="20" step="1" style="width: 100px;" placeholder="0" value="<?php echo htmlspecialchars((string)($formData['flag_count'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" oninput="if (this.value !== '' && Number(this.value) > 20) this.value = 20; if (this.value !== '' && Number(this.value) < 1) this.value = 1;">
                                                 <span>支</span>
                                             </div>
                                         </div>
@@ -1002,7 +1661,7 @@ class DraftManager {
 
                             <div class="form-group">
                                 <label for="purpose">用途說明 <span style="color:red">*</span></label>
-                                <textarea id="purpose" name="purpose" rows="4" required><?php echo htmlspecialchars($revisionData['purpose'], ENT_QUOTES, 'UTF-8'); ?></textarea>
+                                <textarea id="purpose" name="purpose" rows="4" required><?php echo htmlspecialchars($formData['purpose'], ENT_QUOTES, 'UTF-8'); ?></textarea>
                             </div>
 
                             <div class="step-actions">
@@ -1014,8 +1673,8 @@ class DraftManager {
                         <!-- 草稿功能保留可放至其他位置, 或暫時隱藏, 為了簡化, 先放著 -->
                         <!-- <div class="form-buttons">
                                 <div class="draft-buttons">
-                                    
-                                    
+                                    <button type="button" class="btn-draft btn-draft-save" id="saveDraftBtn">暫存申請</button>
+                                    <button type="button" class="btn-draft btn-draft-manage" id="manageDraftBtn">草稿箱</button>
                                 </div>
                                 <button type="button" class="btn-secondary" onclick="location.href='index.php'">取消</button>
                             </div> -->
@@ -1053,7 +1712,7 @@ class DraftManager {
     </div>
 
     <!-- 草稿管理 JavaScript 模組 - 必須在 borrow.php 邏輯之前加載 -->
-    
+    <script src="DraftManager.js"></script>
     <script>
         window.draftManager = new DraftManager();
     </script>

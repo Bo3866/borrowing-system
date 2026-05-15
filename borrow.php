@@ -606,8 +606,8 @@ SQL;
                 $createdReservationIds = [];
 
                 // 企劃書相關變數
-                $proposalFileForSpace = null;
-                $proposalUploadedAtForSpace = null;
+                $proposalFileForReservation = null;
+                $proposalUploadedAtForReservation = null;
 
                 // 只建立一張預約單 (不論是借器材還是場地)
                 $reservationStmt = mysqli_prepare($link, $insertReservationSql);
@@ -818,9 +818,20 @@ SQL;
                         throw new RuntimeException('企劃書儲存失敗。');
                     }
 
-                    $proposalFileForSpace = 'uploads/proposals/' . $targetName;
-                    $proposalUploadedAtForSpace = date('Y-m-d H:i:s');
+                    $proposalFileForReservation = 'uploads/proposals/' . $targetName;
+                    $proposalUploadedAtForReservation = date('Y-m-d H:i:s');
                     $uploadedProposalPath = $targetPath;
+
+                    $updateProposalStmt = mysqli_prepare(
+                        $link,
+                        'UPDATE reservations SET proposal_file = ?, proposal_uploaded_at = ? WHERE reservation_id = ?'
+                    );
+                    if (!$updateProposalStmt) {
+                        throw new RuntimeException('更新企劃書資訊失敗：' . mysqli_error($link));
+                    }
+                    mysqli_stmt_bind_param($updateProposalStmt, 'ssi', $proposalFileForReservation, $proposalUploadedAtForReservation, $reservationId);
+                    mysqli_stmt_execute($updateProposalStmt);
+                    mysqli_stmt_close($updateProposalStmt);
 
                     // 使用共用的預約單 ID（同一筆申請共用一個 reservation）
                     $reservationId = $commonReservationId;
@@ -849,12 +860,12 @@ SQL;
 
                     $spaceItemStmt = mysqli_prepare(
                         $link,
-                        'INSERT INTO space_reservation_items (reservation_id, space_id, proposal_file, proposal_uploaded_at) VALUES (?, ?, ?, ?)'
+                        'INSERT INTO space_reservation_items (reservation_id, space_id) VALUES (?, ?)'
                     );
                     if (!$spaceItemStmt) {
                         throw new RuntimeException('建立空間預約明細失敗：' . mysqli_error($link));
                     }
-                    mysqli_stmt_bind_param($spaceItemStmt, 'isss', $reservationId, $formData['space_id'], $proposalFileForSpace, $proposalUploadedAtForSpace);
+                    mysqli_stmt_bind_param($spaceItemStmt, 'is', $reservationId, $formData['space_id']);
                     mysqli_stmt_execute($spaceItemStmt);
                     mysqli_stmt_close($spaceItemStmt);
                     // 不再更新 spaces 表的營運狀態，因為我們通過查詢衝突來檢查可用性

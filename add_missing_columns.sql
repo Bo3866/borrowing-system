@@ -14,3 +14,9 @@ ADD COLUMN IF NOT EXISTS vehicle_entry VARCHAR(10) NULL COMMENT '汽車進入校
 ADD COLUMN IF NOT EXISTS setup_flags VARCHAR(10) NULL COMMENT '是否插旗',
 ADD COLUMN IF NOT EXISTS flag_details VARCHAR(255) NULL COMMENT '插旗地點及數量',
 ADD COLUMN IF NOT EXISTS purpose VARCHAR(255) NULL COMMENT '借用用途';
+
+-- Add missing boolean flags for application (has_alcohol, has_fire, has_sales)
+ALTER TABLE reservations
+	ADD COLUMN IF NOT EXISTS has_alcohol VARCHAR(1) NULL COMMENT '是否含酒精',
+	ADD COLUMN IF NOT EXISTS has_fire VARCHAR(1) NULL COMMENT '是否有明火',
+	ADD COLUMN IF NOT EXISTS has_sales VARCHAR(1) NULL COMMENT '是否販售活動';

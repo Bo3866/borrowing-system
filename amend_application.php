@@ -42,21 +42,45 @@ $revisionData = [];
 
 if ($dbError === '') {
     // 查詢該預約是否屬於當前用戶且狀態為 need_revision
-    $checkStmt = mysqli_prepare($link, '
-         SELECT r.reservation_id, r.user_id, r.approval_status, r.revision_data_json, r.revision_deadline,
-             r.organization_name, r.activity_name, r.participant_count, r.staff_count, r.club_president,
-             r.activity_coordinator, r.coordinator_department, r.coordinator_phone, r.coordinator_other_contact,
-             r.vehicle_entry, r.setup_flags, r.flag_details,
-             r.has_alcohol, r.has_fire, r.has_sales, r.purpose, r.phone, r.borrow_start_at, r.borrow_end_at, r.space_id
-        FROM reservations r
-        WHERE r.reservation_id = ? AND r.user_id = ? LIMIT 1
-    ');
-    if ($checkStmt) {
-        mysqli_stmt_bind_param($checkStmt, 'is', $reservationId, $currentUserId);
-        mysqli_stmt_execute($checkStmt);
-        $checkResult = mysqli_stmt_get_result($checkStmt);
-        $reservationRow = $checkResult ? mysqli_fetch_assoc($checkResult) : null;
-        mysqli_stmt_close($checkStmt);
+    // Build SELECT dynamically based on existing columns to avoid unknown column errors
+    $availableCols = [];
+    $colRes = mysqli_query($link, "SHOW COLUMNS FROM reservations");
+    if ($colRes) {
+        while ($crow = mysqli_fetch_assoc($colRes)) {
+            $availableCols[] = (string)$crow['Field'];
+        }
+        mysqli_free_result($colRes);
+    }
+
+    $wanted = [
+        'reservation_id','user_id','approval_status','revision_data_json','revision_deadline',
+        'organization_name','activity_name','participant_count','staff_count','club_president',
+        'activity_coordinator','coordinator_department','coordinator_phone','coordinator_other_contact',
+        'vehicle_entry','setup_flags','flag_details',
+        'has_alcohol','has_fire','has_sales','purpose','phone','borrow_start_at','borrow_end_at','space_id'
+    ];
+    $selectCols = [];
+    foreach ($wanted as $c) {
+        if (in_array($c, $availableCols, true)) {
+            $selectCols[] = "r." . $c;
+        }
+    }
+    if (empty($selectCols)) {
+        $amendError = '資料表欄位不足，無法讀取申請資料。';
+        $reservationRow = null;
+    } else {
+        $sql = 'SELECT ' . implode(', ', $selectCols) . ' FROM reservations r WHERE r.reservation_id = ? AND r.user_id = ? LIMIT 1';
+        $checkStmt = mysqli_prepare($link, $sql);
+        if ($checkStmt) {
+            mysqli_stmt_bind_param($checkStmt, 'is', $reservationId, $currentUserId);
+            mysqli_stmt_execute($checkStmt);
+            $checkResult = mysqli_stmt_get_result($checkStmt);
+            $reservationRow = $checkResult ? mysqli_fetch_assoc($checkResult) : null;
+            mysqli_stmt_close($checkStmt);
+        } else {
+            $reservationRow = null;
+        }
+    }
         
         // 查詢該預約的設備項目
         $equipmentItems = [];
@@ -214,7 +238,6 @@ if ($dbError === '') {
             }
         }
     }
-}
 ?>
 <!DOCTYPE html>
 <html lang="zh-TW">

@@ -125,13 +125,14 @@ if ($link) {
                     <button class="nav-btn" onclick="location.href='approve.php'">審核面板</button>
                     <?php if (in_array($currentRole, ['2','3'], true)) { ?>
                         <button class="nav-btn" id="btnManualRemind" type="button" onclick="handleManualRemindClick(event)">檢查逾期並催繳</button>
+                        <button class="nav-btn" onclick="location.href='equipment_inventory.php'">庫存管理</button>
                     <?php } ?>
-                    <button class="nav-btn" onclick="location.href='equipment_inventory.php'">庫存管理</button>
-                <?php } ?>
-                <button class="nav-btn" onclick="location.href='checkin.php?qr=CHECKIN_GATE_V1'">掃碼報到</button>
-                <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
                 <?php if (in_array($currentRole, ['3','a','b','c'], true)) { ?>
                     <button class="nav-btn" onclick="location.href='qr_admin.php'">生成報到 QR</button>
+                <?php } ?>
+                <?php } ?>
+                <?php if ($isManager || (isset($currentRole) && $currentRole === '1')) { ?>
+                    <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
                 <?php } ?>
                 <?php if ($isLoggedIn) { ?>
                     <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8'); ?></button>
@@ -346,7 +347,7 @@ if ($link) {
                         <option value="">全部</option>
                         <option value="pending">審核中</option>
                         <option value="approved">已核准</option>
-                        <option value="rejected">已拒絕</option>
+                        <option value="rejected">審核未通過</option>
                         <option value="completed">已完成</option>
                     </select>
                 </div>

@@ -145,11 +145,16 @@ function renderDrafts() {
     `;
 
     drafts.forEach(draft => {
+        // Handle both older format (data in draft.formData) and new flat format
+        const activityName = draft.activity_name || draft.activityName || (draft.formData && draft.formData.activity_name) || '未填寫';
+        const purpose = draft.purpose || (draft.formData && draft.formData.purpose) || '';
+        const purposeText = purpose ? (purpose.length > 30 ? purpose.substring(0, 30) + '...' : purpose) : '未填寫';
+
         html += `
             <tr>
                 <td>${draft.timestamp}</td>
-                <td>${draft.activityName || '未填寫'}</td>
-                <td>${draft.purpose ? draft.purpose.substring(0, 30) + '...' : '未填寫'}</td>
+                <td>${activityName}</td>
+                <td>${purposeText}</td>
                 <td>
                     <div class="draft-actions">
                         <button type="button" class="btn-load" onclick="loadDraft('${draft.draftId}')">載入</button>

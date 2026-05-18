@@ -63,7 +63,7 @@ if (!isset($_SESSION['user_id'])) {
         }
 
         .btn-load {
-            background:#3b82f6;
+            background:	#8CEA00;
             color:white;
             border:none;
             padding:8px 14px;
@@ -100,7 +100,7 @@ if (!isset($_SESSION['user_id'])) {
 <div class="draft-container">
     <div class="draft-header">
         <h2>📂 草稿箱</h2>
-        <a href="borrow.php" class="btn-back">返回申請頁</a>
+        <a href="borrow.php" class="btn-back">頁</a>
     </div>
 
     <div id="draftList"></div>
@@ -152,7 +152,7 @@ function renderDrafts() {
                 <td>${draft.purpose ? draft.purpose.substring(0, 30) + '...' : '未填寫'}</td>
                 <td>
                     <div class="draft-actions">
-                        <button type="button" onclick="loadDraft('${draft.draftId}')">載入</button>
+                        <button type="button" class="btn-load" onclick="loadDraft('${draft.draftId}')">載入</button>
                         <button class="btn-delete" onclick="deleteDraft('${draft.draftId}')">刪除</button>
                     </div>
                 </td>

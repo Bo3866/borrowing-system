@@ -112,7 +112,7 @@ if ($dbError === '') {
         }
     }
 
-    // 報到狀態：使用 checkin_logs（無需再查 pickup 欄位）
+    // 報到狀態：使用 reservations.checkedin_at
     // 歸還狀態：使用 returned_at 欄位
 
     if ($dbError === '' && $_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -127,11 +127,11 @@ if ($dbError === '') {
 
                 $ownershipStmt = mysqli_prepare(
                     $link,
-                    'SELECT r.reservation_id, r.returned_at, cl.checked_in_at
-                     FROM reservations r
-                     LEFT JOIN checkin_logs cl
-                       ON cl.reservation_id = r.reservation_id
-                      AND cl.user_id COLLATE utf8mb4_unicode_ci = r.`' . $applicantColumn . '` COLLATE utf8mb4_unicode_ci
+                    'SELECT
+                        r.reservation_id,
+                        r.returned_at,
+                        r.checked_in_at
+                    FROM reservations r
                      WHERE r.reservation_id = ?
                        AND r.`' . $applicantColumn . '` COLLATE utf8mb4_unicode_ci = ?
                      LIMIT 1'
@@ -150,7 +150,7 @@ if ($dbError === '') {
                     throw new RuntimeException('找不到可操作的申請資料，或此申請不屬於目前使用者。');
                 }
 
-                if (empty($reservationRow['checked_in_at'])) {
+                if (empty($reservationRow['checkedin_at'])) {
                     throw new RuntimeException('尚未報到，無法確認歸還或離場。');
                 }
 
@@ -268,7 +268,7 @@ if ($dbError === '') {
         mysqli_query($link, $updateOverdueSql);
 
         // 查詢邏輯：
-        // - pickup_confirmed: 使用 checkin_logs.checked_in_at 判斷（NULL = 未報到，NOT NULL = 已報到）
+        // - pickup_confirmed: 使用 reservations.checkedin_at 判斷
         // - return_confirmed: 使用 reservations.returned_at 判斷（NULL = 未歸還，NOT NULL = 已歸還）
         $listSql = "
             SELECT
@@ -284,8 +284,8 @@ if ($dbError === '') {
                 r.revision_deadline,
                 r.submitted_at,
                 r.updated_at,
-                (cl.checked_in_at IS NOT NULL) AS pickup_confirmed,
-                cl.checked_in_at AS pickup_confirmed_at,
+                (r.checked_in_at IS NOT NULL) AS pickup_confirmed,
+                r.checked_in_at AS pickup_confirmed_at,
                 (r.returned_at IS NOT NULL) AS return_confirmed,
                 r.returned_at AS return_confirmed_at,
                 (
@@ -308,7 +308,6 @@ if ($dbError === '') {
                 ) AS space_names
             FROM reservations r
             JOIN users u ON u.user_id COLLATE utf8mb4_unicode_ci = r.`{$applicantColumn}` COLLATE utf8mb4_unicode_ci
-            LEFT JOIN checkin_logs cl ON cl.reservation_id = r.reservation_id AND cl.user_id COLLATE utf8mb4_unicode_ci = r.`{$applicantColumn}` COLLATE utf8mb4_unicode_ci
             WHERE {$listWhere}
             ORDER BY r.`{$borrowEndColumn}` DESC
             LIMIT 300

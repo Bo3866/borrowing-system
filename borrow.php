@@ -1217,7 +1217,7 @@ SQL;
 
                                 <div class="form-group" style="margin-top: 10px;">
                                     <label for="organization_name">單位名稱 / 主辦社團 <span style="color:red">*</span></label>
-                                    <input type="text" id="organization_name" name="organization_name" class="form-control" placeholder="請輸入主辦單位名稱" value="<?php echo htmlspecialchars($formData['organization_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
+                                    <input type="text" id="organization_name" name="organization_name" class="" placeholder="請輸入主辦單位名稱" value="<?php echo htmlspecialchars($formData['organization_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
                                 </div>
                                 <div class="form-group">
                                     <label for="activity_name">活動名稱 <span style="color:red">*</span></label>
@@ -1227,7 +1227,7 @@ SQL;
                                 <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
                                     <div class="form-group" style="flex: 1; min-width: 150px;">
                                         <label for="participant_count">活動對象人數 (100人以上的活動只能選擇30天後的日期) <span style="color:red">*</span></label>
-                                        <select id="participant_count" name="participant_count" class="form-control" required style="padding: 8px;">
+                                        <select id="participant_count" name="participant_count" class="" required style="padding: 8px;">
                                             <option value="" <?php echo (($formData['participant_count'] ?? '') === '') ? 'selected' : ''; ?>>請選擇</option>
                                             <option value="50人以下" <?php echo (($formData['participant_count'] ?? '') === '50人以下') ? 'selected' : ''; ?>>50人以下</option>
                                             <option value="50~100人" <?php echo (($formData['participant_count'] ?? '') === '50~100人') ? 'selected' : ''; ?>>50~100人</option>
@@ -1243,7 +1243,7 @@ SQL;
                                 <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
                                     <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                                         <label for="club_president">社 / 會長 <span style="color:red">*</span></label>
-                                        <input type="text" id="club_president" name="club_president" class="form-control" placeholder="請輸入姓名" value="<?php echo htmlspecialchars($formData['club_president'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
+                                        <input type="text" id="club_president" name="club_president" class="" placeholder="請輸入姓名" value="<?php echo htmlspecialchars($formData['club_president'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
                                     </div>
                                     <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                                         <label for="activity_coordinator">活動負責人<span style="color:red">*</span></label>
@@ -1399,22 +1399,22 @@ SQL;
                                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; margin-bottom:15px;">
                                     <div>
                                         <label>申請單位 <span style="color:red">*</span></label>
-                                        <input type="text" name="flag_applicant_unit" id="flag_applicant_unit" class="form-control" placeholder="請輸入申請單位" value="<?php echo htmlspecialchars($formData['flag_applicant_unit'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="text" name="flag_applicant_unit" id="flag_applicant_unit" class="form-control" style="height: 38px;" placeholder="請輸入申請單位" value="<?php echo htmlspecialchars($formData['flag_applicant_unit'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div>
                                         <label>負責人 <span style="color:red">*</span></label>
-                                        <input type="text" name="flag_manager" id="flag_manager" class="form-control" placeholder="請輸入負責人姓名" value="<?php echo htmlspecialchars($formData['flag_manager'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="text" name="flag_manager" id="flag_manager" class="form-control" style="height: 38px;" placeholder="請輸入負責人姓名" value="<?php echo htmlspecialchars($formData['flag_manager'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div>
                                         <label>連絡電話 <span style="color:red">*</span></label>
-                                        <input type="text" name="flag_phone" id="flag_phone" class="form-control" placeholder="請輸入連絡電話" value="<?php echo htmlspecialchars($formData['flag_phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="text" name="flag_phone" id="flag_phone" class="form-control" style="height: 38px;" placeholder="請輸入連絡電話" value="<?php echo htmlspecialchars($formData['flag_phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <div>
                                         <label>活動名稱 <span style="color:red">*</span></label>
-                                        <input type="text" name="flag_activity_name" id="flag_activity_name" class="form-control" placeholder="請輸入活動名稱" value="<?php echo htmlspecialchars($formData['flag_activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="text" name="flag_activity_name" id="flag_activity_name" class="form-control" style="height: 38px;" placeholder="請輸入活動名稱" value="<?php echo htmlspecialchars($formData['flag_activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
                                 </div>
 
@@ -1428,9 +1428,9 @@ SQL;
                                     </label>
 
                                     <div style="display:flex; align-items:center; gap:10px; margin-top:5px;">
-                                        <input type="date" name="flag_start_date" id="flag_start_date" class="form-control" value="<?php echo htmlspecialchars($formData['flag_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" readonly>
+                                        <input type="date" name="flag_start_date" id="flag_start_date" class="form-control" style="height: 38px;" value="<?php echo htmlspecialchars($formData['flag_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" readonly>
                                         <span>至</span>
-                                        <input type="date" name="flag_end_date" id="flag_end_date" class="form-control" value="<?php echo htmlspecialchars($formData['flag_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" readonly>
+                                        <input type="date" name="flag_end_date" id="flag_end_date" class="form-control" style="height: 38px;" value="<?php echo htmlspecialchars($formData['flag_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" readonly>
                                     </div>
 
                                     <small id="flagDateHint" style="display:block; margin-top:6px; color:#64748b;"></small>
@@ -1448,7 +1448,7 @@ SQL;
                                                 min="1"
                                                 max="20"
                                                 step="1"
-                                                style="width:100px;"
+                                                style="width:100px;height:38px;"
                                                 placeholder="最多20"
                                                 value="<?php echo htmlspecialchars((string)($formData['flag_count'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
                                             <span>支</span>
@@ -1461,6 +1461,7 @@ SQL;
                                             name="flag_location"
                                             id="flag_location"
                                             class="form-control"
+                                            style="height: 38px;"
                                             value="<?php echo htmlspecialchars($formData['flag_location'] ?: '中央走道', ENT_QUOTES, 'UTF-8'); ?>"
                                             readonly>
                                     </div>

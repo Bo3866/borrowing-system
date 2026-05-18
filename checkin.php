@@ -269,11 +269,11 @@ if ($dbError === '' && $feedbackType !== 'error' && $_SERVER['REQUEST_METHOD'] =
                 mysqli_begin_transaction($link);
                 try {
                     $reservationId = (int)$matchedRow['reservation_id'];
-                    $insertLogStmt = mysqli_prepare($link, 'INSERT INTO checkin_logs (reservation_id, user_id, checkin_source) VALUES (?, ?, "qr")');
-                    if (!$insertLogStmt) { throw new RuntimeException('寫入報到紀錄失敗：' . mysqli_error($link)); }
-                    mysqli_stmt_bind_param($insertLogStmt, 'is', $reservationId, $currentUserId);
-                    mysqli_stmt_execute($insertLogStmt);
-                    mysqli_stmt_close($insertLogStmt);
+                    $updateCheckinStmt = mysqli_prepare($link, 'UPDATE reservations SET checked_in_at = COALESCE(checked_in_at, NOW()) WHERE reservation_id = ? AND user_id COLLATE utf8mb4_unicode_ci = ?');
+                    if (!$updateCheckinStmt) { throw new RuntimeException('更新 reservations.checked_in_at 失敗：' . mysqli_error($link)); }
+                    mysqli_stmt_bind_param($updateCheckinStmt, 'is', $reservationId, $currentUserId);
+                    mysqli_stmt_execute($updateCheckinStmt);
+                    mysqli_stmt_close($updateCheckinStmt);
 
                     if ($pickupFlagColumn !== null || $pickupAtColumn !== null) {
                         $setParts = [];
@@ -326,19 +326,14 @@ if ($dbError === '' && $feedbackType !== 'error') {
         FROM reservations r
         WHERE r.`{$applicantColumn}` = ?
           AND r.approval_status = 'approved'
-          -- 時間限制已移除：允許在任何時間對核准的預約進行報到
-          AND NOT EXISTS (
-              SELECT 1
-              FROM checkin_logs cl
-              WHERE cl.reservation_id = r.reservation_id
-                AND cl.user_id = ?
-          )
+                    -- 時間限制已移除：允許在任何時間對核准的預約進行報到
+                    AND r.checked_in_at IS NULL
         ORDER BY r.`{$borrowStartColumn}` ASC
     ";
 
     $optionsStmt = mysqli_prepare($link, $optionsSql);
     if ($optionsStmt) {
-        mysqli_stmt_bind_param($optionsStmt, 'ss', $currentUserId, $currentUserId);
+                mysqli_stmt_bind_param($optionsStmt, 's', $currentUserId);
         mysqli_stmt_execute($optionsStmt);
         $optionsResult = mysqli_stmt_get_result($optionsStmt);
 

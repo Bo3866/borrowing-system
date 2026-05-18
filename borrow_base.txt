@@ -461,6 +461,7 @@ CREATE TABLE IF NOT EXISTS reservations (
     borrow_start_at DATETIME NOT NULL,
     borrow_end_at DATETIME NOT NULL,
     approval_status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+    certificate_id BIGINT UNSIGNED NULL,
     returned_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -492,19 +493,6 @@ CREATE TABLE IF NOT EXISTS space_reservation_items (
 ) ENGINE=InnoDB;
 SQL;
 
-                        $createSignoffsSql = <<<SQL
-CREATE TABLE IF NOT EXISTS equipment_signoffs (
-    signoff_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    reservation_id BIGINT UNSIGNED NOT NULL,
-    certificate_id BIGINT UNSIGNED NULL,
-    reviewer_id VARCHAR(10) NOT NULL,
-    signoff_status ENUM('approved','rejected','pending') NOT NULL DEFAULT 'pending',
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (signoff_id)
-) ENGINE=InnoDB;
-SQL;
-
                         // Run creates but do not fail the whole flow on DDL error; log instead
                         if ($link) {
                                 if (!mysqli_query($link, $createReservationsSql)) {
@@ -515,9 +503,6 @@ SQL;
                                 }
                                 if (!mysqli_query($link, $createSpaceItemsSql)) {
                                         @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " CREATE space_reservation_items failed: " . mysqli_error($link) . "\n", FILE_APPEND | LOCK_EX);
-                                }
-                                if (!mysqli_query($link, $createSignoffsSql)) {
-                                        @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " CREATE equipment_signoffs failed: " . mysqli_error($link) . "\n", FILE_APPEND | LOCK_EX);
                                 }
                         }
 
@@ -570,6 +555,24 @@ SQL;
 
                 $hasSubmittedAtCol = in_array('submitted_at', $reservationCols, true);
                 $hasApprovalStageCol = in_array('approval_stage', $reservationCols, true);
+
+                $certificateId = null;
+                if (!empty($cartEquipments)) {
+                    $certSelectStmt = mysqli_prepare(
+                        $link,
+                        'SELECT certificate_id FROM equipment_certificates WHERE holder_id = ? AND validity_status = "valid" ORDER BY issue_date DESC LIMIT 1'
+                    );
+                    if ($certSelectStmt) {
+                        mysqli_stmt_bind_param($certSelectStmt, 's', $userId);
+                        mysqli_stmt_execute($certSelectStmt);
+                        $certSelectResult = mysqli_stmt_get_result($certSelectStmt);
+                        $certRow = $certSelectResult ? mysqli_fetch_assoc($certSelectResult) : null;
+                        mysqli_stmt_close($certSelectStmt);
+                        if ($certRow && isset($certRow['certificate_id'])) {
+                            $certificateId = (int)$certRow['certificate_id'];
+                        }
+                    }
+                }
                 
                 $submittedAtVal = date('Y-m-d H:i:s'); // 保證同一批次提交時間一致
                 $insertCols = [$applicantColumn, 'borrow_start_at', 'borrow_end_at', 'organization_name', 'activity_name', 'participant_count', 'staff_count', 'club_president', 'activity_coordinator', 'coordinator_department', 'coordinator_phone', 'coordinator_other_contact', 'vehicle_entry', 'setup_flags', 'flag_details'];
@@ -595,12 +598,14 @@ SQL;
                     $bindTypesTemplate .= 's';
                 }
 
-                $colsSql = implode(", ", $insertCols) . ", approval_status, created_at";
                 if ($hasCertificateIdCol) {
-                    $colsSql .= ", certificate_id";
+                    $insertCols[] = 'certificate_id';
+                    $bindValuesTemplate[] = $certificateId;
+                    $bindTypesTemplate .= 'i';
                 }
 
-                $placeholders = implode(', ', array_fill(0, count($insertCols), '?')) . ', "pending", NOW()' . ($hasCertificateIdCol ? ', NULL' : '');
+                $colsSql = implode(", ", $insertCols) . ", approval_status, created_at";
+                $placeholders = implode(', ', array_fill(0, count($insertCols), '?')) . ', "pending", NOW()';
                 $insertReservationSql = sprintf("INSERT INTO reservations ( %s ) VALUES (%s)", $colsSql, $placeholders);
 
                 $createdReservationIds = [];
@@ -652,23 +657,6 @@ SQL;
                     );
                     if (!$stockCheckStmt || !$selectEquipmentStmt || !$reservationItemStmt || !$updateEquipmentStatusStmt) {
                         throw new RuntimeException('建立器材預約明細指令失敗：' . mysqli_error($link));
-                    }
-
-                    // 嘗試取得有效證照（供器材核簽用）
-                    $certificateId = null;
-                    $certSelectStmt = mysqli_prepare(
-                        $link,
-                        'SELECT certificate_id FROM equipment_certificates WHERE holder_id = ? AND validity_status = "valid" ORDER BY issue_date DESC LIMIT 1'
-                    );
-                    if ($certSelectStmt) {
-                        mysqli_stmt_bind_param($certSelectStmt, 's', $userId);
-                        mysqli_stmt_execute($certSelectStmt);
-                        $certSelectResult = mysqli_stmt_get_result($certSelectStmt);
-                        $certRow = $certSelectResult ? mysqli_fetch_assoc($certSelectResult) : null;
-                        mysqli_stmt_close($certSelectStmt);
-                        if ($certRow && isset($certRow['certificate_id'])) {
-                            $certificateId = (int)$certRow['certificate_id'];
-                        }
                     }
 
                     // 針對購物車內【每一個器材項目】建立各自獨立的預約單 (reservation)
@@ -732,31 +720,6 @@ SQL;
                             
                             mysqli_stmt_bind_param($updateEquipmentStatusStmt, 'is', $equipmentId, $borrowStartAtSql);
                             mysqli_stmt_execute($updateEquipmentStatusStmt);
-                        }
-
-                        // 建立器材核簽紀錄
-                        if ($certificateId !== null) {
-                            $insertSignoffStmt = mysqli_prepare(
-                                $link,
-                                'INSERT INTO equipment_signoffs (reservation_id, certificate_id, reviewer_id, signoff_status) VALUES (?, ?, ?, "pending")'
-                            );
-                            if (!$insertSignoffStmt) {
-                                throw new RuntimeException('建立器材核簽紀錄失敗：' . mysqli_error($link));
-                            }
-                            mysqli_stmt_bind_param($insertSignoffStmt, 'iis', $itemReservationId, $certificateId, $userId);
-                            mysqli_stmt_execute($insertSignoffStmt);
-                            mysqli_stmt_close($insertSignoffStmt);
-                        } else {
-                            $insertSignoffStmt = mysqli_prepare(
-                                $link,
-                                'INSERT INTO equipment_signoffs (reservation_id, certificate_id, reviewer_id, signoff_status) VALUES (?, NULL, ?, "pending")'
-                            );
-                            if (!$insertSignoffStmt) {
-                                throw new RuntimeException('建立器材核簽紀錄失敗：' . mysqli_error($link));
-                            }
-                            mysqli_stmt_bind_param($insertSignoffStmt, 'is', $itemReservationId, $userId);
-                            mysqli_stmt_execute($insertSignoffStmt);
-                            mysqli_stmt_close($insertSignoffStmt);
                         }
                     }
 

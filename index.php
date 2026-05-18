@@ -693,33 +693,71 @@ if ($link) {
                     return { text: '已過去', color: 'unknown' };
                 }
 
-                let minAvail = calData.totalCapacity;
-                let maxAvail = 0;
+                // 對於日狀態，我們以 periodSlots 的最早開始到最晚結束，採半小時切分，
+                // 再依每個半小時時段的剩餘數量來判定全天/部分/已借完
+                const periodCodesLocal = calData.periodOrder || Object.keys(calData.periodSlots || {});
+                if (!periodCodesLocal || periodCodesLocal.length === 0) {
+                    return { text: '未知', color: 'unknown' };
+                }
 
-                calData.periodOrder.forEach(pCode => {
-                    const pData = calData.periodSlots[pCode];
-                    const avail = calculateAvailableForPeriod(dateStr, pData.start, pData.end);
-                    if (avail < minAvail) minAvail = avail;
-                    if (avail > maxAvail) maxAvail = avail;
-                });
+                const firstCodeLocal = periodCodesLocal[0];
+                const lastCodeLocal = periodCodesLocal[periodCodesLocal.length - 1];
+                const firstStartLocal = calData.periodSlots[firstCodeLocal].start || '07:00:00';
+                const lastEndLocal = calData.periodSlots[lastCodeLocal].end || '22:30:00';
+
+                function roundDownToHalfHourMs(d) {
+                    const dd = new Date(d);
+                    const m = dd.getMinutes();
+                    if (m >= 30) dd.setMinutes(30,0,0); else dd.setMinutes(0,0,0);
+                    return dd.getTime();
+                }
+                function roundUpToHalfHourMs(d) {
+                    const dd = new Date(d);
+                    const m = dd.getMinutes();
+                    if (m === 0) { dd.setMinutes(0,0,0); }
+                    else if (m <= 30) { dd.setMinutes(30,0,0); }
+                    else { dd.setHours(dd.getHours()+1); dd.setMinutes(0,0,0); }
+                    return dd.getTime();
+                }
+
+                const rawS = new Date(`${dateStr}T${firstStartLocal}`);
+                const rawE = new Date(`${dateStr}T${lastEndLocal}`);
+                const startMs = roundDownToHalfHourMs(rawS);
+                const endMs = roundUpToHalfHourMs(rawE);
+                const step = 30 * 60 * 1000;
 
                 if (calData.totalCapacity === 0) {
                     return { text: '無法出借', color: 'none' };
                 }
 
-                if (calData.selectedItemType === 'equipment') {
-                    if (minAvail === 0) {
-                        return { text: '已借出', color: 'none' };
-                    }
-                    return { text: `還可借 ${minAvail} 件`, color: 'full' };
+                let allZero = true;
+                let allPositive = true;
+
+                for (let t = startMs; t < endMs; t += step) {
+                    const s = new Date(t);
+                    const e = new Date(t + step);
+                    let used = 0;
+                    calData.reservations.forEach(r => {
+                        const rStart = new Date(r.start.replace(' ', 'T'));
+                        const rEnd = new Date(r.end.replace(' ', 'T'));
+                        if (!(e <= rStart || s >= rEnd)) {
+                            used += r.qty || 0;
+                        }
+                    });
+                    const avail = Math.max(0, calData.totalCapacity - used);
+                    if (avail > 0) allZero = false;
+                    if (avail <= 0) allPositive = false;
                 }
 
-                if (minAvail === calData.totalCapacity) {
+                if (allZero) {
+                    return { text: '已借完', color: 'none' };
+                }
+
+                if (allPositive) {
                     return { text: '全天可借', color: 'full' };
-                } else if (minAvail === 0 && maxAvail === 0) {
-                    return { text: '已借滿', color: 'none' };
                 }
 
+                // 部分時段（若容量為1且部分時段被借走，顯示部分時段）
                 return { text: '部分時段', color: 'partial' };
             }
 
@@ -757,7 +795,7 @@ if ($link) {
                     cell.appendChild(dateHeader);
                     cell.appendChild(statusBox);
 
-                    if (calData.selectedItemType === 'space') {
+                    if (calData.selectedItemType === 'space' || calData.selectedItemType === 'equipment') {
                         cell.onclick = () => showDayDetails(dateStr);
                     }
 
@@ -770,39 +808,79 @@ if ($link) {
                 calUI.detailsTitle.textContent = `【${calData.selectedItemName}】 ${dateStr} 詳細時段狀態`;
                 calUI.detailsGrid.innerHTML = '';
 
-                calData.periodOrder.forEach(pCode => {
-                    const pData = calData.periodSlots[pCode];
-                    const avail = calculateAvailableForPeriod(dateStr, pData.start, pData.end);
+                // 對空間或器材皆以半小時時段顯示（半小時切分的區間），時段範圍由 periodSlots 的最早開始到最晚結束
+                const periodCodes = calData.periodOrder || Object.keys(calData.periodSlots || {});
+                if (!periodCodes || periodCodes.length === 0) return;
+
+                const firstCode = periodCodes[0];
+                const lastCode = periodCodes[periodCodes.length - 1];
+                const firstStart = calData.periodSlots[firstCode].start || '07:00:00';
+                const lastEnd = calData.periodSlots[lastCode].end || '22:30:00';
+
+                // 建立起訖 Date 物件
+                const rawStart = new Date(`${dateStr}T${firstStart}`);
+                const rawEnd = new Date(`${dateStr}T${lastEnd}`);
+
+                // 對齊到整點或半點：起始向下對齊，結束向上對齊
+                function roundDownToHalfHour(d) {
+                    const dd = new Date(d);
+                    const m = dd.getMinutes();
+                    if (m >= 30) dd.setMinutes(30,0,0); else dd.setMinutes(0,0,0);
+                    return dd;
+                }
+                function roundUpToHalfHour(d) {
+                    const dd = new Date(d);
+                    const m = dd.getMinutes();
+                    if (m === 0) { dd.setMinutes(0,0,0); }
+                    else if (m <= 30) { dd.setMinutes(30,0,0); }
+                    else { dd.setHours(dd.getHours()+1); dd.setMinutes(0,0,0); }
+                    return dd;
+                }
+
+                const slotStartBase = roundDownToHalfHour(rawStart);
+                const slotEndBase = roundUpToHalfHour(rawEnd);
+                const msStep = 30 * 60 * 1000;
+
+                for (let t = slotStartBase.getTime(); t < slotEndBase.getTime(); t += msStep) {
+                    const s = new Date(t);
+                    const e = new Date(t + msStep);
+
+                    // 計算此時段被預約的數量
+                    let used = 0;
+                    calData.reservations.forEach(r => {
+                        const rStart = new Date(r.start.replace(' ', 'T'));
+                        const rEnd = new Date(r.end.replace(' ', 'T'));
+                        if (!(e <= rStart || s >= rEnd)) {
+                            used += r.qty || 0;
+                        }
+                    });
+
+                    const finalAvail = Math.max(0, calData.totalCapacity - used);
 
                     const itemDiv = document.createElement('div');
                     itemDiv.className = 'period-item';
 
                     let bgColor = '#dcfce7';
                     let textColor = '#166534';
-                    let text = `剩餘 ${avail}`;
+                    let text = calData.selectedItemType === 'space' ? (finalAvail === 0 ? '已預約' : '可借用') : `剩餘 ${finalAvail}`;
 
-                    if (avail === 0) {
+                    if (finalAvail === 0) {
                         bgColor = '#fee2e2';
                         textColor = '#991b1b';
-                        text = '已滿';
-                    } else if (avail < calData.totalCapacity) {
+                    } else if (finalAvail < calData.totalCapacity) {
                         bgColor = '#fef9c3';
                         textColor = '#854d0e';
                     }
 
-                    if (calData.selectedItemType === 'space') {
-                        text = avail === 0 ? '已預約' : '可借用';
-                    }
-
+                    const fmt = d => d.toTimeString().slice(0,5);
                     itemDiv.style.backgroundColor = bgColor;
                     itemDiv.style.color = textColor;
                     itemDiv.innerHTML = `
-                        <div style="font-weight:bold; margin-bottom:3px;">${pData.label}</div>
-                        <div style="font-size:11px; color:#666; margin-bottom:5px;">${pData.start.substring(0,5)} ~ ${pData.end.substring(0,5)}</div>
+                        <div style="font-weight:bold; margin-bottom:3px;">${fmt(s)} ~ ${fmt(e)}</div>
                         <div style="font-weight:bold; font-size:14px; border-top:1px solid rgba(0,0,0,0.1); padding-top:3px;">${text}</div>
                     `;
                     calUI.detailsGrid.appendChild(itemDiv);
-                });
+                }
 
                 calUI.details.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }

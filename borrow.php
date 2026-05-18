@@ -1165,6 +1165,7 @@ SQL;
 
                         <form method="post" enctype="multipart/form-data" class="borrow-form" action="borrow.php" novalidate id="multistep_form">
                             <input type="hidden" name="current_step" id="current_step" value="<?php echo htmlspecialchars($_POST['current_step'] ?? '1', ENT_QUOTES, 'UTF-8'); ?>">
+                            <input type="hidden" name="current_draft_id" id="current_draft_id" value="">
                             <input type="file" id="proposal_file" name="proposal_file" accept=".pdf,application/pdf" style="opacity: 0; position: absolute; z-index: -1; width: 0; height: 0;" onchange="document.getElementById('proposal_file_name_display').innerText = this.files.length > 0 ? this.files[0].name : '';">
                             <!-- ========== 步驟 1 內容區 ========== -->
                             <div class="step-content active" id="step-content-1">
@@ -1588,53 +1589,11 @@ SQL;
                                     toggleFlagDetails();
                                     syncFlagForm();
 
-                                    // 暫存申請
-                                    const saveBtns = document.querySelectorAll('.saveDraftBtn');
-
-                                    saveBtns.forEach(function (btn) {
-                                        btn.addEventListener('click', function () {
-                                            const form = document.getElementById('multistep_form');
-                                            if (!form) return;
-
-                                            if (window.borrowCartDraftBridge) {
-                                                window.borrowCartDraftBridge.syncHiddenBeforeSave();
-                                            }
-
-                                            const formData = {};
-                                            form.querySelectorAll('input, select, textarea').forEach(function (el) {
-                                                if (!el.name || el.type === 'file') return;
-
-                                                if (el.type === 'checkbox') {
-                                                    formData[el.name] = el.checked ? '1' : '';
-                                                } else if (el.type === 'radio') {
-                                                    if (el.checked) formData[el.name] = el.value;
-                                                } else {
-                                                    formData[el.name] = el.value;
-                                                }
-                                            });
-
-                                            const drafts = JSON.parse(localStorage.getItem('borrow_drafts') || '[]');
-                                            const currentStep = document.getElementById('current_step')?.value || '1';
-
-                                            drafts.unshift({
-                                                draftId: 'draft_' + Date.now(),
-                                                timestamp: new Date().toLocaleString('zh-TW'),
-                                                activityName: formData.activity_name || '未填寫活動名稱',
-                                                purpose: formData.purpose || '未填寫',
-                                                currentStep: currentStep,
-                                                formData: formData
-                                            });
-
-                                            localStorage.setItem('borrow_drafts', JSON.stringify(drafts));
-
-                                            // 保留表單狀態，不清空也不切回第一步
-                                            alert('暫存成功，表單內容已保留');
-                                            if (typeof toggleFlagDetails === 'function') {
-                                                // ensure UI reflects current flag radio state without resetting inputs
-                                                toggleFlagDetails();
-                                            }
-                                        });
-                                    });
+                                    // 註解掉避免重複綁定 saveDraft
+                                    // const saveBtns = document.querySelectorAll('.saveDraftBtn');
+                                    // saveBtns.forEach(function (btn) {
+                                    //    ...
+                                    // });
 
                                     // 草稿箱
                                     const draftBtns = document.querySelectorAll('.openDraftBoxBtn');
@@ -2090,8 +2049,16 @@ SQL;
             const loadId = params.get('draft_id');
 
             if (loadId) {
-                const drafts = JSON.parse(localStorage.getItem('borrow_drafts') || '[]');
-                const draft = drafts.find(d => d.draftId === loadId);
+                // 使用 DraftManager 取得草稿（若 DraftManager 尚未啟動，退回到 localStorage）
+                let draft = null;
+                if (window.draftManager && typeof window.draftManager.getDraftById === 'function') {
+                    draft = window.draftManager.getDraftById(loadId);
+                }
+
+                if (!draft) {
+                    const drafts = JSON.parse(localStorage.getItem('borrow_drafts') || '[]');
+                    draft = drafts.find(d => d.draftId === loadId);
+                }
 
                 if (draft) {
                     Object.keys(draft.formData).forEach(function (name) {
@@ -2108,6 +2075,10 @@ SQL;
                             }
                         });
                     });
+
+                    // 將目前編輯的草稿 id 寫入 hidden input，供暫存時覆寫判斷
+                    const currentDraftIdEl = document.getElementById('current_draft_id');
+                    if (currentDraftIdEl) currentDraftIdEl.value = draft.draftId || '';
 
                     // 草稿如果有第三步已選取項目，先填回 hidden input，並同步畫回右側「已選取項目」。
                     if (window.borrowCartDraftBridge) {
@@ -2185,8 +2156,8 @@ function startApplication() {
     // 記得我們上一回合說要補上的變數宣告（在 initializeBorrowForm 裡面）也要加喔！
     initializeBorrowForm();
     
-    // 👇 這行也先用雙斜線註解掉，因為草稿模組目前有問題
-    // initializeDraftManagement(); 
+    // 啟用草稿管理模組
+    initializeDraftManagement();
 }
 
         // ================== 借用表單邏輯 ==================
@@ -2775,6 +2746,10 @@ function startApplication() {
 
                 const success = window.draftManager.loadDraftToForm(draft);
                 if (success) {
+                    // 標記目前正在編輯的草稿 id，供儲存時判斷覆寫或另存
+                    const currentDraftIdEl = document.getElementById('current_draft_id');
+                    if (currentDraftIdEl) currentDraftIdEl.value = draft.draftId || '';
+
                     closeDraftModal();
                     showMessage(`✓ 已載入草稿 (${draft.timestamp})`, 'success', 3000);
                 } else {
@@ -2819,15 +2794,143 @@ function startApplication() {
             /**
              * 保存草稿
              */
-            function saveDraft() {
-                try {
-                    const draft = window.draftManager.saveDraft();
-                    showMessage(`✓ 草稿已暫存 (${draft.draftId.substring(0, 20)}...)，已儲存，您將停留於目前步驟`, 'success', 3000);
-                    // 保留表單內容與當前步驟，使用者可繼續編輯或離開後再回來載入草稿
-                } catch (error) {
-                    showMessage(`✗ 暫存失敗：${error.message}`, 'error', 3000);
-                }
+            /**
+             * 顯示覆寫/另存 modal，回傳使用者選擇：'overwrite'|'save_new'|'cancel'
+             * @returns {Promise<string>}
+             */
+            function showOverwriteModal() {
+                return new Promise(function (resolve) {
+                    let modal = document.getElementById('overwriteModal');
+                    if (!modal) {
+                        modal = document.createElement('div');
+                        modal.id = 'overwriteModal';
+                        modal.innerHTML = `
+                            <div class="overlay"></div>
+                            <div class="overwrite-modal-content">
+                                <div class="modal-body">偵測到您正在編輯已載入的草稿。請選擇要覆寫原有草稿，或另存為新草稿。</div>
+                                <div class="modal-actions">
+                                    <button type="button" class="btn btn-secondary" data-action="cancel">取消</button>
+                                    <button type="button" class="btn btn-primary" data-action="save_new">另存為新草稿</button>
+                                    <button type="button" class="btn btn-danger" data-action="overwrite">覆寫草稿</button>
+                                </div>
+                            </div>
+                        `;
+                        document.body.appendChild(modal);
+
+                        const style = document.createElement('style');
+                        style.textContent = `
+                            #overwriteModal { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 9999; }
+                            #overwriteModal .overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.4); }
+                            #overwriteModal .overwrite-modal-content { position: relative; background: #fff; padding: 18px; border-radius: 8px; width: 420px; max-width: 90%; box-shadow: 0 8px 24px rgba(0,0,0,0.15); z-index: 10000; }
+                            #overwriteModal .modal-body { margin-bottom: 12px; color: #0f172a; }
+                            #overwriteModal .modal-actions { display:flex; gap:8px; justify-content: flex-end; }
+                            #overwriteModal .btn { padding:6px 10px; border-radius:6px; border:1px solid #cbd5e1; cursor:pointer; }
+                            #overwriteModal .btn-primary { background:#3b82f6; color:#fff; border-color:#3b82f6; }
+                            #overwriteModal .btn-danger { background:#ef4444; color:#fff; border-color:#ef4444; }
+                            #overwriteModal .btn-secondary { background:#f1f5f9; color:#0f172a; }
+                        `;
+                        document.head.appendChild(style);
+
+                        modal.addEventListener('click', function (e) {
+                            const action = e.target.getAttribute('data-action');
+                            if (action) {
+                                modal.style.display = 'none';
+                                resolve(action);
+                            }
+                        });
+                    }
+
+                    modal.style.display = 'flex';
+                });
             }
+            async function saveDraft() {
+    try {
+        if (window.borrowCartDraftBridge) {
+            window.borrowCartDraftBridge.syncHiddenBeforeSave();
+        }
+
+        const currentDraftIdEl = document.getElementById('current_draft_id');
+        let currentDraftId = currentDraftIdEl ? currentDraftIdEl.value : '';
+
+        console.log('[Draft] start, currentDraftId =', currentDraftId);
+
+        // 取得表單資料
+        const draftData = window.draftManager?.extractFormData?.();
+        if (!draftData) throw new Error('無法提取表單資料');
+
+        // ⭐ 記錄「送出前」是否已有 draftId（這才是關鍵）
+        const hadDraftBeforeSave = !!currentDraftId;
+
+        // ⭐ 如果已有 draft → 先問要怎麼處理
+        if (hadDraftBeforeSave) {
+
+            const userChoice = await showOverwriteModal();
+            console.log('[Draft] userChoice =', userChoice);
+
+            if (userChoice === 'overwrite') {
+
+                // 覆寫
+                draftData.draftId = currentDraftId;
+
+            } else if (userChoice === 'save_new') {
+
+                // ⭐ 強制新草稿（關鍵修正）
+                draftData.draftId = null;
+                draftData.forceNew = true;
+
+                currentDraftId = '';
+
+                if (currentDraftIdEl) {
+                    currentDraftIdEl.value = '';
+                }
+
+            } else {
+                showMessage('已取消暫存', 'error', 2000);
+                return;
+            }
+        }
+
+        // ⭐ save
+        const saved = await window.draftManager.saveDraft(draftData);
+
+        console.log('[Draft] saved =', saved);
+
+        if (!saved || !saved.draftId) {
+            throw new Error('草稿儲存失敗：沒有 draftId');
+        }
+
+        // ⭐ 更新 UI state
+        const isNew = !hadDraftBeforeSave || draftData.forceNew === true;
+
+        if (currentDraftIdEl) {
+            currentDraftIdEl.value = saved.draftId;
+        }
+
+        // ⭐ 重點：alert 改成「真正 new」
+        if (isNew) {
+            alert(
+                '已建立新草稿：\n' +
+                saved.draftId +
+                '\n\n您可以在草稿箱中查看。'
+            );
+        }
+
+        showMessage(
+            `✓ 草稿已暫存 (${saved.draftId.substring(0, 20)}...)`,
+            'success',
+            3000
+        );
+
+    } catch (error) {
+        console.error('[Draft Error]', error);
+
+        showMessage(
+            `✗ 暫存失敗：${error.message}`,
+            'error',
+            3000
+        );
+    }
+}
 
             /**
              * 新增申請（清空表單）
@@ -2842,9 +2945,9 @@ function startApplication() {
             }
 
             // 事件綁定
-            if (saveDraftBtn) {
-                saveDraftBtn.addEventListener('click', saveDraft);
-            }
+            document.querySelectorAll('.saveDraftBtn, #saveDraftBtn').forEach(btn => {
+                btn.addEventListener('click', saveDraft);
+            });
 
             if (manageDraftBtn) {
                 manageDraftBtn.addEventListener('click', openDraftModal);
@@ -3450,17 +3553,21 @@ function getMinDateByParticipantCount(countValue) {
 
 let initialMinDate = getMinDateByParticipantCount(document.getElementById('participant_count') ? document.getElementById('participant_count').value : ''); 
 
-const fpStartDate = flatpickr("#borrow_start_date", {
-    minDate: initialMinDate,
-    locale: "zh-tw",
-    dateFormat: "Y-m-d"
-});
+// Resolve locale safely: prefer registered zh_tw locale object, fallback to no locale option
+let _flatpickrLocale = null;
+if (typeof flatpickr !== 'undefined' && flatpickr.l10ns) {
+    _flatpickrLocale = flatpickr.l10ns.zh_tw || flatpickr.l10ns['zh_tw'] || flatpickr.l10ns.zh || null;
+}
 
-const fpEndDate = flatpickr("#borrow_end_date", {
+const fpStartDate = flatpickr("#borrow_start_date", Object.assign({
     minDate: initialMinDate,
-    locale: "zh-tw",
     dateFormat: "Y-m-d"
-});
+}, _flatpickrLocale ? { locale: _flatpickrLocale } : {}));
+
+const fpEndDate = flatpickr("#borrow_end_date", Object.assign({
+    minDate: initialMinDate,
+    dateFormat: "Y-m-d"
+}, _flatpickrLocale ? { locale: _flatpickrLocale } : {}));
 
 // 當改變人數時，動態更新鎖定日期
 const participantSelect = document.getElementById('participant_count');

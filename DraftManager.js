@@ -8,7 +8,7 @@
  */
 
 class DraftManager {
-    constructor(storageKey = 'borrowing_system_drafts') {
+    constructor(storageKey = 'borrow_drafts') {
         this.storageKey = storageKey;
         this.drafts = this.loadAllDrafts();
     }
@@ -131,8 +131,19 @@ class DraftManager {
             throw new Error('請至少填寫一些基本信息');
         }
 
-        // 添加或更新草稿
-        this.drafts.push(draft);
+        // 如果 draftId 已存在則覆寫該筆草稿，否則新增到最前面
+        if (!draft.draftId) {
+            draft.draftId = this.generateDraftId();
+        }
+
+        const existingIndex = this.drafts.findIndex(d => d.draftId === draft.draftId);
+        draft.timestamp = this.formatDateTime(new Date());
+        if (existingIndex !== -1) {
+            this.drafts[existingIndex] = draft;
+        } else {
+            this.drafts.unshift(draft);
+        }
+
         this.persistDrafts();
 
         return draft;
@@ -230,6 +241,33 @@ class DraftManager {
             const purposeTextarea = form.querySelector('textarea[name="purpose"]');
             if (purposeTextarea) {
                 purposeTextarea.value = draft.purpose || '';
+            }
+
+            // 如果是舊格式（草稿資料存於 draft.formData），嘗試從 formData 裡補資料
+            if (draft.formData) {
+                const fd = draft.formData || {};
+                if (phoneInput && !phoneInput.value) phoneInput.value = fd.phone || fd.coordinator_phone || '';
+                if (purposeTextarea && !purposeTextarea.value) purposeTextarea.value = fd.purpose || '';
+
+                // 如果舊格式有 cart_items 或 cartItems，嘗試轉換
+                const cartRaw = fd.cart_items || fd.cartItems || fd.cart_items_json || fd.cart_items_raw;
+                const cartItemsInput = form.querySelector('input[name="cart_items"]');
+                if (cartItemsInput && cartItemsInput.value === '') {
+                    try {
+                        if (Array.isArray(cartRaw)) {
+                            cartItemsInput.value = JSON.stringify(cartRaw);
+                        } else if (typeof cartRaw === 'string' && cartRaw.trim() !== '') {
+                            cartItemsInput.value = cartRaw;
+                        }
+                    } catch (e) {
+                        // ignore
+                    }
+                }
+
+                // 補 currentStep
+                if (!draft.currentStep && fd.currentStep) {
+                    draft.currentStep = fd.currentStep;
+                }
             }
 
             // 重新設置 cart_items

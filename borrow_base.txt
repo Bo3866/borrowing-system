@@ -1758,9 +1758,9 @@ SQL;
                     drafts.unshift(draft);
                     saveDrafts(drafts);
 
-                    if (msg) msg.textContent = '✅ 草稿已暫存，表單已清空';
+                    if (msg) msg.textContent = '✅ 草稿已暫存，表單內容已保留';
 
-                    clearFormAfterSave();
+                    // 保留表單，不切回第一步
                 });
             }
 

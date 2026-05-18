@@ -1627,34 +1627,11 @@ SQL;
 
                                             localStorage.setItem('borrow_drafts', JSON.stringify(drafts));
 
-                                            alert('暫存成功');
-
-                                            form.reset();
-
-                                            const cartInput = document.querySelector('input[name="cart_items"]');
-                                            if (cartInput) cartInput.value = '[]';
-
-                                            const selectedList = document.getElementById('esSelectedList');
-                                            if (selectedList) selectedList.innerHTML = '';
-
-                                            if (typeof window.setBorrowCartItems === 'function') {
-                                                window.setBorrowCartItems([]);
-                                            }
-
-                                            const proposalName = document.getElementById('proposal_file_name_display');
-                                            if (proposalName) proposalName.textContent = '';
-
-                                            toggleFlagDetails();
-
-                                            if (typeof showStep === 'function') {
-                                                showStep(1);
-                                            } else if (typeof goToStep === 'function') {
-                                                goToStep(1);
-                                            } else {
-                                                document.querySelectorAll('.step-content').forEach(el => el.classList.remove('active'));
-                                                document.getElementById('step-content-1')?.classList.add('active');
-                                                const currentStepInput = document.getElementById('current_step');
-                                                if (currentStepInput) currentStepInput.value = '1';
+                                            // 保留表單狀態，不清空也不切回第一步
+                                            alert('暫存成功，表單內容已保留');
+                                            if (typeof toggleFlagDetails === 'function') {
+                                                // ensure UI reflects current flag radio state without resetting inputs
+                                                toggleFlagDetails();
                                             }
                                         });
                                     });
@@ -2070,27 +2047,8 @@ SQL;
             }
 
             function clearFormAfterSave() {
-                form.reset();
-
-                const cartInput = document.querySelector('input[name="cart_items"]');
-                if (cartInput) cartInput.value = '[]';
-
-                const selectedList = document.getElementById('esSelectedList');
-                if (selectedList) selectedList.innerHTML = '';
-
-                if (typeof window.setBorrowCartItems === 'function') {
-                    window.setBorrowCartItems([]);
-                }
-
-                const proposalName = document.getElementById('proposal_file_name_display');
-                if (proposalName) proposalName.textContent = '';
-
-                const currentStep = document.getElementById('current_step');
-                if (currentStep) currentStep.value = '1';
-
-                document.querySelectorAll('.step-content').forEach(el => el.classList.remove('active'));
-                const step1 = document.getElementById('step-content-1');
-                if (step1) step1.classList.add('active');
+                // Intentionally left minimal to avoid unexpected navigation/reset during save.
+                console.log('clearFormAfterSave called — no-op to preserve form state after draft save');
             }
 
             if (saveBtn) {
@@ -2115,9 +2073,9 @@ SQL;
                     drafts.unshift(draft);
                     saveDrafts(drafts);
 
-                    if (msg) msg.textContent = '✅ 草稿已暫存，表單已清空';
+                    if (msg) msg.textContent = '✅ 草稿已暫存，表單內容已保留';
 
-                    clearFormAfterSave();
+                    // 保留表單與目前步驟，使用者可繼續編輯
                 });
             }
 
@@ -2864,12 +2822,8 @@ function startApplication() {
             function saveDraft() {
                 try {
                     const draft = window.draftManager.saveDraft();
-                    showMessage(`✓ 草稿已暫存 (${draft.draftId.substring(0, 20)}...)，表單已清空，可開始新申請`, 'success', 3000);
-                    
-                    // 暫存完畢後，清空所有表單欄位並回到第一步
-                    setTimeout(() => {
-                        window.draftManager.clearForm(true);
-                    }, 500);
+                    showMessage(`✓ 草稿已暫存 (${draft.draftId.substring(0, 20)}...)，已儲存，您將停留於目前步驟`, 'success', 3000);
+                    // 保留表單內容與當前步驟，使用者可繼續編輯或離開後再回來載入草稿
                 } catch (error) {
                     showMessage(`✗ 暫存失敗：${error.message}`, 'error', 3000);
                 }

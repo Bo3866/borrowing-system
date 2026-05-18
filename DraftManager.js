@@ -272,6 +272,7 @@ class DraftManager {
      * @param {boolean} resetStep - 是否要重置到第一步
      */
     clearForm(resetStep = false) {
+        console.log('DraftManager.clearForm called, resetStep=', resetStep);
         const form = document.querySelector('form.borrow-form');
         if (!form) {
             console.warn('Cannot find borrow form');

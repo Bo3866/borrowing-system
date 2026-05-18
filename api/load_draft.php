@@ -44,7 +44,7 @@ if ($dbError !== '') {
 try {
     $stmt = mysqli_prepare($link, 
         'SELECT reservation_id, space_id, resource_type, selected_equipment, selected_spaces, 
-                borrow_start_at, borrow_end_at, phone, purpose, status
+            borrow_start_at, borrow_end_at, purpose, status
          FROM reservations 
          WHERE reservation_id = ? AND user_id = ? LIMIT 1'
     );
@@ -120,7 +120,6 @@ try {
         'borrow_date' => $borrowDate,
         'start_period_code' => $startPeriodCode,
         'end_period_code' => $endPeriodCode,
-        'phone' => $row['phone'],
         'purpose' => $row['purpose'],
         'status' => (int)$row['status']
     ];

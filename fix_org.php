@@ -14,11 +14,7 @@ try {
     ADD COLUMN coordinator_other_contact VARCHAR(255) NULL,
     ADD COLUMN vehicle_entry VARCHAR(10) NULL,
     ADD COLUMN setup_flags VARCHAR(10) NULL,
-    ADD COLUMN flag_details VARCHAR(255) NULL,
-    ADD COLUMN purpose VARCHAR(255) NULL,
-    ADD COLUMN has_alcohol VARCHAR(1) NULL,
-    ADD COLUMN has_fire VARCHAR(1) NULL,
-    ADD COLUMN has_sales VARCHAR(1) NULL;");
+    ADD COLUMN purpose VARCHAR(255) NULL;");
     echo "Added columns manually.\n";
 } catch(Exception $e) {
     echo "Failed: ".$e->getMessage()."\n";

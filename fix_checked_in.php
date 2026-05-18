@@ -1,0 +1,1 @@
+<?php require "config/database.php"; $link = getMysqliConnection($err); mysqli_query($link, "ALTER TABLE reservations MODIFY checked_in_at DATETIME NULL DEFAULT NULL COMMENT '報到時間'"); mysqli_query($link, "UPDATE reservations SET checked_in_at = NULL WHERE approval_status != 'approved' OR approval_stage IS NOT NULL"); echo "Fixed!\n";

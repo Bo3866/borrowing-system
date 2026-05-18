@@ -71,33 +71,44 @@ class DraftManager {
             return null;
         }
 
-        // 取得 cart_items 資料
-        const cartItemsInput = form.querySelector('input[name="cart_items"]');
-        let cartItems = [];
-        if (cartItemsInput && cartItemsInput.value) {
-            try {
-                cartItems = JSON.parse(cartItemsInput.value);
-            } catch (e) {
-                console.error('Failed to parse cart_items:', e);
+        const formData = new FormData(form);
+        const dataObj = {};
+        
+        // Iterate through all FormData entries
+        for (let [key, value] of formData.entries()) {
+            if (key === 'cart_items' && value) {
+                try {
+                    dataObj[key] = JSON.parse(value);
+                } catch (e) {
+                    console.error('Failed to parse cart_items:', e);
+                    dataObj[key] = [];
+                }
+            } else if (key === 'current_step') {
+                dataObj[key] = parseInt(value) || 1;
+            } else if (value instanceof File) {
+                // Cannot save files to localStorage easily; ignore for drafts
+            } else {
+                // If it's a checkbox array or similar that appears multiple times, handle array
+                if (dataObj[key] !== undefined) {
+                    if (!Array.isArray(dataObj[key])) {
+                        dataObj[key] = [dataObj[key]];
+                    }
+                    dataObj[key].push(value);
+                } else {
+                    dataObj[key] = value;
+                }
             }
         }
 
-        // 取得當前步驟
-        const currentStepInput = form.querySelector('input[name="current_step"]');
-        const currentStep = currentStepInput ? parseInt(currentStepInput.value) : 1;
-
-        return {
+        // Add special fields that the DraftManager metadata needs
+        return Object.assign({
             draftId: this.generateDraftId(),
             timestamp: this.formatDateTime(new Date()),
-            currentStep: currentStep,
-            resourceType: form.querySelector('select[name="resource_type"]')?.value || 'equipment',
-            cartItems: cartItems || [],
-            borrowDate: form.querySelector('input[name="borrow_date"]')?.value || '',
-            startPeriodCode: form.querySelector('select[name="start_period_code"]')?.value || '',
-            endPeriodCode: form.querySelector('select[name="end_period_code"]')?.value || '',
-            phone: form.querySelector('input[name="phone"]')?.value || '',
-            purpose: form.querySelector('textarea[name="purpose"]')?.value || ''
-        };
+            currentStep: dataObj.current_step || 1,
+            // Fallbacks for the older logic that might expect these
+            resourceType: dataObj.resource_type || 'equipment',
+            cartItems: dataObj.cart_items || [],
+        }, dataObj);
     }
 
     /**
@@ -112,32 +123,29 @@ class DraftManager {
             throw new Error('無法提取表單資料');
         }
 
-        // 根據當前步驟進行驗證
-        // 第一步：只驗證基本信息
-        // 第二步和第三步：更寬鬆的驗證（允許不完整的表單）
-        if (draft.currentStep === 1) {
-            // 第一步驗證：確保至少有一些基本信息
-            // 不強制要求所有字段（因為用戶可能只填了一部分）
-        } else if (draft.currentStep === 2 || draft.currentStep === 3) {
-            // 第二、三步：更寬鬆的驗證
-            // 只在明確的字段為空時才提醒
-        }
+        // 當前步驟
+        const currentStep = draft.currentStep || 1;
 
-        // 輕量級驗證：至少檢查是否有某些有意義的數據
-        const hasBasicData = draft.phone || draft.purpose || (draft.cartItems && draft.cartItems.length > 0);
+        // 檢查是否有「任何」有意義的數據被填寫
+        const hasBasicData = 
+            (draft.organization_name && draft.organization_name.trim() !== '') || 
+            (draft.activity_name && draft.activity_name.trim() !== '') || 
+            (draft.coordinator_phone && draft.coordinator_phone.trim() !== '') || 
+            (draft.purpose && draft.purpose.trim() !== '') || 
+            (draft.cartItems && draft.cartItems.length > 0);
         
-        if (!hasBasicData && draft.currentStep === 1) {
-            // 只在第一步且完全空白時才拒絕
+        if (!hasBasicData && currentStep === 1) {
             throw new Error('請至少填寫一些基本信息');
         }
 
-        // 如果 draftId 已存在則覆寫該筆草稿，否則新增到最前面
+        // 如果 draftId 已存在則覆寫該筆草稿，否則新增
         if (!draft.draftId) {
             draft.draftId = this.generateDraftId();
         }
 
         const existingIndex = this.drafts.findIndex(d => d.draftId === draft.draftId);
         draft.timestamp = this.formatDateTime(new Date());
+        
         if (existingIndex !== -1) {
             this.drafts[existingIndex] = draft;
         } else {
@@ -209,72 +217,69 @@ class DraftManager {
         }
 
         try {
-            // 設置基本欄位
+            // First loop through all generic inputs in the form
+            const elements = form.querySelectorAll('input, select, textarea');
+            elements.forEach(element => {
+                const name = element.name;
+                if (!name || name === 'current_step' || element.type === 'file') return;
+                
+                if (draft[name] !== undefined) {
+                    if (element.type === 'checkbox' || element.type === 'radio') {
+                        // For checkboxes/radios, value might be an array or string
+                        const values = Array.isArray(draft[name]) ? draft[name] : [draft[name]];
+                        element.checked = values.includes(element.value);
+                    } else if (name === 'cart_items') {
+                        // Handled separately below to ensure correct stringification
+                    } else {
+                        element.value = draft[name];
+                    }
+                }
+            });
+
+            // Handle special cases and trigger UI events
             const resourceTypeSelect = form.querySelector('select[name="resource_type"]');
             if (resourceTypeSelect) {
-                resourceTypeSelect.value = draft.resourceType || 'equipment';
-                // 觸發 change 事件以更新 UI
+                resourceTypeSelect.value = draft.resourceType || draft.resource_type || 'equipment';
                 resourceTypeSelect.dispatchEvent(new Event('change', { bubbles: true }));
             }
 
             const borrowDateInput = form.querySelector('input[name="borrow_date"]');
             if (borrowDateInput) {
-                borrowDateInput.value = draft.borrowDate || '';
                 borrowDateInput.dispatchEvent(new Event('change', { bubbles: true }));
             }
 
-            const startPeriodSelect = form.querySelector('select[name="start_period_code"]');
-            if (startPeriodSelect) {
-                startPeriodSelect.value = draft.startPeriodCode || '';
-            }
-
-            const endPeriodSelect = form.querySelector('select[name="end_period_code"]');
-            if (endPeriodSelect) {
-                endPeriodSelect.value = draft.endPeriodCode || '';
-            }
-
-            const phoneInput = form.querySelector('input[name="phone"]');
-            if (phoneInput) {
-                phoneInput.value = draft.phone || '';
-            }
-
-            const purposeTextarea = form.querySelector('textarea[name="purpose"]');
-            if (purposeTextarea) {
-                purposeTextarea.value = draft.purpose || '';
+            // 重新設置 cart_items 並觸發事件
+            const cartItemsInput = form.querySelector('input[name="cart_items"]');
+            if (cartItemsInput) {
+                cartItemsInput.value = JSON.stringify(draft.cartItems || draft.cart_items || []);
+                cartItemsInput.dispatchEvent(new Event('change', { bubbles: true }));
             }
 
             // 如果是舊格式（草稿資料存於 draft.formData），嘗試從 formData 裡補資料
             if (draft.formData) {
                 const fd = draft.formData || {};
+                const phoneInput = form.querySelector('input[name="coordinator_phone"]');
+                const purposeTextarea = form.querySelector('textarea[name="purpose"]');
+                
                 if (phoneInput && !phoneInput.value) phoneInput.value = fd.phone || fd.coordinator_phone || '';
                 if (purposeTextarea && !purposeTextarea.value) purposeTextarea.value = fd.purpose || '';
 
                 // 如果舊格式有 cart_items 或 cartItems，嘗試轉換
                 const cartRaw = fd.cart_items || fd.cartItems || fd.cart_items_json || fd.cart_items_raw;
-                const cartItemsInput = form.querySelector('input[name="cart_items"]');
-                if (cartItemsInput && cartItemsInput.value === '') {
+                if (cartItemsInput && (cartItemsInput.value === '[]' || cartItemsInput.value === '')) {
                     try {
                         if (Array.isArray(cartRaw)) {
                             cartItemsInput.value = JSON.stringify(cartRaw);
                         } else if (typeof cartRaw === 'string' && cartRaw.trim() !== '') {
                             cartItemsInput.value = cartRaw;
                         }
-                    } catch (e) {
-                        // ignore
-                    }
+                    } catch (e) {}
                 }
 
                 // 補 currentStep
                 if (!draft.currentStep && fd.currentStep) {
                     draft.currentStep = fd.currentStep;
                 }
-            }
-
-            // 重新設置 cart_items
-            const cartItemsInput = form.querySelector('input[name="cart_items"]');
-            if (cartItemsInput) {
-                cartItemsInput.value = JSON.stringify(draft.cartItems || []);
-                cartItemsInput.dispatchEvent(new Event('change', { bubbles: true }));
             }
 
             // 觸發表單渲染邏輯更新（如果存在）

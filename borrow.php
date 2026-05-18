@@ -1813,7 +1813,7 @@ SQL;
     </div>
 
     <!-- 草稿管理 JavaScript 模組 - 必須在 borrow.php 邏輯之前加載 -->
-    <script src="DraftManager.js"></script>
+    <script src="DraftManager.js?v=<?php echo time(); ?>"></script>
     <script>
         window.draftManager = new DraftManager();
     </script>
@@ -2061,20 +2061,24 @@ SQL;
                 }
 
                 if (draft) {
-                    Object.keys(draft.formData).forEach(function (name) {
-                        const els = document.querySelectorAll(`[name="${name}"]`);
+                    if (window.draftManager && typeof window.draftManager.loadDraftToForm === 'function') {
+                        window.draftManager.loadDraftToForm(draft);
+                    } else if (draft.formData) {
+                        // Fallback for very old drafts that still have formData
+                        Object.keys(draft.formData).forEach(function (name) {
+                            const els = document.querySelectorAll(`[name="${name}"]`);
 
-
-                        els.forEach(function (el) {
-                            if (el.type === 'checkbox') {
-                                el.checked = draft.formData[name] === '1';
-                            } else if (el.type === 'radio') {
-                                el.checked = el.value === draft.formData[name];
-                            } else if (el.type !== 'file') {
-                                el.value = draft.formData[name];
-                            }
+                            els.forEach(function (el) {
+                                if (el.type === 'checkbox') {
+                                    el.checked = draft.formData[name] === '1';
+                                } else if (el.type === 'radio') {
+                                    el.checked = el.value === draft.formData[name];
+                                } else if (el.type !== 'file') {
+                                    el.value = draft.formData[name];
+                                }
+                            });
                         });
-                    });
+                    }
 
                     // 將目前編輯的草稿 id 寫入 hidden input，供暫存時覆寫判斷
                     const currentDraftIdEl = document.getElementById('current_draft_id');
@@ -2843,7 +2847,12 @@ function startApplication() {
                     modal.style.display = 'flex';
                 });
             }
-            async function saveDraft() {
+            async function saveDraft(e) {
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    console.log('[Draft] button clicked!');
     try {
         if (window.borrowCartDraftBridge) {
             window.borrowCartDraftBridge.syncHiddenBeforeSave();
@@ -2906,12 +2915,18 @@ function startApplication() {
             currentDraftIdEl.value = saved.draftId;
         }
 
-        // ⭐ 重點：alert 改成「真正 new」
+        // ⭐ 新增與覆寫都跳出明確的 alert 提示
         if (isNew) {
             alert(
-                '已建立新草稿：\n' +
+                '新增草稿成功！\n\n草稿代碼：' +
                 saved.draftId +
                 '\n\n您可以在草稿箱中查看。'
+            );
+        } else {
+            alert(
+                '覆寫草稿成功！\n\n草稿代碼：' +
+                saved.draftId +
+                '\n\n原本的草稿內容已更新。'
             );
         }
 

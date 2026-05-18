@@ -87,14 +87,9 @@ if ($dbError === '') {
             ec.equipment_code,
             ec.equipment_name,
             ec.borrow_limit_quantity,
-            COALESCE(SUM(CASE WHEN e.operation_status = 1 THEN 1 ELSE 0 END), 0) - COALESCE(COUNT(eri.equipment_id), 0) AS available_quantity
+            COALESCE(SUM(CASE WHEN e.operation_status = 1 THEN 1 ELSE 0 END), 0) AS total_capacity
         FROM equipment_categories ec
         LEFT JOIN equipments e ON e.equipment_code = ec.equipment_code
-        LEFT JOIN equipment_reservation_items eri ON e.equipment_id = eri.equipment_id
-        LEFT JOIN reservations r ON eri.reservation_id = r.reservation_id
-            AND r.borrow_start_at <= NOW()
-            AND r.borrow_end_at > NOW()
-            AND r.approval_status IN ('pending', 'approved')
         GROUP BY ec.equipment_code, ec.equipment_name, ec.borrow_limit_quantity
         ORDER BY ec.equipment_code ASC
     ";
@@ -108,7 +103,7 @@ if ($dbError === '') {
                 'equipment_code' => $code,
                 'equipment_name' => (string)$row['equipment_name'],
                 'borrow_limit_quantity' => $limit,
-                'available_quantity' => (int)$row['available_quantity'],
+                'total_capacity' => (int)$row['total_capacity'],
             ];
         }
     } else {
@@ -370,8 +365,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $borrowError = "{$selectedE['equipment_name']} 借用數量超過限借數量。";
                             break;
                         }
-                        if ($cQty > (int)$selectedE['available_quantity']) {
-                            $borrowError = "{$selectedE['equipment_name']} 借用數量超過目前可借用數量。";
+                        if ($cQty > (int)$selectedE['total_capacity']) {
+                            $borrowError = "{$selectedE['equipment_name']} 借用數量超過總庫存量。";
                             break;
                         }
                         
@@ -668,7 +663,7 @@ SQL;
                         $cCode = $item['code'];
                         $cQty = (int)$item['quantity'];
 
-                                                // 檢查該天是否已有任何預約（器材按天單位）
+                                                // 檢查該時段是否已有預約重疊
                                                 $overlapCheckSql = "
                                                         SELECT COALESCE(COUNT(eri.equipment_id), 0) AS used_qty
                                                         FROM equipment_reservation_items eri
@@ -676,18 +671,27 @@ SQL;
                                                         JOIN equipments e ON e.equipment_id = eri.equipment_id
                                                         WHERE e.equipment_code = ?
                                                             AND r.approval_status IN ('pending', 'approved')
-                                                            AND DATE(r.borrow_start_at) = DATE(?)
+                                                            AND r.borrow_start_at < ?
+                                                            AND r.borrow_end_at > ?
                                                 ";
                         $overlapStmt = mysqli_prepare($link, $overlapCheckSql);
-                        mysqli_stmt_bind_param($overlapStmt, 'ss', $cCode, $borrowStartAtSql);
+                        mysqli_stmt_bind_param($overlapStmt, 'sss', $cCode, $borrowEndAtSql, $borrowStartAtSql);
                         mysqli_stmt_execute($overlapStmt);
                         $overlapRes = mysqli_stmt_get_result($overlapStmt);
                         $overlapRow = $overlapRes ? mysqli_fetch_assoc($overlapRes) : null;
                         mysqli_stmt_close($overlapStmt);
                         
                         $usedQty = $overlapRow ? (int)$overlapRow['used_qty'] : 0;
-                        $totalQty = isset($equipmentMap[$cCode]) ? (int)$equipmentMap[$cCode]['available_quantity'] : 0;
-                        if (($usedQty + $cQty) > $totalQty) {
+                        $totalQtySql = "SELECT COALESCE(SUM(CASE WHEN operation_status = 1 THEN 1 ELSE 0 END), 0) AS total_capacity FROM equipments WHERE equipment_code = ?";
+                        $totalQtyStmt = mysqli_prepare($link, $totalQtySql);
+                        mysqli_stmt_bind_param($totalQtyStmt, 's', $cCode);
+                        mysqli_stmt_execute($totalQtyStmt);
+                        $totalQtyRes = mysqli_stmt_get_result($totalQtyStmt);
+                        $totalQtyRow = mysqli_fetch_assoc($totalQtyRes);
+                        $totalCapacity = $totalQtyRow ? (int)$totalQtyRow['total_capacity'] : 0;
+                        mysqli_stmt_close($totalQtyStmt);
+                        
+                        if (($usedQty + $cQty) > $totalCapacity) {
                             throw new RuntimeException("器材 {$cCode} 在該時段的可借用數量不足，請選擇其他時段。");
                         }
 
@@ -756,6 +760,17 @@ SQL;
                     mysqli_stmt_close($selectEquipmentStmt);
                     mysqli_stmt_close($reservationItemStmt);
                     mysqli_stmt_close($updateEquipmentStatusStmt);
+
+                    // 若 reservations 表有 certificate_id 欄位，且已取得有效證照，更新該預約的 certificate_id
+                    if ($hasCertificateIdCol && isset($certificateId) && $certificateId !== null) {
+                        $updateCertStmt = mysqli_prepare($link, 'UPDATE reservations SET certificate_id = ? WHERE reservation_id = ?');
+                        if (!$updateCertStmt) {
+                            throw new RuntimeException('更新 reservation 的 certificate_id 失敗：' . mysqli_error($link));
+                        }
+                        mysqli_stmt_bind_param($updateCertStmt, 'ii', $certificateId, $commonReservationId);
+                        mysqli_stmt_execute($updateCertStmt);
+                        mysqli_stmt_close($updateCertStmt);
+                    }
                 }
 
                 if (!empty($formData['space_id'])) {
@@ -835,12 +850,13 @@ SQL;
                                                          JOIN reservations r ON r.reservation_id = sri.reservation_id
                                                          WHERE sri.space_id = ?
                                                              AND r.approval_status IN ("pending", "approved")
-                                                             AND NOT (r.borrow_end_at < ? OR r.borrow_start_at > ?)'
+                                                             AND r.borrow_start_at < ?
+                                                             AND r.borrow_end_at > ?'
                                                 );
                         if (!$spaceConflictStmt) {
                             throw new RuntimeException('檢查空間時段衝突失敗：' . mysqli_error($link));
                         }
-                        mysqli_stmt_bind_param($spaceConflictStmt, 'sss', $formData['space_id'], $borrowStartAtSql, $borrowEndAtSql);
+                        mysqli_stmt_bind_param($spaceConflictStmt, 'sss', $formData['space_id'], $borrowEndAtSql, $borrowStartAtSql);
                         mysqli_stmt_execute($spaceConflictStmt);
                         $spaceConflictResult = mysqli_stmt_get_result($spaceConflictStmt);
                         $spaceConflictRow = $spaceConflictResult ? mysqli_fetch_assoc($spaceConflictResult) : null;
@@ -911,9 +927,10 @@ SQL;
                     $selectedCode = (string)$item['code'];
                     $borrowQuantity = (int)$item['quantity'];
                     if (isset($equipmentMap[$selectedCode])) {
-                        $equipmentMap[$selectedCode]['available_quantity'] -= $borrowQuantity;
-                        if ($equipmentMap[$selectedCode]['available_quantity'] < 0) {
-                            $equipmentMap[$selectedCode]['available_quantity'] = 0;
+                        // 當前申請的庫存扣減僅是為了本次頁面處理的參考（如需要），實際上 JS 已支援即時更新。
+                        $equipmentMap[$selectedCode]['total_capacity'] -= $borrowQuantity;
+                        if ($equipmentMap[$selectedCode]['total_capacity'] < 0) {
+                            $equipmentMap[$selectedCode]['total_capacity'] = 0;
                         }
                     }
                 }
@@ -1576,7 +1593,8 @@ SQL;
                                     </div>
                                     <ul class="es-list" id="esEquipmentList">
                                         <?php foreach ($equipmentMap as $equipment) { 
-                                            $avail = (int)$equipment['available_quantity'];
+                                            // 初始化以總量作為參考，後續以 JS 動態檢查實際時段可借數量
+                                            $avail = (int)$equipment['total_capacity'];
                                             $limitRaw = $equipment['borrow_limit_quantity'];
                                             $limit = $limitRaw === null ? '不限' : (int)$limitRaw;
                                             $maxInput = $limitRaw !== null ? min($avail, (int)$limitRaw) : $avail;
@@ -1994,80 +2012,66 @@ function startApplication() {
                 const borrowEndDateElLocal = document.getElementById('borrow_end_date');
                 const selectedDate = borrowStartDateElLocal ? borrowStartDateElLocal.value : '';
                 const selectedEndDate = borrowEndDateElLocal ? borrowEndDateElLocal.value : '';
-                const startPeriodCode = 'always';
-                const endPeriodCode = 'always';
-                const periodSlotsMap = window.periodSlotsMap || {};
-                const spaceReservations = window.existingSpaceReservations || [];
+                
+                const startH = document.querySelector('select[name="borrow_start_time_h"]')?.value;
+                const startM = document.querySelector('select[name="borrow_start_time_m"]')?.value;
+                const endH = document.querySelector('select[name="borrow_end_time_h"]')?.value;
+                const endM = document.querySelector('select[name="borrow_end_time_m"]')?.value;
+                
+                const hasFullTime = selectedDate && selectedEndDate && startH && startM && endH && endM;
+                let userStartStr = '';
+                let userEndStr = '';
+                if (hasFullTime) {
+                    userStartStr = `${selectedDate} ${startH.padStart(2, '0')}:${startM.padStart(2, '0')}:00`;
+                    userEndStr = `${selectedEndDate} ${endH.padStart(2, '0')}:${endM.padStart(2, '0')}:00`;
+                }
 
                 items.forEach(item => {
                     const type = item.dataset.type;
                     const code = item.dataset.code;
 
-                    if (type === 'equipment') {
-                        if (!selectedDate) {
-                            setItemAvailabilityState(item, '請先選日期', '請先選日期', 1, true); // 改為 true 讓他可以加入再說
-                            return;
-                        }
-
-                        const year = selectedDate.substring(0, 4);
-                        const month = selectedDate.substring(5, 7);
-                        const monthKey = `${code}_${year}_${month}`;
-                        const applyAvailability = (data) => {
-                            const reservations = Array.isArray(data.reservations) ? data.reservations : [];
-                            let used = 0;
-                            reservations.forEach(r => {
-                                if ((r.start || '').substring(0, 10) === selectedDate) {
-                                    used += parseInt(r.qty || 0, 10) || 0;
-                                }
-                            });
-                            const availableQty = Math.max(0, (parseInt(data.total_capacity || 0, 10) || 0) - used);
-                            const label = String(availableQty);
-                            setItemAvailabilityState(item, label, label, availableQty, availableQty > 0);
-                        };
-
-                        if (availabilityCache[monthKey]) {
-                            applyAvailability(availabilityCache[monthKey]);
-                        } else if (!pendingAvailabilityLoads[monthKey]) {
-                            pendingAvailabilityLoads[monthKey] = true;
-                            fetch(`api_get_availability.php?type=equipment&id=${encodeURIComponent(code)}&year=${year}&month=${month}`)
-                                .then(res => res.json())
-                                .then(data => {
-                                    if (data && data.total_capacity !== undefined) {
-                                        availabilityCache[monthKey] = data;
-                                    }
-                                })
-                                .catch(err => console.error('Resource availability load error:', err))
-                                .finally(() => {
-                                    delete pendingAvailabilityLoads[monthKey];
-                                    if (typeof window.refreshResourceAvailability === 'function') {
-                                        window.refreshResourceAvailability();
-                                    }
-                                });
-                            setItemAvailabilityState(item, '讀取中...', '讀取中...', 1, true); // 讓它能點
-                        } else {
-                            setItemAvailabilityState(item, '讀取中...', '讀取中...', 1, true); // 讓它能點
-                        }
+                    if (!hasFullTime) {
+                        setItemAvailabilityState(item, '請先選完整起訖時間', '請先選完整借用起訖時間', 1, true); // 改為 true 讓他可以加入再說
                         return;
                     }
 
-                    if (type === 'space') {
-                        const startH = document.querySelector('select[name="borrow_start_time_h"]')?.value;
-                        const startM = document.querySelector('select[name="borrow_start_time_m"]')?.value;
-                        const endH = document.querySelector('select[name="borrow_end_time_h"]')?.value;
-                        const endM = document.querySelector('select[name="borrow_end_time_m"]')?.value;
-                        
-                        if (!selectedDate || !selectedEndDate || !startH || !startM || !endH || !endM) {
-                            setItemAvailabilityState(item, '請先選日期與時間', '請先選完整借用起訖時間', 1, true); // 改為 true 讓他可以加入再說
-                            return;
-                        }
-
-                        const selectedStart = `${startH.padStart(2, '0')}:${startM.padStart(2, '0')}:00`;
-                        const selectedEndString = `${endH.padStart(2, '0')}:${endM.padStart(2, '0')}:00`;
-                        
-                        // 我們暫時用前端粗略判斷（同一天）是否衝突
-                        const availableQty = 1;
+                    const year = selectedDate.substring(0, 4);
+                    const month = selectedDate.substring(5, 7);
+                    const monthKey = `${type}_${code}_${year}_${month}`;
+                    const applyAvailability = (data) => {
+                        const reservations = Array.isArray(data.reservations) ? data.reservations : [];
+                        let used = 0;
+                        reservations.forEach(r => {
+                            if (r.start < userEndStr && r.end > userStartStr) {
+                                used += parseInt(r.qty || 0, 10) || 0;
+                            }
+                        });
+                        const availableQty = Math.max(0, (parseInt(data.total_capacity || 0, 10) || 0) - used);
                         const label = String(availableQty);
                         setItemAvailabilityState(item, label, label, availableQty, availableQty > 0);
+                    };
+
+                    if (availabilityCache[monthKey]) {
+                        applyAvailability(availabilityCache[monthKey]);
+                    } else if (!pendingAvailabilityLoads[monthKey]) {
+                        pendingAvailabilityLoads[monthKey] = true;
+                        fetch(`api_get_availability.php?type=${encodeURIComponent(type)}&id=${encodeURIComponent(code)}&year=${year}&month=${month}`)
+                            .then(res => res.json())
+                            .then(data => {
+                                if (data && data.total_capacity !== undefined) {
+                                    availabilityCache[monthKey] = data;
+                                }
+                            })
+                            .catch(err => console.error('Resource availability load error:', err))
+                            .finally(() => {
+                                delete pendingAvailabilityLoads[monthKey];
+                                if (typeof window.refreshResourceAvailability === 'function') {
+                                    window.refreshResourceAvailability();
+                                }
+                            });
+                        setItemAvailabilityState(item, '讀取中...', '讀取中...', 1, true); // 讓它能點
+                    } else {
+                        setItemAvailabilityState(item, '讀取中...', '讀取中...', 1, true); // 讓它能點
                     }
                 });
             }
@@ -2523,39 +2527,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!itemCode || !dateStr) return true;
         reqQty = reqQty || 1;
         
-        if (itemType === 'equipment') {
-            // 器材按天單位判斷：該天有任何預約就不可選
-            const availability = availabilityCache[`${itemCode}_${dateStr}`];
-            if (!availability) return true;
-            
-            let dayHasReservation = false;
-            availability.reservations.forEach(r => {
-                const rDate = r.start.substring(0, 10);
-                if (rDate === dateStr) dayHasReservation = true;
-            });
-            return !dayHasReservation;
-        }
-        
-        if (itemType === 'space') {
-             const conflicts = existingSpaceReservations.filter(r => r.space_id === itemCode && r.date === dateStr);
-             const periodOrder = Object.keys(periodSlotsMap);
-             // 如果在所有時段中都有衝突，則全天不可選
-             for (const code of periodOrder) {
-                  const times = periodSlotsMap[code];
-                  if (!times) continue;
-                  const pStart = times.start;
-                  const pEnd = times.end;
-                  // 檢查此時段是否能借
-                  let canBorrow = true;
-                  for (const c of conflicts) {
-                       if (pStart < c.end && pEnd > c.start) {
-                            canBorrow = false;
-                            break;
-                       }
-                  }
-                  if (canBorrow) return true; // 只要有一個時段可以借，當天就可選
-             }
-             return false; // 全天衝突
+        if (itemType === 'equipment' || itemType === 'space') {
+            // 器材與空間都支援時段與數量，因此不能僅憑某天有預約就整天不可選，應由使用者自選時間來決定。
+            // 如果真的需要，可進一步寫「若全天24小時皆無庫存才禁用」，但大部分情況建議直接讓使用者選日期再選時段判斷。
+            return true;
         }
         
         const dateKey = `${itemCode}_${dateStr}`;
@@ -2634,43 +2609,14 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // 對於器材，基於實時API數據來禁用已借滿的時段
+        // 對於器材，不再單純因為當天有任意預約就整批禁用全部時段，應允許選時段，交由精確計算
         if (selEquipment && selDate) {
             const year = selDate.substring(0, 4);
             const month = selDate.substring(5, 7);
             const dateKey = `${selEquipment}_${selDate}`;
             const availability = availabilityCache[dateKey];
             
-            if (availability) {
-                // 器材按天判：該天有任何預約就禁用所有時段
-                let dayHasReservation = false;
-                availability.reservations.forEach(r => {
-                    const rDate = r.start.substring(0, 10);
-                    if (rDate === selDate) dayHasReservation = true;
-                });
-                
-                if (dayHasReservation) {
-                    // 禁用所有時段
-                    const periodOrder = Object.keys(periodSlotsMap);
-                    for (const code of periodOrder) {
-                        if (startPeriodEl) {
-                            const opt1 = startPeriodEl.querySelector(`option[value="${code}"]`);
-                            if (opt1) {
-                                opt1.disabled = true;
-                                if (!opt1.innerHTML.includes('該天已被預約')) opt1.innerHTML += ' (該天已被預約)';
-                            }
-                        }
-                        if (endPeriodEl) {
-                            const opt2 = endPeriodEl.querySelector(`option[value="${code}"]`);
-                            if (opt2) {
-                                opt2.disabled = true;
-                                if (!opt2.innerHTML.includes('該天已被預約')) opt2.innerHTML += ' (該天已被預約)';
-                            }
-                        }
-                    }
-                    return;
-                }
-            } else {
+            if (!availability) {
                 // 無快取，需要先取得
                 const monthKey = `${selEquipment}_${year}_${month}`;
                 if (!availabilityCache[monthKey]) {
@@ -2688,12 +2634,9 @@ document.addEventListener('DOMContentLoaded', () => {
                                     reservations: data.reservations || []
                                 };
                             }
-                            // 再次執行以套用禁用
-                            updatePeriodOptions();
                         }
                     })
                     .catch(err => console.error('Fetch availability error:', err));
-                    return;
                 } else {
                     if (!availabilityCache[dateKey]) {
                         const data = availabilityCache[monthKey];
@@ -2704,7 +2647,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
             }
-
         }
 
         // Find conflicts (only relevant for space mode)
@@ -2956,42 +2898,11 @@ document.addEventListener('DOMContentLoaded', () => {
         window.fpBorrowDate = fp;
 
         function refreshDisabledDatesForCurrentMonth(fpInstance, equipmentObjParam) {
-            const cartItemsInput = document.querySelector('input[name="cart_items"]');
-            const cartItemsStr = cartItemsInput ? cartItemsInput.value : '[]';
-            let cartItems = [];
-            try { cartItems = JSON.parse(cartItemsStr); } catch (e) {}
-            const equipmentObj = equipmentObjParam || cartItems.find(c => c.type === 'equipment');
-            if (!equipmentObj) {
-                disabledDatesSet = new Set();
+            // 已支援精細時段與剩餘數量計算，不再粗暴禁用整天，由時段選擇輔助判斷
+            if (fpInstance) {
                 fpInstance.set('disable', []);
                 fpInstance.redraw && fpInstance.redraw();
-                return;
             }
-            const year = String(fpInstance.currentYear);
-            const month = String(fpInstance.currentMonth + 1).padStart(2, '0');
-            fetch(`api_get_availability.php?type=equipment&id=${encodeURIComponent(equipmentObj.code)}&year=${year}&month=${month}`)
-                .then(res => res.json())
-                .then(data => {
-                    const total = data.total_capacity || 0;
-                    const reservations = data.reservations || [];
-                    const yNum = parseInt(year, 10);
-                    const mNum = parseInt(month, 10);
-                    const lastDay = new Date(yNum, mNum, 0).getDate();
-                    const set = new Set();
-                    for (let d = 1; d <= lastDay; d++) {
-                        const day = `${year}-${String(mNum).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-                        let dayHasReservation = false;
-                        reservations.forEach(r => {
-                            const rDate = r.start.substring(0, 10);
-                            if (rDate === day) dayHasReservation = true;
-                        });
-                        if (dayHasReservation) set.add(day);
-                    }
-                    disabledDatesSet = set;
-                    fpInstance.set('disable', [function(date) { const ds = date.toISOString().slice(0,10); return disabledDatesSet.has(ds); }]);
-                    fpInstance.redraw && fpInstance.redraw();
-                })
-                .catch(err => { console.error('fetch month avail error', err); });
         }
 
         // wrap existing updatePeriodOptions to also refresh disabled dates

@@ -127,7 +127,7 @@ if ($link) {
                         <button class="nav-btn" id="btnManualRemind" type="button" onclick="handleManualRemindClick(event)">檢查逾期並催繳</button>
                         <button class="nav-btn" onclick="location.href='equipment_inventory.php'">庫存管理</button>
                     <?php } ?>
-                <?php if (in_array($currentRole, ['3','a','b','c'], true)) { ?>
+                <?php if (in_array($currentRole, ['3'], true)) { ?>
                     <button class="nav-btn" onclick="location.href='qr_admin.php'">生成報到 QR</button>
                 <?php } ?>
                 <?php } ?>

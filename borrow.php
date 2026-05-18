@@ -1147,17 +1147,17 @@ SQL;
                     <section class="card borrow-form-card">
                         <!-- 進度條 Stepper -->
                         <div class="stepper-container">
-                            <div class="stepper-item active" id="stepper-1">
+                            <div class="stepper-item active" id="stepper-1" onclick="goToStep(1)" style="cursor: pointer;">
                                 <div class="step-circle">1</div>
                                 <div class="step-label">活動申請(1/2)</div>
                             </div>
                             <div class="stepper-line"></div>
-                            <div class="stepper-item" id="stepper-2">
+                            <div class="stepper-item" id="stepper-2" onclick="goToStep(2)" style="cursor: pointer;">
                                 <div class="step-circle">2</div>
                                 <div class="step-label">活動申請(2/2)</div>
                             </div>
                             <div class="stepper-line"></div>
-                            <div class="stepper-item" id="stepper-3">
+                            <div class="stepper-item" id="stepper-3" onclick="goToStep(3)" style="cursor: pointer;">
                                 <div class="step-circle">3</div>
                                 <div class="step-label">器材與場地 (確認送出)</div>
                             </div>
@@ -3611,7 +3611,12 @@ function goToStep(stepNo) {
     const currentStepInput = document.getElementById("current_step");
     const currentStep = parseInt(currentStepInput ? currentStepInput.value : 1);
 
-    if (stepNo === 2 && currentStep === 1) {
+    if (stepNo > currentStep + 1) {
+        alert("請依序完成每個步驟，無法直接略過喔！");
+        return;
+    }
+
+    if (stepNo > 1 && currentStep === 1) {
         const proposalFile = document.getElementById('proposal_file');
         if (!proposalFile || !proposalFile.value) {
             alert("請先上傳活動企劃書！");

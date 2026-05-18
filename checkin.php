@@ -58,27 +58,7 @@ if ($incomingQrToken !== $expectedQrToken) {
 }
 
 if ($dbError === '' && $feedbackType !== 'error') {
-    $createLogTableSql = "
-        CREATE TABLE IF NOT EXISTS checkin_logs (
-            checkin_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-            reservation_id BIGINT UNSIGNED NOT NULL,
-            user_id VARCHAR(10) NOT NULL,
-            checked_in_equipment_id BIGINT UNSIGNED NULL,
-            checked_in_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            checkin_source VARCHAR(20) NOT NULL DEFAULT 'qr',
-            PRIMARY KEY (checkin_id),
-            UNIQUE KEY uq_checkin_once (reservation_id, user_id),
-            KEY idx_checkin_user (user_id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    ";
-
-    try {
-        if (!mysqli_query($link, $createLogTableSql)) {
-            throw new RuntimeException(mysqli_error($link));
-        }
-    } catch (Throwable $exception) {
-        error_log('checkin_logs create skipped: ' . $exception->getMessage());
-    }
+    // 使用 reservations.checked_in_at 欄位來紀錄報到時間（checkin_logs 表已移除）
 }
 
 $applicantColumn = null;
@@ -155,11 +135,11 @@ if ($dbError === '' && $feedbackType !== 'error' && $_SERVER['REQUEST_METHOD'] =
                     mysqli_begin_transaction($link);
                     try {
                         $reservationId = (int)$matchedRow['reservation_id'];
-                        $insertLogStmt = mysqli_prepare($link, 'INSERT INTO checkin_logs (reservation_id, user_id, checked_in_equipment_id, checkin_source) VALUES (?, ?, ?, "equipment")');
-                        if (!$insertLogStmt) { throw new RuntimeException('寫入器材報到紀錄失敗：' . mysqli_error($link)); }
-                        mysqli_stmt_bind_param($insertLogStmt, 'iss', $reservationId, $currentUserId, $selectedEquipmentId);
-                        mysqli_stmt_execute($insertLogStmt);
-                        mysqli_stmt_close($insertLogStmt);
+                        $updateCheckinStmt = mysqli_prepare($link, 'UPDATE reservations SET checked_in_at = COALESCE(checked_in_at, NOW()) WHERE reservation_id = ? AND user_id COLLATE utf8mb4_unicode_ci = ?');
+                        if (!$updateCheckinStmt) { throw new RuntimeException('更新 reservations.checked_in_at 失敗：' . mysqli_error($link)); }
+                        mysqli_stmt_bind_param($updateCheckinStmt, 'is', $reservationId, $currentUserId);
+                        mysqli_stmt_execute($updateCheckinStmt);
+                        mysqli_stmt_close($updateCheckinStmt);
                         // 更新 pickup 欄位如有
                         if ($pickupFlagColumn !== null || $pickupAtColumn !== null) {
                             $setParts = [];
@@ -203,11 +183,11 @@ if ($dbError === '' && $feedbackType !== 'error' && $_SERVER['REQUEST_METHOD'] =
                     mysqli_begin_transaction($link);
                     try {
                         $reservationId = (int)$matchedRow['reservation_id'];
-                        $insertLogStmt = mysqli_prepare($link, 'INSERT INTO checkin_logs (reservation_id, user_id, checkin_source) VALUES (?, ?, "equipment")');
-                        if (!$insertLogStmt) { throw new RuntimeException('寫入器材報到紀錄失敗：' . mysqli_error($link)); }
-                        mysqli_stmt_bind_param($insertLogStmt, 'is', $reservationId, $currentUserId);
-                        mysqli_stmt_execute($insertLogStmt);
-                        mysqli_stmt_close($insertLogStmt);
+                        $updateCheckinStmt = mysqli_prepare($link, 'UPDATE reservations SET checked_in_at = COALESCE(checked_in_at, NOW()) WHERE reservation_id = ? AND user_id COLLATE utf8mb4_unicode_ci = ?');
+                        if (!$updateCheckinStmt) { throw new RuntimeException('更新 reservations.checked_in_at 失敗：' . mysqli_error($link)); }
+                        mysqli_stmt_bind_param($updateCheckinStmt, 'is', $reservationId, $currentUserId);
+                        mysqli_stmt_execute($updateCheckinStmt);
+                        mysqli_stmt_close($updateCheckinStmt);
                         // update pickup
                         if ($pickupFlagColumn !== null || $pickupAtColumn !== null) {
                             $setParts = [];

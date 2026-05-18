@@ -659,20 +659,44 @@ if ($dbError === '' && count($rows) > 0) {
 
                                                         <!-- role 3 final approval removed;課指組(d) is final -->
 
-                                                        <div class="stepper-step" data-step="7">
+                                                        <div class="stepper-step" data-step="6">
                                                             <div class="stepper-dot"></div>
                                                             <div class="stepper-time">
-                                                                <span class="stepper-text">使用中</span>
-                                                                <span class="stepper-timestamp"><?php echo $row['pickup_confirmed_at'] ? htmlspecialchars((string)$row['pickup_confirmed_at'], ENT_QUOTES, 'UTF-8') : '-'; ?></span>
+                                                                <span class="stepper-text">使用狀態</span>
+                                                                <span class="stepper-subtext">
+                                                                    <?php
+                                                                        $allApprovalsDone = in_array('d', $approvedStages, true) || $approvalStatus === 'approved';
+                                                                        if (! $allApprovalsDone) {
+                                                                            echo '審核尚未結束';
+                                                                        } else {
+                                                                            if ($approvalStatus === 'approved' && $isPickup) {
+                                                                                echo '使用中';
+                                                                            } elseif ($approvalStatus === 'approved' && $isReturned) {
+                                                                                echo '已歸還';
+                                                                            } else {
+                                                                                echo '審核完成';
+                                                                            }
+                                                                        }
+                                                                    ?>
+                                                                </span>
+                                                                <?php if ($allApprovalsDone && $approvalStatus === 'approved' && $isPickup) { ?>
+                                                                    <span class="stepper-timestamp"><?php echo htmlspecialchars((string)$row['pickup_confirmed_at'], ENT_QUOTES, 'UTF-8'); ?></span>
+                                                                <?php } else { ?>
+                                                                    <span class="stepper-timestamp">-</span>
+                                                                <?php } ?>
                                                             </div>
                                                         </div>
                                                         <div class="stepper-line"></div>
 
-                                                        <div class="stepper-step" data-step="8">
+                                                        <div class="stepper-step" data-step="7">
                                                             <div class="stepper-dot"></div>
                                                             <div class="stepper-time">
                                                                 <span class="stepper-text">已歸還</span>
-                                                                <span class="stepper-timestamp"><?php echo $row['return_confirmed_at'] ? htmlspecialchars((string)$row['return_confirmed_at'], ENT_QUOTES, 'UTF-8') : '-'; ?></span>
+                                                                <?php if ($approvalStatus === 'approved' && $isReturned) { ?>
+                                                                    <span class="stepper-timestamp"><?php echo htmlspecialchars((string)$row['return_confirmed_at'], ENT_QUOTES, 'UTF-8'); ?></span>
+                                                                <?php } else { ?>
+                                                                    <span class="stepper-timestamp">-</span>
+                                                                <?php } ?>
                                                             </div>
                                                         </div>
                                                     </div>

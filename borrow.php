@@ -562,23 +562,20 @@ SQL;
                 $hasSubmittedAtCol = in_array('submitted_at', $reservationCols, true);
                 $hasApprovalStageCol = in_array('approval_stage', $reservationCols, true);
 
-                // 器材申請時，把證照編號直接寫入 reservations.certificate_id
+                // 自動將使用者的證照編號寫入 reservations.certificate_id
                 $certificateId = null;
-                if (!empty($cartEquipments)) {
-                    $certSelectStmt = mysqli_prepare(
-                        $link,
-                        'SELECT certificate_id FROM equipment_certificates WHERE holder_id = ? AND validity_status = "valid" ORDER BY issue_date DESC LIMIT 1'
-                    );
-                    if ($certSelectStmt) {
-                        mysqli_stmt_bind_param($certSelectStmt, 's', $userId);
-                        mysqli_stmt_execute($certSelectStmt);
-                        $certSelectResult = mysqli_stmt_get_result($certSelectStmt);
-                        $certRow = $certSelectResult ? mysqli_fetch_assoc($certSelectResult) : null;
-                        mysqli_stmt_close($certSelectStmt);
-                        if ($certRow && isset($certRow['certificate_id'])) {
-                            $certificateId = (int)$certRow['certificate_id'];
-                        }
+                $certSelectStmt = mysqli_prepare(
+                    $link,
+                    'SELECT certificate_id FROM equipment_certificates WHERE holder_id = ? AND validity_status = "valid" ORDER BY issue_date DESC LIMIT 1'
+                );
+                if ($certSelectStmt) {
+                    mysqli_stmt_bind_param($certSelectStmt, 's', $userId);
+                    mysqli_stmt_execute($certSelectStmt);
+                    $certSelectResult = mysqli_stmt_get_result($certSelectStmt);
+                    if ($certSelectResult && $certRow = mysqli_fetch_assoc($certSelectResult)) {
+                        $certificateId = (int)$certRow['certificate_id'];
                     }
+                    mysqli_stmt_close($certSelectStmt);
                 }
                 
                 $submittedAtVal = date('Y-m-d H:i:s'); // 保證同一批次提交時間一致

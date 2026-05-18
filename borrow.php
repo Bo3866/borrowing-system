@@ -2435,6 +2435,24 @@ function startApplication() {
                         refreshModeUI();
                     });
                 });
+
+                // Sync the "選擇/已加入" button state for all items
+                document.querySelectorAll('.es-item').forEach(item => {
+                    const code = item.dataset.code;
+                    const inviteBtn = item.querySelector('.es-btn-invite');
+                    if (inviteBtn) {
+                        const inCart = cartItems.some(c => c.code === code);
+                        if (inCart) {
+                            inviteBtn.innerText = '已加入';
+                            inviteBtn.style.backgroundColor = '#dcfce7';
+                            inviteBtn.style.color = '#166534';
+                        } else {
+                            inviteBtn.innerText = '選擇';
+                            inviteBtn.style.backgroundColor = '';
+                            inviteBtn.style.color = '';
+                        }
+                    }
+                });
             }
 
             if(esSearchInput) {
@@ -2574,19 +2592,6 @@ function startApplication() {
                         renderCart();
                         refreshModeUI();
                         body.classList.remove('active');
-                        
-                        // Notify user it was added
-                        if (inviteBtn) {
-                            const originalText = inviteBtn.innerText;
-                            inviteBtn.innerText = '已加入';
-                            inviteBtn.style.backgroundColor = '#dcfce7';
-                            inviteBtn.style.color = '#166534';
-                            setTimeout(() => {
-                                inviteBtn.innerText = originalText;
-                                inviteBtn.style.backgroundColor = '';
-                                inviteBtn.style.color = '';
-                            }, 1000);
-                        }
                     });
                 }
             });

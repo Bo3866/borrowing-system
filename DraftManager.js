@@ -50,6 +50,7 @@ class DraftManager {
      * {
      *   draftId: string,              // 唯一標識符
      *   timestamp: string,             // 儲存時間 (YYYY-MM-DD HH:mm:ss)
+     *   currentStep: number,           // 當前步驟 (1, 2, 或 3)
      *   resourceType: string,          // 資源類型 ('equipment' 或 'space')
      *   cartItems: Array<{
      *     type: string,               // 'equipment' 或 'space'
@@ -81,9 +82,14 @@ class DraftManager {
             }
         }
 
+        // 取得當前步驟
+        const currentStepInput = form.querySelector('input[name="current_step"]');
+        const currentStep = currentStepInput ? parseInt(currentStepInput.value) : 1;
+
         return {
             draftId: this.generateDraftId(),
             timestamp: this.formatDateTime(new Date()),
+            currentStep: currentStep,
             resourceType: form.querySelector('select[name="resource_type"]')?.value || 'equipment',
             cartItems: cartItems || [],
             borrowDate: form.querySelector('input[name="borrow_date"]')?.value || '',
@@ -106,21 +112,23 @@ class DraftManager {
             throw new Error('無法提取表單資料');
         }
 
-        // 驗證必要欄位
-        if (!draft.borrowDate || !draft.startPeriodCode || !draft.endPeriodCode) {
-            throw new Error('請填寫借用日期和時段');
+        // 根據當前步驟進行驗證
+        // 第一步：只驗證基本信息
+        // 第二步和第三步：更寬鬆的驗證（允許不完整的表單）
+        if (draft.currentStep === 1) {
+            // 第一步驗證：確保至少有一些基本信息
+            // 不強制要求所有字段（因為用戶可能只填了一部分）
+        } else if (draft.currentStep === 2 || draft.currentStep === 3) {
+            // 第二、三步：更寬鬆的驗證
+            // 只在明確的字段為空時才提醒
         }
 
-        if (!draft.phone) {
-            throw new Error('請填寫聯絡電話');
-        }
-
-        if (!draft.purpose) {
-            throw new Error('請填寫用途說明');
-        }
-
-        if (!draft.cartItems || draft.cartItems.length === 0) {
-            throw new Error('請選擇至少一項器材或場地');
+        // 輕量級驗證：至少檢查是否有某些有意義的數據
+        const hasBasicData = draft.phone || draft.purpose || (draft.cartItems && draft.cartItems.length > 0);
+        
+        if (!hasBasicData && draft.currentStep === 1) {
+            // 只在第一步且完全空白時才拒絕
+            throw new Error('請至少填寫一些基本信息');
         }
 
         // 添加或更新草稿
@@ -239,7 +247,19 @@ class DraftManager {
                 setTimeout(() => renderCart(), 100);
             }
 
-            console.log('Draft loaded successfully:', draft.draftId);
+            // 設置當前步驟並導航到該步驟
+            const currentStep = draft.currentStep || 1;
+            const currentStepInput = form.querySelector('input[name="current_step"]');
+            if (currentStepInput) {
+                currentStepInput.value = currentStep;
+            }
+            
+            // 導航到保存的步驟
+            if (typeof goToStep === 'function') {
+                setTimeout(() => goToStep(currentStep), 150);
+            }
+
+            console.log('Draft loaded successfully:', draft.draftId, 'at step', currentStep);
             return true;
         } catch (e) {
             console.error('Error loading draft to form:', e);
@@ -248,29 +268,82 @@ class DraftManager {
     }
 
     /**
-     * 清空表單所有欄位（用於「新增申請」功能）
+     * 清空表單所有欄位（用於「新增申請」功能和暫存後重置）
+     * @param {boolean} resetStep - 是否要重置到第一步
      */
-    clearForm() {
+    clearForm(resetStep = false) {
         const form = document.querySelector('form.borrow-form');
         if (!form) {
             console.warn('Cannot find borrow form');
             return;
         }
 
-try {
-    // 清空基本欄位
-    form.querySelector('select[name="resource_type"]').value = 'equipment';
-    form.querySelector('input[name="borrow_date"]').value = '';
-    form.querySelector('select[name="start_period_code"]').value = '';
-    form.querySelector('select[name="end_period_code"]').value = '';
-    form.querySelector('input[name="phone"]').value = '';
-    form.querySelector('textarea[name="purpose"]').value = '';
+        try {
+            // 重置表單
+            form.reset();
+
+            // 清空基本欄位
+            const resourceTypeSelect = form.querySelector('select[name="resource_type"]');
+            if (resourceTypeSelect) resourceTypeSelect.value = 'equipment';
+            
+            const borrowDateInput = form.querySelector('input[name="borrow_date"]');
+            if (borrowDateInput) borrowDateInput.value = '';
+            
+            const startPeriodSelect = form.querySelector('select[name="start_period_code"]');
+            if (startPeriodSelect) startPeriodSelect.value = '';
+            
+            const endPeriodSelect = form.querySelector('select[name="end_period_code"]');
+            if (endPeriodSelect) endPeriodSelect.value = '';
+            
+            const phoneInput = form.querySelector('input[name="phone"]');
+            if (phoneInput) phoneInput.value = '';
+            
+            const purposeTextarea = form.querySelector('textarea[name="purpose"]');
+            if (purposeTextarea) purposeTextarea.value = '';
 
             // 清空購物車
             const cartItemsInput = form.querySelector('input[name="cart_items"]');
             if (cartItemsInput) {
                 cartItemsInput.value = '[]';
                 cartItemsInput.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+
+            // 清空選中列表
+            const esSelectedList = document.getElementById('esSelectedList');
+            if (esSelectedList) {
+                esSelectedList.innerHTML = '';
+            }
+
+            // 清空企劃書名稱
+            const proposalName = document.getElementById('proposal_file_name_display');
+            if (proposalName) {
+                proposalName.textContent = '';
+            }
+
+            // 如果需要重置步驟
+            if (resetStep) {
+                const currentStepInput = form.querySelector('input[name="current_step"]');
+                if (currentStepInput) {
+                    currentStepInput.value = '1';
+                }
+
+                // 隱藏所有步驟，顯示第一步
+                document.querySelectorAll('.step-content').forEach(el => {
+                    el.classList.remove('active');
+                });
+                const step1 = document.getElementById('step-content-1');
+                if (step1) {
+                    step1.classList.add('active');
+                }
+
+                // 更新 Stepper
+                document.querySelectorAll('.stepper-item').forEach((el, i) => {
+                    if (i === 0) {
+                        el.classList.add('active');
+                    } else {
+                        el.classList.remove('active');
+                    }
+                });
             }
 
             // 觸發 UI 更新
@@ -281,7 +354,7 @@ try {
                 setTimeout(() => renderCart(), 100);
             }
 
-            console.log('Form cleared');
+            console.log('Form cleared', resetStep ? 'and reset to step 1' : '');
         } catch (e) {
             console.error('Error clearing form:', e);
         }

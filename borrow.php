@@ -87,9 +87,14 @@ if ($dbError === '') {
             ec.equipment_code,
             ec.equipment_name,
             ec.borrow_limit_quantity,
-            COALESCE(SUM(CASE WHEN e.operation_status = 1 THEN 1 ELSE 0 END), 0) AS total_capacity
+            COALESCE(SUM(CASE WHEN e.operation_status = 1 THEN 1 ELSE 0 END), 0) - COALESCE(COUNT(eri.equipment_id), 0) AS available_quantity
         FROM equipment_categories ec
         LEFT JOIN equipments e ON e.equipment_code = ec.equipment_code
+        LEFT JOIN equipment_reservation_items eri ON e.equipment_id = eri.equipment_id
+        LEFT JOIN reservations r ON eri.reservation_id = r.reservation_id
+            AND r.borrow_start_at <= NOW()
+            AND r.borrow_end_at > NOW()
+            AND r.approval_status IN ('pending', 'approved')
         GROUP BY ec.equipment_code, ec.equipment_name, ec.borrow_limit_quantity
         ORDER BY ec.equipment_code ASC
     ";
@@ -103,7 +108,7 @@ if ($dbError === '') {
                 'equipment_code' => $code,
                 'equipment_name' => (string)$row['equipment_name'],
                 'borrow_limit_quantity' => $limit,
-                'total_capacity' => (int)$row['total_capacity'],
+                'available_quantity' => (int)$row['available_quantity'],
             ];
         }
     } else {
@@ -365,8 +370,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $borrowError = "{$selectedE['equipment_name']} 借用數量超過限借數量。";
                             break;
                         }
-                        if ($cQty > (int)$selectedE['total_capacity']) {
-                            $borrowError = "{$selectedE['equipment_name']} 借用數量超過總庫存量。";
+                        if ($cQty > (int)$selectedE['available_quantity']) {
+                            $borrowError = "{$selectedE['equipment_name']} 借用數量超過目前可借用數量。";
                             break;
                         }
                         
@@ -436,8 +441,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $borrowError = '請完整填寫借用起訖日期與時間。';
         } elseif ($formData['purpose'] === '') {
             $borrowError = '請填寫用途說明。';
+        } elseif ($formData['setup_flags'] === 'yes' && (
+            $formData['flag_applicant_unit'] === '' ||
+            $formData['flag_manager'] === '' ||
+            $formData['flag_phone'] === '' ||
+            $formData['flag_activity_name'] === '' ||
+            $formData['flag_start_date'] === '' ||
+            $formData['flag_end_date'] === '' ||
+            $formData['flag_count'] <= 0 ||
+            $formData['flag_location'] === '' ||
+            $formData['flag_agreement'] !== '1'
+        )) {
+            $borrowError = '選擇插立旗幟「是」時，請完整填寫旗幟插立申請表並勾選聲明。';
         } elseif ($formData['setup_flags'] === 'yes' && $formData['flag_count'] > 20) {
             $borrowError = '宣傳旗幟最多只能選 20 支。';
+        } elseif ($formData['setup_flags'] === 'yes' && $formData['borrow_start_date'] !== '' && strtotime($formData['borrow_start_date']) < strtotime('+7 weekdays', strtotime(date('Y-m-d')))) {
+            $borrowError = '插立旗幟使用日期只能選 7 個工作天之後的日期。';
         } else {
             $submittedResourceType = $formData['resource_type'];
         }
@@ -663,7 +682,7 @@ SQL;
                         $cCode = $item['code'];
                         $cQty = (int)$item['quantity'];
 
-                                                // 檢查該時段是否已有預約重疊
+                                                // 檢查該天是否已有任何預約（器材按天單位）
                                                 $overlapCheckSql = "
                                                         SELECT COALESCE(COUNT(eri.equipment_id), 0) AS used_qty
                                                         FROM equipment_reservation_items eri
@@ -671,27 +690,18 @@ SQL;
                                                         JOIN equipments e ON e.equipment_id = eri.equipment_id
                                                         WHERE e.equipment_code = ?
                                                             AND r.approval_status IN ('pending', 'approved')
-                                                            AND r.borrow_start_at < ?
-                                                            AND r.borrow_end_at > ?
+                                                            AND DATE(r.borrow_start_at) = DATE(?)
                                                 ";
                         $overlapStmt = mysqli_prepare($link, $overlapCheckSql);
-                        mysqli_stmt_bind_param($overlapStmt, 'sss', $cCode, $borrowEndAtSql, $borrowStartAtSql);
+                        mysqli_stmt_bind_param($overlapStmt, 'ss', $cCode, $borrowStartAtSql);
                         mysqli_stmt_execute($overlapStmt);
                         $overlapRes = mysqli_stmt_get_result($overlapStmt);
                         $overlapRow = $overlapRes ? mysqli_fetch_assoc($overlapRes) : null;
                         mysqli_stmt_close($overlapStmt);
                         
                         $usedQty = $overlapRow ? (int)$overlapRow['used_qty'] : 0;
-                        $totalQtySql = "SELECT COALESCE(SUM(CASE WHEN operation_status = 1 THEN 1 ELSE 0 END), 0) AS total_capacity FROM equipments WHERE equipment_code = ?";
-                        $totalQtyStmt = mysqli_prepare($link, $totalQtySql);
-                        mysqli_stmt_bind_param($totalQtyStmt, 's', $cCode);
-                        mysqli_stmt_execute($totalQtyStmt);
-                        $totalQtyRes = mysqli_stmt_get_result($totalQtyStmt);
-                        $totalQtyRow = mysqli_fetch_assoc($totalQtyRes);
-                        $totalCapacity = $totalQtyRow ? (int)$totalQtyRow['total_capacity'] : 0;
-                        mysqli_stmt_close($totalQtyStmt);
-                        
-                        if (($usedQty + $cQty) > $totalCapacity) {
+                        $totalQty = isset($equipmentMap[$cCode]) ? (int)$equipmentMap[$cCode]['available_quantity'] : 0;
+                        if (($usedQty + $cQty) > $totalQty) {
                             throw new RuntimeException("器材 {$cCode} 在該時段的可借用數量不足，請選擇其他時段。");
                         }
 
@@ -760,17 +770,6 @@ SQL;
                     mysqli_stmt_close($selectEquipmentStmt);
                     mysqli_stmt_close($reservationItemStmt);
                     mysqli_stmt_close($updateEquipmentStatusStmt);
-
-                    // 若 reservations 表有 certificate_id 欄位，且已取得有效證照，更新該預約的 certificate_id
-                    if ($hasCertificateIdCol && isset($certificateId) && $certificateId !== null) {
-                        $updateCertStmt = mysqli_prepare($link, 'UPDATE reservations SET certificate_id = ? WHERE reservation_id = ?');
-                        if (!$updateCertStmt) {
-                            throw new RuntimeException('更新 reservation 的 certificate_id 失敗：' . mysqli_error($link));
-                        }
-                        mysqli_stmt_bind_param($updateCertStmt, 'ii', $certificateId, $commonReservationId);
-                        mysqli_stmt_execute($updateCertStmt);
-                        mysqli_stmt_close($updateCertStmt);
-                    }
                 }
 
                 if (!empty($formData['space_id'])) {
@@ -850,13 +849,12 @@ SQL;
                                                          JOIN reservations r ON r.reservation_id = sri.reservation_id
                                                          WHERE sri.space_id = ?
                                                              AND r.approval_status IN ("pending", "approved")
-                                                             AND r.borrow_start_at < ?
-                                                             AND r.borrow_end_at > ?'
+                                                             AND NOT (r.borrow_end_at < ? OR r.borrow_start_at > ?)'
                                                 );
                         if (!$spaceConflictStmt) {
                             throw new RuntimeException('檢查空間時段衝突失敗：' . mysqli_error($link));
                         }
-                        mysqli_stmt_bind_param($spaceConflictStmt, 'sss', $formData['space_id'], $borrowEndAtSql, $borrowStartAtSql);
+                        mysqli_stmt_bind_param($spaceConflictStmt, 'sss', $formData['space_id'], $borrowStartAtSql, $borrowEndAtSql);
                         mysqli_stmt_execute($spaceConflictStmt);
                         $spaceConflictResult = mysqli_stmt_get_result($spaceConflictStmt);
                         $spaceConflictRow = $spaceConflictResult ? mysqli_fetch_assoc($spaceConflictResult) : null;
@@ -927,10 +925,9 @@ SQL;
                     $selectedCode = (string)$item['code'];
                     $borrowQuantity = (int)$item['quantity'];
                     if (isset($equipmentMap[$selectedCode])) {
-                        // 當前申請的庫存扣減僅是為了本次頁面處理的參考（如需要），實際上 JS 已支援即時更新。
-                        $equipmentMap[$selectedCode]['total_capacity'] -= $borrowQuantity;
-                        if ($equipmentMap[$selectedCode]['total_capacity'] < 0) {
-                            $equipmentMap[$selectedCode]['total_capacity'] = 0;
+                        $equipmentMap[$selectedCode]['available_quantity'] -= $borrowQuantity;
+                        if ($equipmentMap[$selectedCode]['available_quantity'] < 0) {
+                            $equipmentMap[$selectedCode]['available_quantity'] = 0;
                         }
                     }
                 }
@@ -1394,161 +1391,331 @@ SQL;
                                     </div>
                                 </div>
                                 
-                                <div class="form-group" id="flagDetailsSection" style="margin-top: 15px; display: <?php echo ($formData['setup_flags'] === 'yes') ? 'block' : 'none'; ?>; padding: 20px; background: #fdfdfd; border-radius: 8px; border: 1px solid #d1d5db; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
-                                    <h4 style="margin-top: 0; margin-bottom: 20px; color: #1e293b; border-bottom: 2px solid #cbd5e1; padding-bottom: 10px; font-weight: bold;">旗幟插立申請表</h4>
-                                    
-                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
-                                        <div>
-                                            <label>申請單位 <span style="color:red">*</span></label>
-                                            <input type="text" name="flag_applicant_unit" class="form-control" placeholder="請輸入申請單位">
-                                        </div>
-                                        <div>
-                                            <label>負責人 <span style="color:red">*</span></label>
-                                            <input type="text" name="flag_manager" class="form-control" placeholder="請輸入負責人姓名">
-                                        </div>
-                                        <div>
-                                            <label>連絡電話 <span style="color:red">*</span></label>
-                                            <input type="text" name="flag_phone" class="form-control" placeholder="請輸入連絡電話">
-                                        </div>
-                                        <div>
-                                            <label>活動名稱 <span style="color:red">*</span></label>
-                                            <input type="text" name="flag_activity_name" class="form-control" placeholder="請輸入活動名稱">
-                                        </div>
+                                <div id="flagDetailsSection" style="display:none; margin-top:20px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:20px;">
+                                <h4 style="margin:0 0 15px; color:#1e3a8a;">
+                                    🚩 輔仁大學校內中央走道宣傳旗幟插立申請表
+                                </h4>
+
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; margin-bottom:15px;">
+                                    <div>
+                                        <label>申請單位 <span style="color:red">*</span></label>
+                                        <input type="text" name="flag_applicant_unit" id="flag_applicant_unit" class="form-control" placeholder="請輸入申請單位" value="<?php echo htmlspecialchars($formData['flag_applicant_unit'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
-                                    <div style="margin-bottom: 15px;">
-                                        <?php
-                                        // 計算7個工作天之後的日期
-                                        $flagWorkDays = 0;
-                                        $flagDateObj = new DateTime();
-                                        while ($flagWorkDays < 7) {
-                                            $flagDateObj->modify('+1 day');
-                                            // 1 (週一) 到 5 (週五) 視為工作天
-                                            if ($flagDateObj->format('N') < 6) {
-                                                $flagWorkDays++;
-                                            }
-                                        }
-                                        $flagMinDate = $flagDateObj->format('Y-m-d');
-                                        ?>
-                                        <label>使用日期 <span style="font-size: 0.85em; color: #64748b; font-weight: normal;">(系統已限制需於7個工作天前申請)</span> <span style="color:red">*</span></label>
-                                        <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
-                                            <input type="date" name="flag_start_date" id="flag_start_date" class="form-control" style="width: auto;" min="<?php echo $flagMinDate; ?>" onchange="document.getElementById('flag_end_date').min = this.value || '<?php echo $flagMinDate; ?>'"> 
-                                            <span>至</span> 
-                                            <input type="date" name="flag_end_date" id="flag_end_date" class="form-control" style="width: auto;" min="<?php echo $flagMinDate; ?>">
-                                        </div>
+                                    <div>
+                                        <label>負責人 <span style="color:red">*</span></label>
+                                        <input type="text" name="flag_manager" id="flag_manager" class="form-control" placeholder="請輸入負責人姓名" value="<?php echo htmlspecialchars($formData['flag_manager'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
-                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
-                                        <div>
-                                            <label>宣傳旗幟 (至多20支) <span style="color:red">*</span></label>
-                                            <div style="display: flex; align-items: center; gap: 5px;">
-                                                <span>共</span>
-                                                <input type="number" name="flag_count" class="form-control" min="1" max="20" step="1" style="width: 100px;" placeholder="0" value="<?php echo htmlspecialchars((string)($formData['flag_count'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" oninput="if (this.value !== '' && Number(this.value) > 20) this.value = 20; if (this.value !== '' && Number(this.value) < 1) this.value = 1;">
-                                                <span>支</span>
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <label>懸掛位置-中央走道 <span style="color:red">*</span></label>
-                                            
-                                        </div>
+                                    <div>
+                                        <label>連絡電話 <span style="color:red">*</span></label>
+                                        <input type="text" name="flag_phone" id="flag_phone" class="form-control" placeholder="請輸入連絡電話" value="<?php echo htmlspecialchars($formData['flag_phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
-                                    <div style="background: #fff; padding: 15px; border: 1px solid #cbd5e1; border-radius: 5px; margin-top: 10px;">
-                                        <label style="display: flex; align-items: flex-start; justify-content: flex-start; gap: 8px; margin: 0; cursor: pointer; font-weight: normal; text-align: left;">
-                                            <input type="checkbox" name="flag_agreement" value="1" style="margin: 4px 0 0 0; width: auto; height: auto; flex-shrink: 0; display: inline-block;">
-                                            <span style="line-height: 1.5; color: #334155; display: inline-block; text-align: left;">本人為旗幟插立總負責人，已詳細閱讀並遵守以下各項注意事項，為維護校園安全與景觀，願無條件承擔所插旗幟所致之一切賠償責任，特此聲明。</span>
-                                        </label>
+                                    <div>
+                                        <label>活動名稱 <span style="color:red">*</span></label>
+                                        <input type="text" name="flag_activity_name" id="flag_activity_name" class="form-control" placeholder="請輸入活動名稱" value="<?php echo htmlspecialchars($formData['flag_activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
                                 </div>
 
+                                <div style="margin-bottom:15px;">
+                                    <label>
+                                        使用日期
+                                        <span style="font-size:0.85em; color:#64748b; font-weight:normal;">
+                                            （系統限制：需為 7 個工作天之後，並自動同步活動起訖日期）
+                                        </span>
+                                        <span style="color:red">*</span>
+                                    </label>
+
+                                    <div style="display:flex; align-items:center; gap:10px; margin-top:5px;">
+                                        <input type="date" name="flag_start_date" id="flag_start_date" class="form-control" value="<?php echo htmlspecialchars($formData['flag_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" readonly>
+                                        <span>至</span>
+                                        <input type="date" name="flag_end_date" id="flag_end_date" class="form-control" value="<?php echo htmlspecialchars($formData['flag_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" readonly>
+                                    </div>
+
+                                    <small id="flagDateHint" style="display:block; margin-top:6px; color:#64748b;"></small>
+                                </div>
+
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; margin-bottom:15px;">
+                                    <div>
+                                        <label>宣傳旗幟 <span style="color:red">*</span></label>
+                                        <div style="display:flex; align-items:center; gap:8px;">
+                                            <span>共</span>
+                                            <input type="number"
+                                                name="flag_count"
+                                                id="flag_count"
+                                                class="form-control"
+                                                min="1"
+                                                max="20"
+                                                step="1"
+                                                style="width:100px;"
+                                                placeholder="最多20"
+                                                value="<?php echo htmlspecialchars((string)($formData['flag_count'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
+                                            <span>支</span>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label>懸掛位置 <span style="color:red">*</span></label>
+                                        <input type="text"
+                                            name="flag_location"
+                                            id="flag_location"
+                                            class="form-control"
+                                            value="<?php echo htmlspecialchars($formData['flag_location'] ?: '中央走道', ENT_QUOTES, 'UTF-8'); ?>"
+                                            readonly>
+                                    </div>
+                                </div>
+
+                                <div style="background:#fff; border:1px solid #cbd5e1; border-radius:8px; padding:15px;">
+                                    <label style="display:flex; gap:8px; align-items:flex-start; font-weight:normal; cursor:pointer;">
+                                        <input type="checkbox" name="flag_agreement" id="flag_agreement" value="1" style="margin-top:4px;" <?php echo ($formData['flag_agreement'] === '1') ? 'checked' : ''; ?>>
+                                        <span style="line-height:1.6;">
+                                            本人為旗幟插立總負責人，已詳細閱讀並遵守以下各項注意事項，
+                                            為維護校園安全與景觀，願無條件承擔所插旗幟所致之一切賠償責任，特此聲明。
+                                        </span>
+                                    </label>
+                                </div>
+                            </div>
+
                                 <script>
+                                function isFlagEnabled() {
+                                    const checkedFlag = document.querySelector('input[name="setup_flags"]:checked');
+                                    return checkedFlag && checkedFlag.value === 'yes';
+                                }
+
+                                function addWorkDays(startDate, days) {
+                                    const date = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+                                    let count = 0;
+
+                                    while (count < days) {
+                                        date.setDate(date.getDate() + 1);
+                                        const weekDay = date.getDay();
+                                        if (weekDay !== 0 && weekDay !== 6) {
+                                            count++;
+                                        }
+                                    }
+
+                                    return date;
+                                }
+
+                                function formatDate(date) {
+                                    const y = date.getFullYear();
+                                    const m = String(date.getMonth() + 1).padStart(2, '0');
+                                    const d = String(date.getDate()).padStart(2, '0');
+                                    return `${y}-${m}-${d}`;
+                                }
+
+                                function getMinFlagDate() {
+                                    return formatDate(addWorkDays(new Date(), 7));
+                                }
+
                                 function toggleFlagDetails() {
-                                    const flagYes = document.getElementById('flagOptionYes');
                                     const detailsSection = document.getElementById('flagDetailsSection');
-                                    if(flagYes && detailsSection) {
-                                        detailsSection.style.display = flagYes.checked ? 'block' : 'none';
+                                    if (!detailsSection) return;
+
+                                    const show = isFlagEnabled();
+                                    detailsSection.style.display = show ? 'block' : 'none';
+
+                                    detailsSection.querySelectorAll('input, select, textarea').forEach(function (el) {
+                                        if (show) {
+                                            el.removeAttribute('disabled');
+                                        } else {
+                                            el.setAttribute('disabled', 'disabled');
+                                        }
+                                    });
+
+                                    if (show) {
+                                        syncFlagForm();
                                     }
                                 }
 
-                                document.addEventListener('DOMContentLoaded', function() {
+                                function syncFlagForm() {
+                                    if (!isFlagEnabled()) return;
+
                                     const activityStart = document.getElementById('borrow_start_date');
                                     const activityEnd = document.getElementById('borrow_end_date');
+
+                                    const organizationName = document.getElementById('organization_name');
+                                    const activityName = document.getElementById('activity_name');
+                                    const coordinatorPhone = document.getElementById('coordinator_phone');
+
+                                    const flagUnit = document.getElementById('flag_applicant_unit');
+                                    const flagActivity = document.getElementById('flag_activity_name');
+                                    const flagPhone = document.getElementById('flag_phone');
                                     const flagStart = document.getElementById('flag_start_date');
                                     const flagEnd = document.getElementById('flag_end_date');
-                                    
-                                    function syncFlagDates() {
-                                        if (activityStart && flagStart) {
-                                            flagStart.value = activityStart.value;
-                                            if(flagEnd) flagEnd.min = activityStart.value;
-                                        }
-                                        if (activityEnd && flagEnd) {
-                                            flagEnd.value = activityEnd.value;
-                                            // 也同步更新 flag_start_date 的 max (可選)
-                                            if(flagStart) flagStart.max = activityEnd.value;
-                                        }
+                                    const hint = document.getElementById('flagDateHint');
+
+                                    const minDate = getMinFlagDate();
+
+                                    if (flagUnit && organizationName && flagUnit.value.trim() === '') {
+                                        flagUnit.value = organizationName.value;
                                     }
 
-                                    if (activityStart) activityStart.addEventListener('change', syncFlagDates);
-                                    if (activityEnd) activityEnd.addEventListener('change', syncFlagDates);
+                                    if (flagActivity && activityName) {
+                                        flagActivity.value = activityName.value;
+                                    }
 
-                                    // 初始化同步
-                                    syncFlagDates();
+                                    if (flagPhone && coordinatorPhone && flagPhone.value.trim() === '') {
+                                        flagPhone.value = coordinatorPhone.value;
+                                    }
+
+                                    if (activityStart && flagStart) {
+                                        flagStart.value = activityStart.value;
+                                    }
+
+                                    if (activityEnd && flagEnd) {
+                                        flagEnd.value = activityEnd.value;
+                                    }
+
+                                    if (activityStart && activityStart.value && activityStart.value < minDate) {
+                                        activityStart.value = '';
+                                        if (flagStart) flagStart.value = '';
+                                        alert('插立旗幟的使用日期只能選 7 個工作天之後的日期。最早可申請日期：' + minDate);
+                                    }
+
+                                    if (activityEnd && activityEnd.value && activityEnd.value < minDate) {
+                                        activityEnd.value = '';
+                                        if (flagEnd) flagEnd.value = '';
+                                        alert('插立旗幟的結束日期也必須是 7 個工作天之後。最早可申請日期：' + minDate);
+                                    }
+
+                                    if (hint) {
+                                        hint.textContent = '最早可申請日期：' + minDate + '；使用日期會自動同步第一步的活動起訖日期。';
+                                    }
+                                }
+
+                                document.addEventListener('DOMContentLoaded', function () {
+                                    const flagRadios = document.querySelectorAll('input[name="setup_flags"]');
+                                    const flagCount = document.getElementById('flag_count');
+
+                                    flagRadios.forEach(function (radio) {
+                                        radio.addEventListener('change', function () {
+                                            toggleFlagDetails();
+                                            syncFlagForm();
+                                        });
+                                    });
+
+                                    ['borrow_start_date', 'borrow_end_date', 'organization_name', 'activity_name', 'coordinator_phone'].forEach(function (id) {
+                                        const el = document.getElementById(id);
+                                        if (el) {
+                                            el.addEventListener('change', syncFlagForm);
+                                            el.addEventListener('input', syncFlagForm);
+                                        }
+                                    });
+
+                                    if (flagCount) {
+                                        flagCount.addEventListener('input', function () {
+                                            if (this.value !== '' && Number(this.value) > 20) {
+                                                this.value = 20;
+                                                alert('宣傳旗幟最多只能選 20 支');
+                                            }
+
+                                            if (this.value !== '' && Number(this.value) < 1) {
+                                                this.value = 1;
+                                            }
+                                        });
+                                    }
+
+                                    toggleFlagDetails();
+                                    syncFlagForm();
+
+                                    // 暫存申請
+                                    const saveBtns = document.querySelectorAll('.saveDraftBtn');
+
+                                    saveBtns.forEach(function (btn) {
+                                        btn.addEventListener('click', function () {
+                                            const form = document.getElementById('multistep_form');
+                                            if (!form) return;
+
+                                            if (window.borrowCartDraftBridge) {
+                                                window.borrowCartDraftBridge.syncHiddenBeforeSave();
+                                            }
+
+                                            const formData = {};
+                                            form.querySelectorAll('input, select, textarea').forEach(function (el) {
+                                                if (!el.name || el.type === 'file') return;
+
+                                                if (el.type === 'checkbox') {
+                                                    formData[el.name] = el.checked ? '1' : '';
+                                                } else if (el.type === 'radio') {
+                                                    if (el.checked) formData[el.name] = el.value;
+                                                } else {
+                                                    formData[el.name] = el.value;
+                                                }
+                                            });
+
+                                            const drafts = JSON.parse(localStorage.getItem('borrow_drafts') || '[]');
+                                            const currentStep = document.getElementById('current_step')?.value || '1';
+
+                                            drafts.unshift({
+                                                draftId: 'draft_' + Date.now(),
+                                                timestamp: new Date().toLocaleString('zh-TW'),
+                                                activityName: formData.activity_name || '未填寫活動名稱',
+                                                purpose: formData.purpose || '未填寫',
+                                                currentStep: currentStep,
+                                                formData: formData
+                                            });
+
+                                            localStorage.setItem('borrow_drafts', JSON.stringify(drafts));
+
+                                            alert('暫存成功');
+
+                                            form.reset();
+
+                                            const cartInput = document.querySelector('input[name="cart_items"]');
+                                            if (cartInput) cartInput.value = '[]';
+
+                                            const selectedList = document.getElementById('esSelectedList');
+                                            if (selectedList) selectedList.innerHTML = '';
+
+                                            if (typeof window.setBorrowCartItems === 'function') {
+                                                window.setBorrowCartItems([]);
+                                            }
+
+                                            const proposalName = document.getElementById('proposal_file_name_display');
+                                            if (proposalName) proposalName.textContent = '';
+
+                                            toggleFlagDetails();
+
+                                            if (typeof showStep === 'function') {
+                                                showStep(1);
+                                            } else if (typeof goToStep === 'function') {
+                                                goToStep(1);
+                                            } else {
+                                                document.querySelectorAll('.step-content').forEach(el => el.classList.remove('active'));
+                                                document.getElementById('step-content-1')?.classList.add('active');
+                                                const currentStepInput = document.getElementById('current_step');
+                                                if (currentStepInput) currentStepInput.value = '1';
+                                            }
+                                        });
+                                    });
+
+                                    // 草稿箱
+                                    const draftBtns = document.querySelectorAll('.openDraftBoxBtn');
+
+                                    draftBtns.forEach(function (btn) {
+                                        btn.addEventListener('click', function () {
+                                            window.location.href = 'draft_box.php';
+                                        });
+                                    });
                                 });
-
-                                // 暫存申請
-                                const saveBtn = document.getElementById('saveDraftBtn');
-
-                                if(saveBtn){
-
-                                    saveBtn.addEventListener('click', function(){
-
-                                        alert('暫存成功');
-
-                                        localStorage.setItem(
-                                            'borrow_draft_' + Date.now(),
-                                            JSON.stringify({
-                                                time: new Date().toLocaleString()
-                                            })
-                                        );
-
-                                    });
-
-                                }
-
-                                // 草稿箱
-                                const draftBtn = document.getElementById('openDraftBoxBtn');
-
-                                if(draftBtn){
-
-                                    draftBtn.addEventListener('click', function(){
-
-                                        window.location.href = 'draft_box.php';
-
-                                    });
-
-                                }
-
-                                    });
-
-                                }
-
-                                // 草稿箱
-                                const openDraftBoxBtn = document.getElementById('openDraftBoxBtn');
-                                if(openDraftBoxBtn){
-                                    openDraftBoxBtn.addEventListener('click', function(){
-                                        window.location.href = 'draft_box.php';
-                                    });
-                                }
-                                // 草稿箱按鈕
-                                document.getElementById('openDraftBoxBtn')
-                                .addEventListener('click', function () {
-                                    window.location.href = 'draft_box.php';
                                 </script>
 
                                 <div class="step-actions">
                                     <button type="button" class="btn btn-secondary" onclick="goToStep(1)"> ⬅ 回上一步</button>
                                     <button type="button" class="btn btn-primary btn-next" onclick="goToStep(3)">下一步 ➔ 挑選器材與場地</button>
                                 </div>
+
+                                <div class="draft-action-row">
+                                    <button type="button" class="draft-btn save-btn saveDraftBtn">
+                                        暫存申請
+                                    </button>
+                                    <button type="button" class="draft-btn draft-box-btn openDraftBoxBtn">
+                                        草稿箱
+                                    </button>
+                                </div>
+                                <div id="submitDebugMsg" class="draft-message"></div>
                             </div>
                             <!-- ========== 步驟 3 內容區 ========== -->
                             <div class="step-content" id="step-content-3">
@@ -1593,8 +1760,7 @@ SQL;
                                     </div>
                                     <ul class="es-list" id="esEquipmentList">
                                         <?php foreach ($equipmentMap as $equipment) { 
-                                            // 初始化以總量作為參考，後續以 JS 動態檢查實際時段可借數量
-                                            $avail = (int)$equipment['total_capacity'];
+                                            $avail = (int)$equipment['available_quantity'];
                                             $limitRaw = $equipment['borrow_limit_quantity'];
                                             $limit = $limitRaw === null ? '不限' : (int)$limitRaw;
                                             $maxInput = $limitRaw !== null ? min($avail, (int)$limitRaw) : $avail;
@@ -1689,6 +1855,16 @@ SQL;
                                 <button type="button" class="btn btn-secondary" onclick="goToStep(2)"> ⬅ 回上一步</button>
                                 <button type="submit" class="btn btn-primary btn-next" id="borrowSubmitBtn">確認借用</button>
                             </div>
+
+                            <div class="draft-action-row">
+                                <button type="button" class="draft-btn save-btn saveDraftBtn">
+                                    暫存申請
+                                </button>
+                                <button type="button" class="draft-btn draft-box-btn openDraftBoxBtn">
+                                    草稿箱
+                                </button>
+                            </div>
+                            <div id="submitDebugMsg" class="draft-message"></div>
                         </div> <!-- end of step-content-3 -->
 
                         <!-- 草稿功能保留可放至其他位置, 或暫時隱藏, 為了簡化, 先放著 -->
@@ -1739,6 +1915,156 @@ SQL;
     </script>
 
     <script>
+        // ===== 草稿第三步「已選取項目」同步橋接 =====
+        // 用途：暫存前把右側已選項目寫進 cart_items；草稿載入後再把 cart_items 畫回右側清單。
+        window.borrowCartDraftBridge = {
+            getOrCreateCartInput: function () {
+                let cartInput = document.querySelector('input[name="cart_items"]');
+                const form = document.getElementById('multistep_form') || document.querySelector('form.borrow-form');
+
+                if (!cartInput && form) {
+                    cartInput = document.createElement('input');
+                    cartInput.type = 'hidden';
+                    cartInput.name = 'cart_items';
+                    form.appendChild(cartInput);
+                }
+
+                return cartInput;
+            },
+
+            normalizeItems: function (items) {
+                return (Array.isArray(items) ? items : []).map(function (item) {
+                    return {
+                        code: String(item.code || item.equipment_code || item.space_id || '').trim(),
+                        name: String(item.name || item.equipment_name || item.space_name || item.code || item.space_id || '').trim(),
+                        quantity: parseInt(item.quantity || item.qty || 1, 10) || 1,
+                        type: String(item.type || (item.space_id ? 'space' : 'equipment')).trim()
+                    };
+                }).filter(function (item) {
+                    return item.code !== '';
+                });
+            },
+
+            // 從右側 DOM 備援抓資料：避免 cartItems 區域變數還沒同步到 hidden input
+            readItemsFromRightPanelDom: function () {
+                const rows = document.querySelectorAll('#esSelectedList .es-right-item');
+                const items = [];
+
+                rows.forEach(function (row) {
+                    const nameCol = row.querySelector('.cart-col-name');
+                    const qtyInput = row.querySelector('.cart-qty-update');
+                    if (!nameCol) return;
+
+                    const rawName = nameCol.textContent.trim();
+                    const match = rawName.match(/^(.*)\s*\(([^()]+)\)\s*$/);
+                    const name = match ? match[1].trim() : rawName;
+                    const code = match ? match[2].trim() : '';
+                    const quantity = qtyInput ? (parseInt(qtyInput.value, 10) || 1) : 1;
+                    const type = qtyInput && qtyInput.disabled ? 'space' : 'equipment';
+
+                    if (code) {
+                        items.push({ code: code, name: name || code, quantity: quantity, type: type });
+                    }
+                });
+
+                return items;
+            },
+
+            syncHiddenBeforeSave: function () {
+                const cartInput = this.getOrCreateCartInput();
+                if (!cartInput) return [];
+
+                let items = [];
+
+                if (typeof window.getBorrowCartItems === 'function') {
+                    items = window.getBorrowCartItems();
+                }
+
+                if (!Array.isArray(items) || items.length === 0) {
+                    items = this.readItemsFromRightPanelDom();
+                }
+
+                // 若右側也抓不到，就保留 hidden input 原本資料
+                if ((!Array.isArray(items) || items.length === 0) && cartInput.value) {
+                    try {
+                        const oldItems = JSON.parse(cartInput.value || '[]');
+                        items = Array.isArray(oldItems) ? oldItems : [];
+                    } catch (e) {
+                        items = [];
+                    }
+                }
+
+                items = this.normalizeItems(items);
+                cartInput.value = JSON.stringify(items);
+                return items;
+            },
+
+            getDraftCartItems: function (draft) {
+                if (!draft) return [];
+                const data = draft.formData || draft.data || draft.form_data || {};
+                let raw = data.cart_items || data.cartItems || draft.cart_items || draft.cartItems || '[]';
+
+                if (Array.isArray(raw)) return this.normalizeItems(raw);
+
+                try {
+                    const parsed = JSON.parse(raw || '[]');
+                    return this.normalizeItems(Array.isArray(parsed) ? parsed : []);
+                } catch (e) {
+                    console.error('草稿 cart_items 解析失敗', e, raw);
+                    return [];
+                }
+            },
+
+            restoreRightPanel: function (draft) {
+                const items = this.getDraftCartItems(draft);
+                const cartInput = this.getOrCreateCartInput();
+
+                if (cartInput) {
+                    cartInput.value = JSON.stringify(items);
+                }
+
+                if (typeof window.setBorrowCartItems === 'function') {
+                    window.setBorrowCartItems(items);
+                    return;
+                }
+
+                if (typeof window.restoreBorrowCartFromHidden === 'function') {
+                    window.restoreBorrowCartFromHidden();
+                    return;
+                }
+
+                // 最後備援：直接手動畫到右側，避免畫面空白
+                const list = document.getElementById('esSelectedList');
+                if (!list) return;
+                list.innerHTML = '';
+
+                items.forEach(function (item, index) {
+                    const li = document.createElement('li');
+                    li.className = 'es-right-item';
+                    li.innerHTML = `
+                        <div class="cart-row">
+                            <div class="cart-col-name">${item.name} (${item.code})</div>
+                            <div class="cart-col-qty">
+                                <input type="number"
+                                       class="cart-qty-update"
+                                       data-index="${index}"
+                                       value="${item.quantity}"
+                                       min="1"
+                                       style="width:50px;text-align:center;border:1px solid #ccc;border-radius:4px;padding:2px;"
+                                       ${item.type === 'space' ? 'disabled title="場地僅能申請一項"' : ''}>
+                            </div>
+                            <div class="cart-col-action">
+                                <button type="button" class="es-btn-remove" data-index="${index}">移除</button>
+                            </div>
+                        </div>
+                    `;
+                    list.appendChild(li);
+                });
+            }
+        };
+    </script>
+
+    <script>
         document.addEventListener('DOMContentLoaded', function () {
             const form = document.getElementById('multistep_form');
             const saveBtn = document.getElementById('saveDraftBtn');
@@ -1784,6 +2110,10 @@ SQL;
                 const selectedList = document.getElementById('esSelectedList');
                 if (selectedList) selectedList.innerHTML = '';
 
+                if (typeof window.setBorrowCartItems === 'function') {
+                    window.setBorrowCartItems([]);
+                }
+
                 const proposalName = document.getElementById('proposal_file_name_display');
                 if (proposalName) proposalName.textContent = '';
 
@@ -1799,6 +2129,10 @@ SQL;
                 saveBtn.addEventListener('click', function () {
                     const drafts = getDrafts();
 
+                    if (window.borrowCartDraftBridge) {
+                        window.borrowCartDraftBridge.syncHiddenBeforeSave();
+                    }
+
                     const formData = collectFormData();
 
                     const draft = {
@@ -1806,6 +2140,7 @@ SQL;
                         timestamp: new Date().toLocaleString('zh-TW'),
                         activityName: formData.activity_name || '未填寫活動名稱',
                         purpose: formData.purpose || '',
+                        currentStep: document.getElementById('current_step')?.value || '1',
                         formData: formData
                     };
 
@@ -1829,14 +2164,15 @@ SQL;
             const loadId = params.get('draft_id');
 
             if (loadId) {
-                const drafts = getDrafts();
+                const drafts = JSON.parse(localStorage.getItem('borrow_drafts') || '[]');
                 const draft = drafts.find(d => d.draftId === loadId);
 
-                if (draft && draft.formData) {
-                    Object.keys(draft.formData).forEach(name => {
-                        const els = form.querySelectorAll(`[name="${name}"]`);
+                if (draft) {
+                    Object.keys(draft.formData).forEach(function (name) {
+                        const els = document.querySelectorAll(`[name="${name}"]`);
 
-                        els.forEach(el => {
+
+                        els.forEach(function (el) {
                             if (el.type === 'checkbox') {
                                 el.checked = draft.formData[name] === '1';
                             } else if (el.type === 'radio') {
@@ -1847,7 +2183,50 @@ SQL;
                         });
                     });
 
-                    if (msg) msg.textContent = '✅ 已載入草稿，可繼續申請';
+                    // 草稿如果有第三步已選取項目，先填回 hidden input，並同步畫回右側「已選取項目」。
+                    if (window.borrowCartDraftBridge) {
+                        window.borrowCartDraftBridge.restoreRightPanel(draft);
+                        setTimeout(function () {
+                            window.borrowCartDraftBridge.restoreRightPanel(draft);
+                        }, 200);
+                    }
+
+                    // 草稿資料填回表單後，重新判斷「插立旗幟」是否為是。
+                    // 若 setup_flags = yes，會自動顯示旗幟插立申請表。
+                    if (typeof toggleFlagDetails === 'function') {
+                        toggleFlagDetails();
+                    }
+
+                    // 重新同步旗幟申請表資料與活動日期。
+                    if (typeof syncFlagForm === 'function') {
+                        syncFlagForm();
+                    }
+
+                    const step = draft.currentStep || '1';
+
+                    if (typeof showStep === 'function') {
+                        showStep(step);
+                    } else {
+
+                        document.querySelectorAll('.step-content')
+                            .forEach(el => el.classList.remove('active'));
+
+                        document.querySelectorAll('.stepper-item')
+                            .forEach(el => el.classList.remove('active'));
+
+                        document.getElementById('step-content-' + step)
+                            ?.classList.add('active');
+
+                        document.getElementById('stepper-' + step)
+                            ?.classList.add('active');
+
+                        const currentStepInput =
+                            document.getElementById('current_step');
+
+                        if (currentStepInput) {
+                            currentStepInput.value = step;
+                        }
+                    }
                 }
             }
         });
@@ -1928,6 +2307,40 @@ function startApplication() {
             
             const items = esEquipmentList ? esEquipmentList.querySelectorAll('.es-item') : [];
             let cartItems = [];
+            if (cartItemsInput && cartItemsInput.value) {
+                try {
+                    const savedCartItems = JSON.parse(cartItemsInput.value);
+                    cartItems = Array.isArray(savedCartItems) ? savedCartItems : [];
+                } catch (e) {
+                    console.error('草稿已選取項目解析失敗', e);
+                    cartItems = [];
+                }
+            }
+            // 讓草稿功能可以讀取/還原第三步右側「已選取項目」的實際購物車資料
+            window.getBorrowCartItems = function () {
+                return Array.isArray(cartItems) ? JSON.parse(JSON.stringify(cartItems)) : [];
+            };
+
+            window.setBorrowCartItems = function (itemsToRestore) {
+                cartItems = Array.isArray(itemsToRestore) ? itemsToRestore.map(function (item) {
+                    return {
+                        code: String(item.code || item.equipment_code || item.space_id || ''),
+                        name: String(item.name || item.equipment_name || item.space_name || item.code || item.space_id || ''),
+                        quantity: parseInt(item.quantity || item.qty || 1, 10) || 1,
+                        type: String(item.type || (item.space_id ? 'space' : 'equipment'))
+                    };
+                }).filter(function (item) {
+                    return item.code !== '';
+                }) : [];
+
+                if (cartItemsInput) {
+                    cartItemsInput.value = JSON.stringify(cartItems);
+                }
+
+                renderCart();
+                refreshModeUI();
+            };
+
             let currentTab = 'equipment';
             const tabBtns = document.querySelectorAll('.es-tab-btn');
 
@@ -2012,66 +2425,80 @@ function startApplication() {
                 const borrowEndDateElLocal = document.getElementById('borrow_end_date');
                 const selectedDate = borrowStartDateElLocal ? borrowStartDateElLocal.value : '';
                 const selectedEndDate = borrowEndDateElLocal ? borrowEndDateElLocal.value : '';
-                
-                const startH = document.querySelector('select[name="borrow_start_time_h"]')?.value;
-                const startM = document.querySelector('select[name="borrow_start_time_m"]')?.value;
-                const endH = document.querySelector('select[name="borrow_end_time_h"]')?.value;
-                const endM = document.querySelector('select[name="borrow_end_time_m"]')?.value;
-                
-                const hasFullTime = selectedDate && selectedEndDate && startH && startM && endH && endM;
-                let userStartStr = '';
-                let userEndStr = '';
-                if (hasFullTime) {
-                    userStartStr = `${selectedDate} ${startH.padStart(2, '0')}:${startM.padStart(2, '0')}:00`;
-                    userEndStr = `${selectedEndDate} ${endH.padStart(2, '0')}:${endM.padStart(2, '0')}:00`;
-                }
+                const startPeriodCode = 'always';
+                const endPeriodCode = 'always';
+                const periodSlotsMap = window.periodSlotsMap || {};
+                const spaceReservations = window.existingSpaceReservations || [];
 
                 items.forEach(item => {
                     const type = item.dataset.type;
                     const code = item.dataset.code;
 
-                    if (!hasFullTime) {
-                        setItemAvailabilityState(item, '請先選完整起訖時間', '請先選完整借用起訖時間', 1, true); // 改為 true 讓他可以加入再說
+                    if (type === 'equipment') {
+                        if (!selectedDate) {
+                            setItemAvailabilityState(item, '請先選日期', '請先選日期', 1, true); // 改為 true 讓他可以加入再說
+                            return;
+                        }
+
+                        const year = selectedDate.substring(0, 4);
+                        const month = selectedDate.substring(5, 7);
+                        const monthKey = `${code}_${year}_${month}`;
+                        const applyAvailability = (data) => {
+                            const reservations = Array.isArray(data.reservations) ? data.reservations : [];
+                            let used = 0;
+                            reservations.forEach(r => {
+                                if ((r.start || '').substring(0, 10) === selectedDate) {
+                                    used += parseInt(r.qty || 0, 10) || 0;
+                                }
+                            });
+                            const availableQty = Math.max(0, (parseInt(data.total_capacity || 0, 10) || 0) - used);
+                            const label = String(availableQty);
+                            setItemAvailabilityState(item, label, label, availableQty, availableQty > 0);
+                        };
+
+                        if (availabilityCache[monthKey]) {
+                            applyAvailability(availabilityCache[monthKey]);
+                        } else if (!pendingAvailabilityLoads[monthKey]) {
+                            pendingAvailabilityLoads[monthKey] = true;
+                            fetch(`api_get_availability.php?type=equipment&id=${encodeURIComponent(code)}&year=${year}&month=${month}`)
+                                .then(res => res.json())
+                                .then(data => {
+                                    if (data && data.total_capacity !== undefined) {
+                                        availabilityCache[monthKey] = data;
+                                    }
+                                })
+                                .catch(err => console.error('Resource availability load error:', err))
+                                .finally(() => {
+                                    delete pendingAvailabilityLoads[monthKey];
+                                    if (typeof window.refreshResourceAvailability === 'function') {
+                                        window.refreshResourceAvailability();
+                                    }
+                                });
+                            setItemAvailabilityState(item, '讀取中...', '讀取中...', 1, true); // 讓它能點
+                        } else {
+                            setItemAvailabilityState(item, '讀取中...', '讀取中...', 1, true); // 讓它能點
+                        }
                         return;
                     }
 
-                    const year = selectedDate.substring(0, 4);
-                    const month = selectedDate.substring(5, 7);
-                    const monthKey = `${type}_${code}_${year}_${month}`;
-                    const applyAvailability = (data) => {
-                        const reservations = Array.isArray(data.reservations) ? data.reservations : [];
-                        let used = 0;
-                        reservations.forEach(r => {
-                            if (r.start < userEndStr && r.end > userStartStr) {
-                                used += parseInt(r.qty || 0, 10) || 0;
-                            }
-                        });
-                        const availableQty = Math.max(0, (parseInt(data.total_capacity || 0, 10) || 0) - used);
+                    if (type === 'space') {
+                        const startH = document.querySelector('select[name="borrow_start_time_h"]')?.value;
+                        const startM = document.querySelector('select[name="borrow_start_time_m"]')?.value;
+                        const endH = document.querySelector('select[name="borrow_end_time_h"]')?.value;
+                        const endM = document.querySelector('select[name="borrow_end_time_m"]')?.value;
+                        
+                        if (!selectedDate || !selectedEndDate || !startH || !startM || !endH || !endM) {
+                            setItemAvailabilityState(item, '請先選日期與時間', '請先選完整借用起訖時間', 1, true); // 改為 true 讓他可以加入再說
+                            return;
+                        }
+
+                        const selectedStart = `${startH.padStart(2, '0')}:${startM.padStart(2, '0')}:00`;
+                        const selectedEndString = `${endH.padStart(2, '0')}:${endM.padStart(2, '0')}:00`;
+                        
+                        // 我們暫時用前端粗略判斷（同一天）是否衝突
+                        const availableQty = 1;
                         const label = String(availableQty);
                         setItemAvailabilityState(item, label, label, availableQty, availableQty > 0);
-                    };
-
-                    if (availabilityCache[monthKey]) {
-                        applyAvailability(availabilityCache[monthKey]);
-                    } else if (!pendingAvailabilityLoads[monthKey]) {
-                        pendingAvailabilityLoads[monthKey] = true;
-                        fetch(`api_get_availability.php?type=${encodeURIComponent(type)}&id=${encodeURIComponent(code)}&year=${year}&month=${month}`)
-                            .then(res => res.json())
-                            .then(data => {
-                                if (data && data.total_capacity !== undefined) {
-                                    availabilityCache[monthKey] = data;
-                                }
-                            })
-                            .catch(err => console.error('Resource availability load error:', err))
-                            .finally(() => {
-                                delete pendingAvailabilityLoads[monthKey];
-                                if (typeof window.refreshResourceAvailability === 'function') {
-                                    window.refreshResourceAvailability();
-                                }
-                            });
-                        setItemAvailabilityState(item, '讀取中...', '讀取中...', 1, true); // 讓它能點
-                    } else {
-                        setItemAvailabilityState(item, '讀取中...', '讀取中...', 1, true); // 讓它能點
                     }
                 });
             }
@@ -2275,6 +2702,32 @@ function startApplication() {
                 }
             }
 
+            function restoreCartFromHiddenInput() {
+                if (!cartItemsInput) return;
+
+                let restoredItems = [];
+                if (cartItemsInput.value) {
+                    try {
+                        const parsed = JSON.parse(cartItemsInput.value);
+                        restoredItems = Array.isArray(parsed) ? parsed : [];
+                    } catch (e) {
+                        console.error('草稿已選取項目載入失敗', e);
+                        restoredItems = [];
+                    }
+                }
+
+                if (typeof window.setBorrowCartItems === 'function') {
+                    window.setBorrowCartItems(restoredItems);
+                } else {
+                    cartItems = restoredItems;
+                    cartItemsInput.value = JSON.stringify(cartItems);
+                    renderCart();
+                    refreshModeUI();
+                }
+            }
+
+            window.restoreBorrowCartFromHidden = restoreCartFromHiddenInput;
+
             function handleFormSubmit() {
                 if (submitDebugMsg) {
                     submitDebugMsg.textContent = '已觸發送出，正在提交資料...';
@@ -2298,7 +2751,7 @@ function startApplication() {
 
             if (borrowForm) borrowForm.addEventListener('submit', handleFormSubmit);
             refreshModeUI();
-            renderCart();
+            restoreCartFromHiddenInput();
             })();
         }
 
@@ -2443,7 +2896,12 @@ function startApplication() {
             function saveDraft() {
                 try {
                     const draft = window.draftManager.saveDraft();
-                    showMessage(`✓ 草稿已暫存 (${draft.draftId.substring(0, 20)}...)`, 'success', 3000);
+                    showMessage(`✓ 草稿已暫存 (${draft.draftId.substring(0, 20)}...)，表單已清空，可開始新申請`, 'success', 3000);
+                    
+                    // 暫存完畢後，清空所有表單欄位並回到第一步
+                    setTimeout(() => {
+                        window.draftManager.clearForm(true);
+                    }, 500);
                 } catch (error) {
                     showMessage(`✗ 暫存失敗：${error.message}`, 'error', 3000);
                 }
@@ -2527,10 +2985,39 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!itemCode || !dateStr) return true;
         reqQty = reqQty || 1;
         
-        if (itemType === 'equipment' || itemType === 'space') {
-            // 器材與空間都支援時段與數量，因此不能僅憑某天有預約就整天不可選，應由使用者自選時間來決定。
-            // 如果真的需要，可進一步寫「若全天24小時皆無庫存才禁用」，但大部分情況建議直接讓使用者選日期再選時段判斷。
-            return true;
+        if (itemType === 'equipment') {
+            // 器材按天單位判斷：該天有任何預約就不可選
+            const availability = availabilityCache[`${itemCode}_${dateStr}`];
+            if (!availability) return true;
+            
+            let dayHasReservation = false;
+            availability.reservations.forEach(r => {
+                const rDate = r.start.substring(0, 10);
+                if (rDate === dateStr) dayHasReservation = true;
+            });
+            return !dayHasReservation;
+        }
+        
+        if (itemType === 'space') {
+             const conflicts = existingSpaceReservations.filter(r => r.space_id === itemCode && r.date === dateStr);
+             const periodOrder = Object.keys(periodSlotsMap);
+             // 如果在所有時段中都有衝突，則全天不可選
+             for (const code of periodOrder) {
+                  const times = periodSlotsMap[code];
+                  if (!times) continue;
+                  const pStart = times.start;
+                  const pEnd = times.end;
+                  // 檢查此時段是否能借
+                  let canBorrow = true;
+                  for (const c of conflicts) {
+                       if (pStart < c.end && pEnd > c.start) {
+                            canBorrow = false;
+                            break;
+                       }
+                  }
+                  if (canBorrow) return true; // 只要有一個時段可以借，當天就可選
+             }
+             return false; // 全天衝突
         }
         
         const dateKey = `${itemCode}_${dateStr}`;
@@ -2609,14 +3096,43 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // 對於器材，不再單純因為當天有任意預約就整批禁用全部時段，應允許選時段，交由精確計算
+        // 對於器材，基於實時API數據來禁用已借滿的時段
         if (selEquipment && selDate) {
             const year = selDate.substring(0, 4);
             const month = selDate.substring(5, 7);
             const dateKey = `${selEquipment}_${selDate}`;
             const availability = availabilityCache[dateKey];
             
-            if (!availability) {
+            if (availability) {
+                // 器材按天判：該天有任何預約就禁用所有時段
+                let dayHasReservation = false;
+                availability.reservations.forEach(r => {
+                    const rDate = r.start.substring(0, 10);
+                    if (rDate === selDate) dayHasReservation = true;
+                });
+                
+                if (dayHasReservation) {
+                    // 禁用所有時段
+                    const periodOrder = Object.keys(periodSlotsMap);
+                    for (const code of periodOrder) {
+                        if (startPeriodEl) {
+                            const opt1 = startPeriodEl.querySelector(`option[value="${code}"]`);
+                            if (opt1) {
+                                opt1.disabled = true;
+                                if (!opt1.innerHTML.includes('該天已被預約')) opt1.innerHTML += ' (該天已被預約)';
+                            }
+                        }
+                        if (endPeriodEl) {
+                            const opt2 = endPeriodEl.querySelector(`option[value="${code}"]`);
+                            if (opt2) {
+                                opt2.disabled = true;
+                                if (!opt2.innerHTML.includes('該天已被預約')) opt2.innerHTML += ' (該天已被預約)';
+                            }
+                        }
+                    }
+                    return;
+                }
+            } else {
                 // 無快取，需要先取得
                 const monthKey = `${selEquipment}_${year}_${month}`;
                 if (!availabilityCache[monthKey]) {
@@ -2634,9 +3150,12 @@ document.addEventListener('DOMContentLoaded', () => {
                                     reservations: data.reservations || []
                                 };
                             }
+                            // 再次執行以套用禁用
+                            updatePeriodOptions();
                         }
                     })
                     .catch(err => console.error('Fetch availability error:', err));
+                    return;
                 } else {
                     if (!availabilityCache[dateKey]) {
                         const data = availabilityCache[monthKey];
@@ -2647,6 +3166,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
             }
+
         }
 
         // Find conflicts (only relevant for space mode)
@@ -2898,11 +3418,42 @@ document.addEventListener('DOMContentLoaded', () => {
         window.fpBorrowDate = fp;
 
         function refreshDisabledDatesForCurrentMonth(fpInstance, equipmentObjParam) {
-            // 已支援精細時段與剩餘數量計算，不再粗暴禁用整天，由時段選擇輔助判斷
-            if (fpInstance) {
+            const cartItemsInput = document.querySelector('input[name="cart_items"]');
+            const cartItemsStr = cartItemsInput ? cartItemsInput.value : '[]';
+            let cartItems = [];
+            try { cartItems = JSON.parse(cartItemsStr); } catch (e) {}
+            const equipmentObj = equipmentObjParam || cartItems.find(c => c.type === 'equipment');
+            if (!equipmentObj) {
+                disabledDatesSet = new Set();
                 fpInstance.set('disable', []);
                 fpInstance.redraw && fpInstance.redraw();
+                return;
             }
+            const year = String(fpInstance.currentYear);
+            const month = String(fpInstance.currentMonth + 1).padStart(2, '0');
+            fetch(`api_get_availability.php?type=equipment&id=${encodeURIComponent(equipmentObj.code)}&year=${year}&month=${month}`)
+                .then(res => res.json())
+                .then(data => {
+                    const total = data.total_capacity || 0;
+                    const reservations = data.reservations || [];
+                    const yNum = parseInt(year, 10);
+                    const mNum = parseInt(month, 10);
+                    const lastDay = new Date(yNum, mNum, 0).getDate();
+                    const set = new Set();
+                    for (let d = 1; d <= lastDay; d++) {
+                        const day = `${year}-${String(mNum).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                        let dayHasReservation = false;
+                        reservations.forEach(r => {
+                            const rDate = r.start.substring(0, 10);
+                            if (rDate === day) dayHasReservation = true;
+                        });
+                        if (dayHasReservation) set.add(day);
+                    }
+                    disabledDatesSet = set;
+                    fpInstance.set('disable', [function(date) { const ds = date.toISOString().slice(0,10); return disabledDatesSet.has(ds); }]);
+                    fpInstance.redraw && fpInstance.redraw();
+                })
+                .catch(err => { console.error('fetch month avail error', err); });
         }
 
         // wrap existing updatePeriodOptions to also refresh disabled dates
@@ -3098,6 +3649,218 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 <?php } ?>
+
+
+
+<!-- 草稿載入後：強制還原第三步右側「已選取項目」 -->
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.get('draft_id')) return;
+
+    // 等 initializeBorrowForm() 完成後，再補跑一次，避免右側清單被初始化清空。
+    setTimeout(function () {
+        if (typeof window.restoreBorrowCartFromHidden === 'function') {
+            window.restoreBorrowCartFromHidden();
+        }
+    }, 100);
+});
+</script>
+
+<!-- 草稿載入後：若插立旗幟為「是」，強制顯示旗幟插立申請表 -->
+<script>
+(function () {
+    function getDraftByUrlId() {
+        const params = new URLSearchParams(window.location.search);
+        const loadId = params.get('draft_id');
+        if (!loadId) return null;
+
+        const drafts = JSON.parse(localStorage.getItem('borrow_drafts') || '[]');
+        return drafts.find(function (d) {
+            return d && String(d.draftId) === String(loadId);
+        }) || null;
+    }
+
+    function getDraftFormData(draft) {
+        if (!draft) return {};
+        return draft.formData || draft.data || draft.form_data || {};
+    }
+
+    function restoreFlagFormAfterDraftLoad() {
+        const draft = getDraftByUrlId();
+        if (!draft) return;
+
+        const data = getDraftFormData(draft);
+        const flagValue = data.setup_flags || data.flag_setup || '';
+        const isYes = flagValue === 'yes' || flagValue === '1' || flagValue === 1 || flagValue === true;
+
+        const yesRadio = document.querySelector('input[name="setup_flags"][value="yes"]');
+        const noRadio = document.querySelector('input[name="setup_flags"][value="no"]');
+        const detailsSection = document.getElementById('flagDetailsSection');
+
+        if (isYes) {
+            if (yesRadio) yesRadio.checked = true;
+            if (noRadio) noRadio.checked = false;
+
+            if (detailsSection) {
+                detailsSection.style.display = 'block';
+                detailsSection.querySelectorAll('input, select, textarea').forEach(function (el) {
+                    el.removeAttribute('disabled');
+                });
+            }
+        } else {
+            if (detailsSection) {
+                detailsSection.style.display = 'none';
+            }
+            return;
+        }
+
+        // 把草稿內旗幟表單欄位重新塞回去
+        [
+            'flag_applicant_unit',
+            'flag_manager',
+            'flag_phone',
+            'flag_activity_name',
+            'flag_start_date',
+            'flag_end_date',
+            'flag_count',
+            'flag_location',
+            'flag_agreement'
+        ].forEach(function (name) {
+            const value = data[name];
+            const els = document.querySelectorAll('[name="' + name + '"]');
+
+            els.forEach(function (el) {
+                if (el.type === 'checkbox') {
+                    el.checked = value === '1' || value === 1 || value === true;
+                } else if (value !== undefined && value !== null) {
+                    el.value = value;
+                }
+            });
+        });
+
+        // 若原本函式存在，再跑一次，讓日期與顯示狀態同步
+        if (typeof window.toggleFlagDetails === 'function') {
+            window.toggleFlagDetails();
+        }
+
+        if (typeof window.syncFlagForm === 'function') {
+            window.syncFlagForm();
+        }
+
+        // 防止其他舊程式後面又把它隱藏，最後再強制打開一次
+        if (isYes && detailsSection) {
+            detailsSection.style.display = 'block';
+            detailsSection.querySelectorAll('input, select, textarea').forEach(function (el) {
+                el.removeAttribute('disabled');
+            });
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        restoreFlagFormAfterDraftLoad();
+        setTimeout(restoreFlagFormAfterDraftLoad, 100);
+        setTimeout(restoreFlagFormAfterDraftLoad, 300);
+    });
+})();
+</script>
+
+
+
+<!-- 草稿載入/暫存：強制同步第三步右側「已選取項目」 -->
+<script>
+(function () {
+    function getDraftByUrlId() {
+        const params = new URLSearchParams(window.location.search);
+        const loadId = params.get('draft_id');
+        if (!loadId) return null;
+        try {
+            const drafts = JSON.parse(localStorage.getItem('borrow_drafts') || '[]');
+            return drafts.find(function (d) {
+                return d && String(d.draftId) === String(loadId);
+            }) || null;
+        } catch (e) {
+            console.error('讀取草稿失敗', e);
+            return null;
+        }
+    }
+
+    function parseCartItemsFromDraft(draft) {
+        if (!draft) return [];
+        const data = draft.formData || draft.data || draft.form_data || {};
+        const raw = data.cart_items || draft.cart_items || draft.cartItems || '[]';
+
+        if (Array.isArray(raw)) return raw;
+
+        try {
+            const parsed = JSON.parse(raw || '[]');
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+            console.error('草稿 cart_items 解析失敗', e, raw);
+            return [];
+        }
+    }
+
+    function normalizeCartItems(items) {
+        return (Array.isArray(items) ? items : []).map(function (item) {
+            return {
+                code: String(item.code || item.equipment_code || item.space_id || ''),
+                name: String(item.name || item.equipment_name || item.space_name || item.code || item.space_id || ''),
+                quantity: parseInt(item.quantity || item.qty || 1, 10) || 1,
+                type: String(item.type || (item.space_id ? 'space' : 'equipment'))
+            };
+        }).filter(function (item) {
+            return item.code !== '';
+        });
+    }
+
+    function syncHiddenCartBeforeSaving() {
+        const cartInput = document.querySelector('input[name="cart_items"]');
+        if (!cartInput) return;
+
+        if (typeof window.getBorrowCartItems === 'function') {
+            cartInput.value = JSON.stringify(window.getBorrowCartItems());
+        }
+    }
+
+    function restoreDraftCartToRightPanel() {
+        const draft = getDraftByUrlId();
+        if (!draft) return;
+
+        const items = normalizeCartItems(parseCartItemsFromDraft(draft));
+        const cartInput = document.querySelector('input[name="cart_items"]');
+
+        if (cartInput) {
+            cartInput.value = JSON.stringify(items);
+        }
+
+        if (typeof window.setBorrowCartItems === 'function') {
+            window.setBorrowCartItems(items);
+        } else if (typeof window.restoreBorrowCartFromHidden === 'function') {
+            window.restoreBorrowCartFromHidden();
+        }
+    }
+
+    // 在原本的暫存 click handler 執行前，先把右側已選取項目同步進 hidden input。
+    document.addEventListener('click', function (e) {
+        const btn = e.target.closest('.saveDraftBtn, #saveDraftBtn');
+        if (btn) syncHiddenCartBeforeSaving();
+    }, true);
+
+    document.addEventListener('DOMContentLoaded', function () {
+        if (!new URLSearchParams(window.location.search).get('draft_id')) return;
+
+        let tries = 0;
+        const timer = setInterval(function () {
+            restoreDraftCartToRightPanel();
+            tries++;
+            if (typeof window.setBorrowCartItems === 'function' || tries >= 20) {
+                clearInterval(timer);
+            }
+        }, 100);
+    });
+})();
+</script>
 
 </body>
 </html>

@@ -152,7 +152,7 @@ function renderDrafts() {
                 <td>${draft.purpose ? draft.purpose.substring(0, 30) + '...' : '未填寫'}</td>
                 <td>
                     <div class="draft-actions">
-                        <button class="btn-load" onclick="loadDraft('${draft.draftId}')">載入</button>
+                        <button type="button" onclick="loadDraft('${draft.draftId}')">載入</button>
                         <button class="btn-delete" onclick="deleteDraft('${draft.draftId}')">刪除</button>
                     </div>
                 </td>

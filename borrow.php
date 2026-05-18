@@ -216,7 +216,7 @@ $formData = [
     'flag_activity_name' => '',
     'flag_start_date' => '',
     'flag_end_date' => '',
-    'flag_count' => 0,
+    'flag_count' => 1,
     'flag_location' => '',
     'flag_agreement' => '',
     'resource_type' => 'equipment',
@@ -261,7 +261,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['flag_activity_name'] = trim((string)($_POST['flag_activity_name'] ?? ''));
     $formData['flag_start_date'] = trim((string)($_POST['flag_start_date'] ?? ''));
     $formData['flag_end_date'] = trim((string)($_POST['flag_end_date'] ?? ''));
-    $formData['flag_count'] = (int)($_POST['flag_count'] ?? 0);
+    $formData['flag_count'] = (int)($_POST['flag_count'] ?? 1);
     $formData['flag_location'] = trim((string)($_POST['flag_location'] ?? ''));
     $formData['flag_agreement'] = isset($_POST['flag_agreement']) ? '1' : '';
     $formData['space_id'] = trim((string)($_POST['space_id'] ?? ''));
@@ -1392,9 +1392,9 @@ SQL;
                                     </label>
 
                                     <div style="display:flex; align-items:center; gap:10px; margin-top:5px;">
-                                        <input type="date" name="flag_start_date" id="flag_start_date" class="form-control" style="height: 38px;" value="<?php echo htmlspecialchars($formData['flag_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" readonly>
+                                        <input type="date" name="flag_start_date" id="flag_start_date" class="form-control" style="height: 38px;" value="<?php echo htmlspecialchars($formData['flag_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                         <span>至</span>
-                                        <input type="date" name="flag_end_date" id="flag_end_date" class="form-control" style="height: 38px;" value="<?php echo htmlspecialchars($formData['flag_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" readonly>
+                                        <input type="date" name="flag_end_date" id="flag_end_date" class="form-control" style="height: 38px;" value="<?php echo htmlspecialchars($formData['flag_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
 
                                     <small id="flagDateHint" style="display:block; margin-top:6px; color:#64748b;"></small>
@@ -1414,20 +1414,17 @@ SQL;
                                                 step="1"
                                                 style="width:100px;height:38px;"
                                                 placeholder="最多20"
-                                                value="<?php echo htmlspecialchars((string)($formData['flag_count'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
+                                                value="<?php echo htmlspecialchars((string)($formData['flag_count'] ?? '1'), ENT_QUOTES, 'UTF-8'); ?>">
                                             <span>支</span>
                                         </div>
                                     </div>
 
                                     <div>
                                         <label>懸掛位置 <span style="color:red">*</span></label>
-                                        <input type="text"
-                                            name="flag_location"
-                                            id="flag_location"
-                                            class="form-control"
-                                            style="height: 38px;"
-                                            value="<?php echo htmlspecialchars($formData['flag_location'] ?: '中央走道', ENT_QUOTES, 'UTF-8'); ?>"
-                                            readonly>
+                                        <div style="height: 38px; display: flex; align-items: center; padding: 0 14px; background: #f8fafc; border-radius: 8px; border: 1px solid #cbd5e1; color: #475569; font-weight: 500;">
+                                            中央走道
+                                            <input type="hidden" name="flag_location" value="中央走道">
+                                        </div>
                                     </div>
                                 </div>
 
@@ -1503,10 +1500,12 @@ SQL;
                                     const organizationName = document.getElementById('organization_name');
                                     const activityName = document.getElementById('activity_name');
                                     const coordinatorPhone = document.getElementById('coordinator_phone');
+                                    const activityCoordinator = document.getElementById('activity_coordinator');
 
                                     const flagUnit = document.getElementById('flag_applicant_unit');
                                     const flagActivity = document.getElementById('flag_activity_name');
                                     const flagPhone = document.getElementById('flag_phone');
+                                    const flagManager = document.getElementById('flag_manager');
                                     const flagStart = document.getElementById('flag_start_date');
                                     const flagEnd = document.getElementById('flag_end_date');
                                     const hint = document.getElementById('flagDateHint');
@@ -1519,6 +1518,10 @@ SQL;
 
                                     if (flagActivity && activityName) {
                                         flagActivity.value = activityName.value;
+                                    }
+
+                                    if (flagManager && activityCoordinator) {
+                                        flagManager.value = activityCoordinator.value;
                                     }
 
                                     if (flagPhone && coordinatorPhone && flagPhone.value.trim() === '') {

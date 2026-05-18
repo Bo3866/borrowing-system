@@ -142,6 +142,41 @@ try {
             $paramTypes .= 's';
         }
         
+        // 檢查 reservations 表是否有 purpose 與 certificate_id 欄位
+        $reservationCols = [];
+        $colRes = mysqli_query($link, 'SHOW COLUMNS FROM reservations');
+        if ($colRes) {
+            while ($crow = mysqli_fetch_assoc($colRes)) {
+                $reservationCols[] = (string)$crow['Field'];
+            }
+        }
+        $hasPurposeCol = in_array('purpose', $reservationCols, true);
+        $hasCertificateIdCol = in_array('certificate_id', $reservationCols, true);
+
+        // 查詢當前使用者的有效證照編號
+        $certificateId = null;
+        if ($hasCertificateIdCol) {
+            $certSelectStmt = mysqli_prepare(
+                $link,
+                'SELECT certificate_id FROM equipment_certificates WHERE holder_id = ? AND validity_status = "valid" ORDER BY issue_date DESC LIMIT 1'
+            );
+            if ($certSelectStmt) {
+                mysqli_stmt_bind_param($certSelectStmt, 's', $userId);
+                mysqli_stmt_execute($certSelectStmt);
+                $certRes = mysqli_stmt_get_result($certSelectStmt);
+                if ($certRes && $certRow = mysqli_fetch_assoc($certRes)) {
+                    $certificateId = (int)$certRow['certificate_id'];
+                }
+                mysqli_stmt_close($certSelectStmt);
+            }
+        }
+
+        if ($hasCertificateIdCol && $certificateId !== null) {
+            $updateParts[] = 'certificate_id = ?';
+            $params[] = $certificateId;
+            $paramTypes .= 'i';
+        }
+        
         // 最後添加 WHERE 條件
         $params[] = $reservationId;
         $paramTypes .= 'i';
@@ -235,6 +270,12 @@ try {
             $insertCols[] = 'purpose';
             $bindParams[] = $purpose;
             $paramTypes .= 's';
+        }
+        
+        if ($hasCertificateIdCol && $certificateId !== null) {
+            $insertCols[] = 'certificate_id';
+            $bindParams[] = $certificateId;
+            $paramTypes .= 'i';
         }
         
         $placeholders = array_fill(0, count($insertCols), '?');

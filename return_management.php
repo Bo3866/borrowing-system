@@ -112,7 +112,7 @@ if ($dbError === '') {
         }
     }
 
-    // 報到狀態：使用 reservations.checkedin_at
+    // 報到功能已移除。
     // 歸還狀態：使用 returned_at 欄位
 
     if ($dbError === '' && $_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -129,8 +129,7 @@ if ($dbError === '') {
                     $link,
                     'SELECT
                         r.reservation_id,
-                        r.returned_at,
-                        r.checked_in_at
+                        r.returned_at
                     FROM reservations r
                      WHERE r.reservation_id = ?
                        AND r.`' . $applicantColumn . '` COLLATE utf8mb4_unicode_ci = ?
@@ -150,9 +149,7 @@ if ($dbError === '') {
                     throw new RuntimeException('找不到可操作的申請資料，或此申請不屬於目前使用者。');
                 }
 
-                if (empty($reservationRow['checkedin_at'])) {
-                    throw new RuntimeException('尚未報到，無法確認歸還或離場。');
-                }
+                // 原先會檢查是否已報到，但報到功能已移除，所以不再檢查
 
                 if (!empty($reservationRow['returned_at'])) {
                     throw new RuntimeException('此申請已完成歸還或離場。');
@@ -268,7 +265,6 @@ if ($dbError === '') {
         mysqli_query($link, $updateOverdueSql);
 
         // 查詢邏輯：
-        // - pickup_confirmed: 使用 reservations.checkedin_at 判斷
         // - return_confirmed: 使用 reservations.returned_at 判斷（NULL = 未歸還，NOT NULL = 已歸還）
         $listSql = "
             SELECT
@@ -284,8 +280,6 @@ if ($dbError === '') {
                 r.revision_deadline,
                 r.submitted_at,
                 r.updated_at,
-                (r.checked_in_at IS NOT NULL) AS pickup_confirmed,
-                r.checked_in_at AS pickup_confirmed_at,
                 (r.returned_at IS NOT NULL) AS return_confirmed,
                 r.returned_at AS return_confirmed_at,
                 (
@@ -400,7 +394,7 @@ if ($dbError === '' && count($rows) > 0) {
                                     <th>申請人</th>
                                     <th>借用時段</th>
                                     <th>借用項目</th>
-                                    <th>是否已報到</th>
+                                    <th>狀態</th>
                                     <th>歸還</th>
                                 </tr>
                             </thead>
@@ -418,39 +412,23 @@ if ($dbError === '' && count($rows) > 0) {
                                                 $resourceParts[] = '空間: ' . $row['space_ids'];
                                             }
                                             $resourceText = count($resourceParts) > 0 ? implode(' | ', $resourceParts) : '-';
-                                            $isPickup = (int)$row['pickup_confirmed'] === 1;
+
                                             $isReturned = (int)$row['return_confirmed'] === 1;
                                             $approvalStatus = (string)$row['approval_status'];
                                             $approvalStage = (string)($row['approval_stage'] ?? 'a');
 
-                                            // Map approval stages to step indices:
-                                            // 1 = 申請送出
-                                            // 2 = 學務長 (a)
-                                            // 3 = 軍訓室 (b)
-                                            // 4 = 輔導人員 (c)
-                                            // 5 = 課指組 (d)  <-- final approval now
-                                            // 6 = 使用中
-                                            // 7 = 已歸還
+                                            // Map approval stages to step indices (for the stepper)
                                             $stageMap = ['a' => 2, 'b' => 3, 'c' => 4, 'd' => 5];
-
                                             if ($approvalStatus === 'rejected' || $approvalStatus === 'revision_overdue') {
-                                                $progressStatus = 0; // 已拒絕或逾期視為失敗
+                                                $progressStatus = 0;
                                             } elseif ($approvalStatus === 'need_revision') {
-                                                // 停留在目前審核階段
                                                 $progressStatus = $stageMap[$approvalStage] ?? 2;
                                             } elseif ($approvalStatus === 'pending') {
-                                                // 依據目前 approval_stage 顯示在哪一階段等待審核
                                                 $progressStatus = $stageMap[$approvalStage] ?? 2;
                                             } elseif ($approvalStatus === 'approved') {
-                                                if ($isReturned) {
-                                                    $progressStatus = 7; // 已歸還
-                                                } elseif ($isPickup) {
-                                                    $progressStatus = 6; // 使用中
-                                                } else {
-                                                    $progressStatus = 5; // 所有審核完成（課指組已通過）
-                                                }
+                                                $progressStatus = $isReturned ? 7 : 5; // without checkin, approved but not returned = 審核完成
                                             } else {
-                                                $progressStatus = 1; // 預設：剛送出
+                                                $progressStatus = 1;
                                             }
                                         ?>
                                         <tr class="accordion-trigger" onclick="toggleAccordion(this, <?php echo (int)$row['reservation_id']; ?>)">
@@ -468,33 +446,34 @@ if ($dbError === '' && count($rows) > 0) {
                                             <td><?php echo htmlspecialchars($resourceText, ENT_QUOTES, 'UTF-8'); ?></td>
                                             <td>
                                                 <?php
-                                                    $isPickup = (int)$row['pickup_confirmed'] === 1;
-                                                    $checkinTime = $row['pickup_confirmed_at'];
+                                                        if ($isReturned) {
+                                                        echo '<span class="return-status return-status-ok">已離場</span>';
+                                                        echo '<br><small>時間: ' . htmlspecialchars((string)$row['return_confirmed_at'], ENT_QUOTES, 'UTF-8') . '</small>';
+                                                    } else {
+                                                        if ($approvalStatus === 'approved') {
+                                                            echo '<span class="return-status return-status-pending">審核完成</span>';
+                                                        } else {
+                                                            $statusLabel = $approvalStatus;
+                                                            if ($approvalStatus === 'rejected') {
+                                                                $statusLabel = '審核未通過';
+                                                            }
+                                                            echo '<span class="return-status return-status-pending">' . htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8') . '</span>';
+                                                        }
+                                                    }
                                                 ?>
-                                                <span class="return-status <?php echo $isPickup ? 'return-status-ok' : 'return-status-pending'; ?>">
-                                                    <?php echo $isPickup ? '已報到' : '未報到'; ?>
-                                                </span>
-                                                <?php if ($isPickup) { ?>
-                                                    <br><small>時間: <?php echo htmlspecialchars((string)$checkinTime, ENT_QUOTES, 'UTF-8'); ?></small>
-                                                <?php } ?>
                                             </td>
                                             <td>
-                                                <?php
-                                                    $isReturned = (int)$row['return_confirmed'] === 1;
-                                                    $returnTime = $row['return_confirmed_at'];
-                                                ?>
-                                                <span class="return-status <?php echo $isReturned ? 'return-status-ok' : 'return-status-pending'; ?>">
-                                                        <?php echo $isReturned ? '已離場' : '可離場'; ?>
-                                                </span>
                                                 <?php if ($isReturned) { ?>
-                                                        <br><small>時間: <?php echo htmlspecialchars((string)$returnTime, ENT_QUOTES, 'UTF-8'); ?></small>
-                                                    <?php } elseif ($isPickup) { ?>
-                                                    <br>
+                                                    <span class="return-status return-status-ok">已離場</span>
+                                                    <br><small>時間: <?php echo htmlspecialchars((string)$row['return_confirmed_at'], ENT_QUOTES, 'UTF-8'); ?></small>
+                                                <?php } elseif ($approvalStatus === 'approved') { ?>
                                                     <form method="post" style="margin-top: 8px;" onclick="event.stopPropagation();">
                                                         <input type="hidden" name="action" value="confirm_return">
                                                         <input type="hidden" name="reservation_id" value="<?php echo (int)$row['reservation_id']; ?>">
-                                                            <button type="submit" class="btn-secondary" style="font-size: 12px; padding: 4px 12px;" onclick="return confirm('確認此申請已歸還或離場？')">確認歸還／離場</button>
+                                                        <button type="submit" class="btn-secondary" style="font-size: 12px; padding: 4px 12px;" onclick="return confirm('確認此申請已歸還或離場？')">確認歸還／離場</button>
                                                     </form>
+                                                <?php } else { ?>
+                                                    <span class="return-status return-status-pending">不可離場</span>
                                                 <?php } ?>
                                             </td>
                                         </tr>
@@ -669,21 +648,17 @@ if ($dbError === '' && count($rows) > 0) {
                                                                         if (! $allApprovalsDone) {
                                                                             echo '審核尚未結束';
                                                                         } else {
-                                                                            if ($approvalStatus === 'approved' && $isPickup) {
-                                                                                echo '使用中';
-                                                                            } elseif ($approvalStatus === 'approved' && $isReturned) {
+                                                                            if ($approvalStatus === 'approved' && $isReturned) {
                                                                                 echo '已歸還';
+                                                                            } elseif ($approvalStatus === 'approved') {
+                                                                                echo '審核完成';
                                                                             } else {
                                                                                 echo '審核完成';
                                                                             }
                                                                         }
                                                                     ?>
                                                                 </span>
-                                                                <?php if ($allApprovalsDone && $approvalStatus === 'approved' && $isPickup) { ?>
-                                                                    <span class="stepper-timestamp"><?php echo htmlspecialchars((string)$row['pickup_confirmed_at'], ENT_QUOTES, 'UTF-8'); ?></span>
-                                                                <?php } else { ?>
-                                                                    <span class="stepper-timestamp">-</span>
-                                                                <?php } ?>
+                                                                <span class="stepper-timestamp">-</span>
                                                             </div>
                                                         </div>
                                                         <div class="stepper-line"></div>

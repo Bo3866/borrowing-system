@@ -112,7 +112,6 @@ if ($dbError === '') {
     $hasProposalFileColumn = in_array('proposal_file', $availableCols, true);
     $hasProposalUploadedAtColumn = in_array('proposal_uploaded_at', $availableCols, true);
         
-<<<<<<< HEAD
         if (!$reservationRow) {
             $amendError = '找不到該申請或無權限修改。';
         } elseif ($reservationRow['approval_status'] !== 'need_revision') {
@@ -170,100 +169,12 @@ if ($dbError === '') {
                     'vehicle_entry' => trim((string)($_POST['vehicle_entry'] ?? 'no')),
                     'setup_flags' => trim((string)($_POST['setup_flags'] ?? 'no')),
                     'flag_count' => (int)($_POST['flag_count'] ?? 0),
+                    'flag_agreement' => isset($_POST['flag_agreement']) ? '1' : '',
                     'has_alcohol' => isset($_POST['has_alcohol']) ? '1' : '',
                     'has_fire' => isset($_POST['has_fire']) ? '1' : '',
                     'has_sales' => isset($_POST['has_sales']) ? '1' : '',
                     'purpose' => trim((string)($_POST['purpose'] ?? '')),
                 ];
-=======
-    if (!$reservationRow) {
-        $amendError = '找不到該申請或無權限修改。';
-    } elseif ($reservationRow['approval_status'] !== 'need_revision') {
-        $amendError = '該申請不在補件狀態，無法修改。';
-    } else {
-        if (!empty($reservationRow['revision_data_json'])) {
-            $revisionData = (array)json_decode($reservationRow['revision_data_json'], true) ?: [];
-        }
-        
-        // Fallback 初始化，已補齊所有必備及漏掉的欄位
-        if (empty($revisionData)) {
-            $revisionData = [
-                'organization_name'         => $reservationRow['organization_name'] ?? '',
-                'activity_name'             => $reservationRow['activity_name'] ?? '',
-                'participant_count'         => $reservationRow['participant_count'] ?? '',
-                'staff_count'               => $reservationRow['staff_count'] ?? 0,
-                'club_president'            => $reservationRow['club_president'] ?? '',
-                'activity_coordinator'      => $reservationRow['activity_coordinator'] ?? '',
-                'coordinator_department'    => $reservationRow['coordinator_department'] ?? '',
-                'coordinator_phone'         => $reservationRow['coordinator_phone'] ?? '',
-                'coordinator_other_contact' => $reservationRow['coordinator_other_contact'] ?? '',
-                'vehicle_entry'             => $reservationRow['vehicle_entry'] ?? 'no',
-                
-                // 特殊勾選
-                'has_alcohol'               => $reservationRow['has_alcohol'] ?? '0',
-                'has_fire'                  => $reservationRow['has_fire'] ?? '0',
-                'has_sales'                 => $reservationRow['has_sales'] ?? '0',
-                
-                // 路旗欄位
-                'setup_flags'               => $reservationRow['setup_flags'] ?? 'no',
-                'flag_count'                => $reservationRow['flag_count'] ?? 0,
-                'flag_details'              => $reservationRow['flag_details'] ?? '',
-                'flag_applicant_unit'       => $reservationRow['flag_applicant_unit'] ?? '',
-                'flag_manager'              => $reservationRow['flag_manager'] ?? '',
-                'flag_phone'                => $reservationRow['flag_phone'] ?? '',
-                'flag_activity_name'        => $reservationRow['flag_activity_name'] ?? '',
-                'flag_start_date'           => $reservationRow['flag_start_date'] ?? '',
-                'flag_end_date'             => $reservationRow['flag_end_date'] ?? '',
-                'flag_location'             => $reservationRow['flag_location'] ?? '',
-                'flag_agreement'            => $reservationRow['flag_agreement'] ?? '0',
-                
-                'proposal_file'             => $reservationRow['proposal_file'] ?? '',
-                'proposal_uploaded_at'      => $reservationRow['proposal_uploaded_at'] ?? '',
-                'purpose'                   => $reservationRow['purpose'] ?? '',
-                'borrow_start_at'           => $reservationRow['borrow_start_at'] ?? '',
-                'borrow_end_at'             => $reservationRow['borrow_end_at'] ?? '',
-                'space_id'                  => $reservationRow['space_id'] ?? '',
-            ];
-        }
-        
-        $revisionData['equipment_items'] = $equipmentItems;
-        $revisionData['space_items'] = $spaceItems;
-        
-        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            // 收集並處理所有變更欄位（含路旗與勾選機制）
-            $updatedFields = [
-                'organization_name'         => trim((string)($_POST['organization_name'] ?? '')),
-                'activity_name'             => trim((string)($_POST['activity_name'] ?? '')),
-                'participant_count'         => trim((string)($_POST['participant_count'] ?? '')),
-                'staff_count'               => (int)($_POST['staff_count'] ?? 0),
-                'club_president'            => trim((string)($_POST['club_president'] ?? '')),
-                'activity_coordinator'      => trim((string)($_POST['activity_coordinator'] ?? '')),
-                'coordinator_department'    => trim((string)($_POST['coordinator_department'] ?? '')),
-                'coordinator_phone'         => trim((string)($_POST['coordinator_phone'] ?? '')),
-                'coordinator_other_contact' => trim((string)($_POST['coordinator_other_contact'] ?? '')),
-                'vehicle_entry'             => isset($_POST['vehicle_entry']) ? 'yes' : 'no',
-                
-                // 補齊特殊活動勾選處理
-                'has_alcohol'               => isset($_POST['has_alcohol']) ? '1' : '0',
-                'has_fire'                  => isset($_POST['has_fire']) ? '1' : '0',
-                'has_sales'                 => isset($_POST['has_sales']) ? '1' : '0',
-                
-                // 補齊路旗相關 POST 處理
-                'setup_flags'               => trim((string)($_POST['setup_flags'] ?? 'no')),
-                'flag_count'                => (int)($_POST['flag_count'] ?? 0),
-                'flag_details'              => trim((string)($_POST['flag_details'] ?? '')),
-                'flag_applicant_unit'       => trim((string)($_POST['flag_applicant_unit'] ?? '')),
-                'flag_manager'              => trim((string)($_POST['flag_manager'] ?? '')),
-                'flag_phone'                => trim((string)($_POST['flag_phone'] ?? '')),
-                'flag_activity_name'        => trim((string)($_POST['flag_activity_name'] ?? '')),
-                'flag_start_date'           => trim((string)($_POST['flag_start_date'] ?? '')),
-                'flag_end_date'             => trim((string)($_POST['flag_end_date'] ?? '')),
-                'flag_location'             => trim((string)($_POST['flag_location'] ?? '')),
-                'flag_agreement'            => isset($_POST['flag_agreement']) ? '1' : '0',
-                
-                'purpose'                   => trim((string)($_POST['purpose'] ?? '')),
-            ];
->>>>>>> 08406ea6bf3daedf111ec6eb25373837712993f3
 
             $uploadedProposalPath = null;
             $uploadedProposalDbPath = null;
@@ -518,7 +429,6 @@ if ($dbError === '') {
                                         <input type="checkbox" name="vehicle_entry" value="yes" <?php echo (($revisionData['vehicle_entry'] ?? '') === 'yes') ? 'checked' : ''; ?>>
                                         <span>需要車輛進場</span>
                                     </label>
-<<<<<<< HEAD
                                     <div style="display:flex; align-items:center; gap:12px; margin-left: 8px;">
                                         <span style="font-weight:600;">插立旗幟</span>
                                         <label style="display:flex; align-items:center; gap:8px; margin:0;">
@@ -536,25 +446,11 @@ if ($dbError === '') {
                                         <input type="number" name="flag_count" min="1" max="20" value="<?php echo htmlspecialchars((string)($revisionData['flag_count'] ?? 0), ENT_QUOTES, 'UTF-8'); ?>" style="width:100px;">
                                     </div>
                                     <div style="margin-top:8px;">
-                                        <label style="display:flex; align-items:center; gap:8px; margin:0;">
-                                            <input type="checkbox" name="flag_agree" value="1" <?php echo (isset($revisionData['flag_agree']) && $revisionData['flag_agree']) ? 'checked' : ''; ?>>
+                                        <label for="flag_agreement" style="display:flex; align-items:center; gap:8px; margin:0;">
+                                            <input type="checkbox" name="flag_agreement" id="flag_agreement" value="1" <?php echo (isset($revisionData['flag_agreement']) && $revisionData['flag_agreement']) ? 'checked' : ''; ?> style="width:18px; height:18px;">
                                             <span>我已閱讀並同意旗幟插立注意事項</span>
                                         </label>
                                     </div>
-=======
-                                    <label style="display: flex; align-items: center; gap: 8px; margin: 0;">
-                                        <input type="checkbox" name="has_alcohol" value="1" <?php echo (($revisionData['has_alcohol'] ?? '0') === '1') ? 'checked' : ''; ?>>
-                                        <span>有酒精</span>
-                                    </label>
-                                    <label style="display: flex; align-items: center; gap: 8px; margin: 0;">
-                                        <input type="checkbox" name="has_fire" value="1" <?php echo (($revisionData['has_fire'] ?? '0') === '1') ? 'checked' : ''; ?>>
-                                        <span>有明火</span>
-                                    </label>
-                                    <label style="display: flex; align-items: center; gap: 8px; margin: 0;">
-                                        <input type="checkbox" name="has_sales" value="1" <?php echo (($revisionData['has_sales'] ?? '0') === '1') ? 'checked' : ''; ?>>
-                                        <span>需擺攤販售</span>
-                                    </label>
->>>>>>> 08406ea6bf3daedf111ec6eb25373837712993f3
                                 </div>
                             </div>
                                 <div class="form-group" style="margin-top: 12px;">
@@ -652,10 +548,47 @@ if ($dbError === '') {
                 const section = document.getElementById('flagDetailsSectionAmend');
                 if (!section || !yes) return;
                 section.style.display = yes.checked ? 'block' : 'none';
+                if (yes.checked) {
+                    const fc = section.querySelector('input[name="flag_count"]');
+                    if (fc && (fc.value === '' || Number(fc.value) < 1)) fc.value = 1;
+                }
             } catch (e) { /* ignore */ }
         }
         document.addEventListener('DOMContentLoaded', function(){
             toggleFlagDetailsAmend();
+            // enforce min=1 on change and on submit
+            const yes = document.querySelector('input[name="setup_flags"][value="yes"]');
+            const no = document.querySelector('input[name="setup_flags"][value="no"]');
+            const section = document.getElementById('flagDetailsSectionAmend');
+            if (yes && no && section) {
+                yes.addEventListener('change', toggleFlagDetailsAmend);
+                no.addEventListener('change', toggleFlagDetailsAmend);
+            }
+            const form = document.querySelector('form[method="post"]');
+            if (form) {
+                form.addEventListener('submit', function(e){
+                    try {
+                        const yesChecked = document.querySelector('input[name="setup_flags"][value="yes"]') && document.querySelector('input[name="setup_flags"][value="yes"]').checked;
+                        if (yesChecked) {
+                            const fc = document.querySelector('#flagDetailsSectionAmend input[name="flag_count"]');
+                            if (!fc || fc.value === '' || Number(fc.value) < 1) {
+                                e.preventDefault();
+                                if (fc) fc.value = 1;
+                                alert('宣傳旗幟數量至少為 1 支');
+                                if (fc) fc.focus();
+                                return false;
+                            }
+                            const agree = document.querySelector('#flagDetailsSectionAmend input[name="flag_agreement"]');
+                            if (!agree || !agree.checked) {
+                                e.preventDefault();
+                                alert('請勾選：我已閱讀並同意旗幟插立注意事項');
+                                if (agree) agree.focus();
+                                return false;
+                            }
+                        }
+                    } catch (err) { /* ignore validation errors */ }
+                });
+            }
         });
     </script>
 </body>

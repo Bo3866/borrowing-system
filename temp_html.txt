@@ -1,0 +1,11 @@
+﻿                            <div class="form-group" style="margin-top: 20px; border-top: 1px solid #ccc; padding-top: 15px;">
+                                <label>?寞??瘙?/label>
+                                <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                                    <label style="display: flex; align-items: center; gap: 8px; margin: 0;">
+                                        <input type="checkbox" name="vehicle_entry" value="yes" <?php echo (($revisionData['vehicle_entry'] ?? '') === 'yes') ? 'checked' : ''; ?>>
+                                        <span>?閬?頛脣</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="form-group" style="margin-top: 15px;">

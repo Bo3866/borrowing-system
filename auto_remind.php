@@ -50,14 +50,14 @@ function run_auto_remind() {
             $mail->isSMTP();
             $mail->Host       = 'smtp.gmail.com'; 
             $mail->SMTPAuth   = true;
-            $mail->Username   = 'sasass041919@gmail.com'; // 您之前成功寄信的信箱
-            $mail->Password   = 'xogusuplsoapxayc';       // 您設定好的應用程式密碼
+            $mail->Username   = 'right.jing0104@gmail.com'; // 您之前成功寄信的信箱
+            $mail->Password   = 'hwarm0625.0603';       // 您設定好的應用程式密碼
             $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
             $mail->Port       = 465;
             $mail->CharSet    = 'UTF-8';
             
             // 不使用大學名稱，改為一般的「借用系統」
-            $mail->setFrom('sasass041919@gmail.com', '器材借用系統');
+            $mail->setFrom('right.jing0104@gmail.com', '器材借用系統');
             $mail->isHTML(true);
 
             // 準備更新已經寄過信的欄位

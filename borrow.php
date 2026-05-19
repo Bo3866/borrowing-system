@@ -208,8 +208,12 @@ $formData = [
     'coordinator_phone' => '',
     'coordinator_other_contact' => '',
     'vehicle_entry' => 'no',
+    'has_alcohol' => '',
+    'has_fire' => '',
+    'has_sales' => '',
     'setup_flags' => 'no',
     'flag_count' => 1,
+    'flag_agreement' => '',
     'resource_type' => 'equipment',
     'equipment_code' => '',
     'space_id' => '',
@@ -241,8 +245,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['coordinator_phone'] = trim((string)($_POST['coordinator_phone'] ?? ''));
     $formData['coordinator_other_contact'] = trim((string)($_POST['coordinator_other_contact'] ?? ''));
     $formData['vehicle_entry'] = trim((string)($_POST['vehicle_entry'] ?? 'no'));
+    $formData['has_alcohol'] = isset($_POST['has_alcohol']) ? '1' : '';
+    $formData['has_fire'] = isset($_POST['has_fire']) ? '1' : '';
+    $formData['has_sales'] = isset($_POST['has_sales']) ? '1' : '';
     $formData['setup_flags'] = trim((string)($_POST['setup_flags'] ?? 'no'));
     $formData['flag_count'] = (int)($_POST['flag_count'] ?? 1);
+    $formData['flag_agreement'] = isset($_POST['flag_agreement']) ? '1' : '';
     $formData['space_id'] = trim((string)($_POST['space_id'] ?? ''));
     $formData['borrow_start_date'] = trim((string)($_POST['borrow_start_date'] ?? ''));
     
@@ -412,10 +420,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $borrowError = '請填寫用途說明。';
         } elseif ($formData['setup_flags'] === 'yes' && $formData['flag_count'] > 20) {
             $borrowError = '宣傳旗幟最多只能選 20 支。';
-        } elseif ($formData['setup_flags'] === 'yes' && $formData['borrow_start_date'] !== '' && strtotime($formData['borrow_start_date']) < strtotime('+7 weekdays', strtotime(date('Y-m-d')))) {
-            $borrowError = '插立旗幟使用日期只能選 7 個工作天之後的日期。';
+        } elseif ($formData['setup_flags'] === 'yes' && empty($formData['flag_agreement'])) {
+            $borrowError = '您必須勾選同意旗幟插立各項注意事項及無條件承擔賠償責任聲明。';
         } else {
-            $submittedResourceType = $formData['resource_type'];
+            $requires30Days = false;
+            if (
+                $formData['has_alcohol'] === '1' || 
+                $formData['has_fire'] === '1' || 
+                $formData['has_sales'] === '1' || 
+                $formData['participant_count'] === '100~200人' || 
+                $formData['participant_count'] === '200人以上'
+            ) {
+                $requires30Days = true;
+            }
+
+            if ($requires30Days && $formData['borrow_start_date'] !== '' && strtotime($formData['borrow_start_date']) < strtotime('+30 days', strtotime(date('Y-m-d')))) {
+                $borrowError = '包含特殊性質（酒精、明火、攤販或超過100人）的活動，必須在 30 天之前申請。';
+            } elseif ($formData['setup_flags'] === 'yes' && $formData['borrow_start_date'] !== '' && strtotime($formData['borrow_start_date']) < strtotime('+7 weekdays', strtotime(date('Y-m-d')))) {
+                $borrowError = '插立旗幟使用日期只能選 7 個工作天之後的日期。';
+            } else {
+                $submittedResourceType = $formData['resource_type'];
+            }
         }
 
         if ($borrowError === '') {
@@ -536,9 +561,9 @@ SQL;
                 }
                 
                 $submittedAtVal = date('Y-m-d H:i:s'); // 保證同一批次提交時間一致
-                $insertCols = [$applicantColumn, 'borrow_start_at', 'borrow_end_at', 'organization_name', 'activity_name', 'participant_count', 'staff_count', 'club_president', 'activity_coordinator', 'coordinator_department', 'coordinator_phone', 'coordinator_other_contact', 'vehicle_entry', 'setup_flags', 'flag_count'];
-                $bindValuesTemplate = [$userId, $borrowStartAtSql, $borrowEndAtSql, $formData['organization_name'], $formData['activity_name'], $formData['participant_count'], (int)$formData['staff_count'], $formData['club_president'], $formData['activity_coordinator'], $formData['coordinator_department'], $formData['coordinator_phone'], $formData['coordinator_other_contact'], $formData['vehicle_entry'], $formData['setup_flags'], (int)$formData['flag_count']];
-                $bindTypesTemplate = 'ssssssisssssssi';
+                $insertCols = [$applicantColumn, 'borrow_start_at', 'borrow_end_at', 'organization_name', 'activity_name', 'participant_count', 'staff_count', 'club_president', 'activity_coordinator', 'coordinator_department', 'coordinator_phone', 'coordinator_other_contact', 'vehicle_entry', 'has_alcohol', 'has_fire', 'has_sales', 'setup_flags', 'flag_count'];
+                $bindValuesTemplate = [$userId, $borrowStartAtSql, $borrowEndAtSql, $formData['organization_name'], $formData['activity_name'], $formData['participant_count'], (int)$formData['staff_count'], $formData['club_president'], $formData['activity_coordinator'], $formData['coordinator_department'], $formData['coordinator_phone'], $formData['coordinator_other_contact'], $formData['vehicle_entry'], $formData['has_alcohol'], $formData['has_fire'], $formData['has_sales'], $formData['setup_flags'], (int)$formData['flag_count']];
+                $bindTypesTemplate = 'ssssssissssssssssi';
 
                 if ($hasPurposeCol) {
                     $insertCols[] = 'purpose';
@@ -815,12 +840,12 @@ SQL;
                                 $mail->isSMTP();
                                 $mail->Host       = 'smtp.gmail.com'; 
                                 $mail->SMTPAuth   = true;
-                                $mail->Username   = 'sasass041919@gmail.com';
-                                $mail->Password   = 'xogusuplsoapxayc';      
+                                $mail->Username   = 'right.jing0104@gmail.com';
+                                $mail->Password   = 'hwarm0625.0603';      
                                 $mail->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
                                 $mail->Port       = 465;
                                 $mail->CharSet    = 'UTF-8';
-                                $mail->setFrom('sasass041919@gmail.com', '器材借用系統');
+                                $mail->setFrom('right.jing0104@gmail.com', '器材借用系統');
                                 $mail->addAddress($userEmail, $displayName);
                                 $mail->isHTML(true);
                                 $mail->Subject = '【系統通知】預約申請已成功送出';
@@ -1182,6 +1207,24 @@ SQL;
                                     <input type="text" id="coordinator_other_contact" name="coordinator_other_contact" class="form-control" placeholder="請輸入其他聯絡方式（如 Email）" value="<?php echo htmlspecialchars($formData['coordinator_other_contact'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                 </div>
 
+                                <div class="form-group" style="margin-top: 10px;">
+                                    <label>活動特殊性質（可複選）</label>
+                                    <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-top: 8px;">
+                                        <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; white-space: nowrap;">
+                                            <input type="checkbox" name="has_alcohol" value="1" <?php echo ($formData['has_alcohol'] === '1') ? 'checked' : ''; ?>>
+                                            <span>有酒精</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; white-space: nowrap;">
+                                            <input type="checkbox" name="has_fire" value="1" <?php echo ($formData['has_fire'] === '1') ? 'checked' : ''; ?>>
+                                            <span>有明火</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; white-space: nowrap;">
+                                            <input type="checkbox" name="has_sales" value="1" <?php echo ($formData['has_sales'] === '1') ? 'checked' : ''; ?>>
+                                            <span>需擺攤販售</span>
+                                        </label>
+                                    </div>
+                                </div>
+
                                 <div class="form-group" style="margin-top: 20px; border-top: 1px solid #ccc; padding-top: 15px;">
                                     <label>活動開始時間 <span style="color:red">*</span></label>
                                     <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center;">
@@ -1266,15 +1309,16 @@ SQL;
                             
                             <!-- ========== 步驟 2 內容區 ========== -->
                             <div class="step-content" id="step-content-2">
-                                <h3 class="step-title" style="margin-bottom: 10px;">第二步：其他需求</h3>
+                                <h3 class="step-title" style="margin-bottom: 10px;">第二步：場地需求</h3>
+                                
                                 <div class="form-group" style="margin-top: 20px;">
                                     <label>車輛進出 <span style="color:red">*</span></label>
                                     <div style="margin-top: 8px; display: flex; align-items: center; gap: 20px;">
                                         <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
-                                            <input type="radio" name="vehicle_entry" value="no" style="margin: 0;" <?php echo ($formData['vehicle_entry'] === 'no' || empty($formData['vehicle_entry'])) ? 'checked' : ''; ?>> 否
+                                            <input type="radio" name="vehicle_entry" value="no" id="vehicleNo" style="margin: 0;" <?php echo ($formData['vehicle_entry'] === 'no' || empty($formData['vehicle_entry'])) ? 'checked' : ''; ?>> 否
                                         </label>
                                         <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
-                                            <input type="radio" name="vehicle_entry" value="yes" style="margin: 0;" <?php echo ($formData['vehicle_entry'] === 'yes') ? 'checked' : ''; ?>> 是
+                                            <input type="radio" name="vehicle_entry" value="yes" id="vehicleYes" style="margin: 0;" <?php echo ($formData['vehicle_entry'] === 'yes') ? 'checked' : ''; ?>> 是
                                         </label>
                                     </div>
                                 </div>
@@ -1290,31 +1334,78 @@ SQL;
                                     </div>
                                 </div>
                                 
-                                <div id="flagDetailsSection" style="display:none; margin-top:20px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:20px;">
-                                <h4 style="margin:0 0 15px; color:#1e3a8a;">
-                                    🚩 輔仁大學校內中央走道宣傳旗幟插立申請表
-                                </h4>
+<div id="flagDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:8px;">
+                                <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
+                                    旗幟插立申請表
+                                </div>
 
-                                <div style="display:flex; gap:15px; align-items:center; margin-bottom:15px;">
-                                    <div style="flex:1;">
-                                        <label>宣傳旗幟 <span style="color:red">*</span></label>
-                                        <div style="display:flex; align-items:center; gap:8px;">
-                                            <span>共</span>
-                                            <input type="number"
-                                                name="flag_count"
-                                                id="flag_count"
-                                                class="form-control"
-                                                min="1"
-                                                max="20"
-                                                step="1"
-                                                style="width:100px;height:38px;"
-                                                placeholder="最多20"
-                                                value="<?php echo htmlspecialchars((string)($formData['flag_count'] ?? '1'), ENT_QUOTES, 'UTF-8'); ?>">
-                                            <span>支</span>
+                                <div style="padding: 20px;">
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                                        <div>
+                                            <label style="font-weight:600; display:block; margin-bottom:6px;">申請單位 <span style="color:red">*</span></label>
+                                            <input type="text" id="flag_org" class="form-control" value="<?php echo htmlspecialchars($formData['organization_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" disabled style="background:#eef2ff; border:1px solid #cbd5e1; padding:10px; border-radius:6px; width:100%; color:#475569;">
+                                        </div>
+                                        <div>
+                                            <label style="font-weight:600; display:block; margin-bottom:6px;">負責人 <span style="color:red">*</span></label>
+                                            <input type="text" id="flag_responsible" class="form-control" value="<?php echo htmlspecialchars($formData['activity_coordinator'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" disabled style="background:#eef2ff; border:1px solid #cbd5e1; padding:10px; border-radius:6px; width:100%; color:#475569;">
+                                        </div>
+                                    </div>
+
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                                        <div>
+                                            <label style="font-weight:600; display:block; margin-bottom:6px;">連絡電話 <span style="color:red">*</span></label>
+                                            <input type="text" id="flag_phone" class="form-control" value="<?php echo htmlspecialchars($formData['coordinator_phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" disabled style="background:#eef2ff; border:1px solid #cbd5e1; padding:10px; border-radius:6px; width:100%; color:#475569;">
+                                        </div>
+                                        <div>
+                                            <label style="font-weight:600; display:block; margin-bottom:6px;">活動名稱 <span style="color:red">*</span></label>
+                                            <input type="text" id="flag_activity" class="form-control" value="<?php echo htmlspecialchars($formData['activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" disabled style="background:#eef2ff; border:1px solid #cbd5e1; padding:10px; border-radius:6px; width:100%; color:#475569;">
+                                        </div>
+                                    </div>
+
+                                    <div style="margin-bottom:20px;">
+                                        <label style="font-weight:600; display:block; margin-bottom:6px;">使用日期 <span style="font-weight:normal; font-size:13px; color:#64748b;">(系統已限制需於7個工作天前申請)</span> <span style="color:red">*</span></label>
+                                        <div style="display:flex; gap:8px; align-items:center;">
+                                            <div style="position:relative;">
+                                                <input type="text" id="flag_start_date" class="form-control" value="<?php echo htmlspecialchars($formData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" disabled style="background:#fff; border:1px solid #cbd5e1; padding:8px 36px 8px 10px; border-radius:6px; width:160px; color:#475569;">
+                                                <span style="position:absolute; right:8px; top:50%; transform:translateY(-50%); color:#0f172a; font-weight:bold;">📅</span>
+                                            </div>
+                                            <span style="color:#475569; padding: 0 5px;">至</span>
+                                            <div style="position:relative;">
+                                                <input type="text" id="flag_end_date" class="form-control" value="<?php echo htmlspecialchars($formData['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" disabled style="background:#fff; border:1px solid #cbd5e1; padding:8px 36px 8px 10px; border-radius:6px; width:160px; color:#475569;">
+                                                <span style="position:absolute; right:8px; top:50%; transform:translateY(-50%); color:#0f172a; font-weight:bold;">📅</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div style="display:flex; gap:30px; align-items:center; margin-bottom:5px;">
+                                        <div>
+                                            <label style="font-weight:600; display:block; margin-bottom:6px;">宣傳旗幟 (至多20支) <span style="color:red">*</span></label>
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <span style="color:#475569;">共</span>
+                                                <input type="number"
+                                                    name="flag_count"
+                                                    id="flag_count"
+                                                    class="form-control"
+                                                    min="1"
+                                                    max="20"
+                                                    step="1"
+                                                    style="width:80px;height:38px; background:#fff; border:1px solid #cbd5e1; padding:8px; border-radius:6px;"
+                                                    placeholder="最多20"
+                                                    value="<?php echo htmlspecialchars((string)($formData['flag_count'] ?? '1'), ENT_QUOTES, 'UTF-8'); ?>"
+                                                    oninput="if(this.value>20) {this.value=20; alert('宣傳旗幟最多只能選 20 支');}" required>
+                                                <span style="color:#475569;">支</span>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label style="font-weight:600; display:block; margin-bottom:6px;">懸掛位置-中央走道 <span style="color:red">*</span></label>
                                         </div>
                                     </div>
                                 </div>
-
+                                
+                                <label style="display: flex; align-items: flex-start; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; background: #eff6ff; padding: 15px 20px; border-top: 1px solid #cbd5e1; border-radius: 0 0 8px 8px;">
+                                    <input type="checkbox" name="flag_agreement" id="flag_agreement" value="1" <?php echo (isset($formData['flag_agreement']) && $formData['flag_agreement'] == '1') ? 'checked' : ''; ?> style="margin-top: 2px;" required>
+                                    <span style="color: #1e3a8a; line-height: 1.5; font-size: 14px;">本人為旗幟插立總負責人，已詳細閱讀並遵守以下各項注意事項，為維護校園安全與景觀，願無條件承擔所插旗幟所致之一切賠償責任，特此聲明。 <span style="color:red">*</span></span>
+                                </label>
                             </div>
 
                                 <script>
@@ -1356,8 +1447,10 @@ SQL;
                                     const show = isFlagEnabled();
                                     detailsSection.style.display = show ? 'block' : 'none';
 
+                                    // Only enable the editable controls (flag_count and agreement). Keep display fields readonly/disabled.
                                     detailsSection.querySelectorAll('input, select, textarea').forEach(function (el) {
-                                        if (show) {
+                                        const editable = (el.id === 'flag_count' || el.id === 'flag_agreement' || el.name === 'flag_agreement');
+                                        if (show && editable) {
                                             el.removeAttribute('disabled');
                                         } else {
                                             el.setAttribute('disabled', 'disabled');
@@ -1366,6 +1459,59 @@ SQL;
 
                                     if (show) {
                                         syncFlagForm();
+                                        validateStartDate();
+                                    }
+                                }
+
+                                function is30DaysRequired() {
+                                    const participantCount = document.getElementById('participant_count')?.value;
+                                    const hasAlcohol = document.querySelector('input[name="has_alcohol"]')?.checked;
+                                    const hasFire = document.querySelector('input[name="has_fire"]')?.checked;
+                                    const hasSales = document.querySelector('input[name="has_sales"]')?.checked;
+                                    
+                                    return (participantCount === '100~200人' || participantCount === '200人以上') ||
+                                           hasAlcohol || hasFire || hasSales;
+                                }
+
+                                function validateStartDate() {
+                                    const startDateInput = document.getElementById('borrow_start_date');
+                                    if (!startDateInput || !startDateInput.value) return;
+
+                                    const selectedDate = new Date(startDateInput.value);
+                                    selectedDate.setHours(0,0,0,0);
+
+                                    const req30 = is30DaysRequired();
+                                    const reqFlag = isFlagEnabled();
+
+                                    let errorMsg = '';
+                                    
+                                    if (req30) {
+                                        const min30Date = new Date();
+                                        min30Date.setDate(min30Date.getDate() + 30);
+                                        min30Date.setHours(0,0,0,0);
+                                        
+                                        if (selectedDate < min30Date) {
+                                            errorMsg = '注意：由於您的活動包含特殊性質（酒精、明火、攤販或超過100人），必須在 30 天之前申請！\n系統已清空不合規的日期，請重新選擇至少為 ' + formatDate(min30Date) + ' 的日期。';
+                                        }
+                                    }
+
+                                    if (!errorMsg && reqFlag) {
+                                        const minFlagDateStr = getMinFlagDate();
+                                        const minFlagDate = new Date(minFlagDateStr);
+                                        minFlagDate.setHours(0,0,0,0);
+                                        
+                                        if (selectedDate < minFlagDate) {
+                                            errorMsg = '注意：插立旗幟的使用日期只能選擇 7 個工作天之後的日期（至少為 ' + minFlagDateStr + '）！\n系統已為您清空不合規的活動開始日期，請重新選擇。';
+                                        }
+                                    }
+
+                                    if (errorMsg) {
+                                        alert(errorMsg);
+                                        startDateInput.value = '';
+                                        const sEl = document.getElementById('flag_start_date');
+                                        const eEl = document.getElementById('flag_end_date');
+                                        if (sEl) sEl.value = '';
+                                        if (eEl) eEl.value = '';
                                     }
                                 }
 
@@ -1375,6 +1521,28 @@ SQL;
                                     if (flagCount && flagCount.value !== '' && Number(flagCount.value) > 20) {
                                         flagCount.value = 20;
                                     }
+
+                                    // Update display inputs
+                                    const org = document.getElementById('organization_name')?.value || '';
+                                    const act = document.getElementById('activity_name')?.value || '';
+                                    const coord = document.getElementById('activity_coordinator')?.value || '';
+                                    const phone = document.getElementById('coordinator_phone')?.value || '';
+                                    const sDate = document.getElementById('borrow_start_date')?.value || '';
+                                    const eDate = document.getElementById('borrow_end_date')?.value || '';
+
+                                    const orgEl = document.getElementById('flag_org');
+                                    const actEl = document.getElementById('flag_activity');
+                                    const coordEl = document.getElementById('flag_responsible');
+                                    const phoneEl = document.getElementById('flag_phone');
+                                    const sEl = document.getElementById('flag_start_date');
+                                    const eEl = document.getElementById('flag_end_date');
+
+                                    if (orgEl) orgEl.value = org || '(未填寫)';
+                                    if (actEl) actEl.value = act || '(未填寫)';
+                                    if (coordEl) coordEl.value = coord || '(未填寫)';
+                                    if (phoneEl) phoneEl.value = phone || '(未填寫)';
+                                    if (sEl) sEl.value = sDate || '';
+                                    if (eEl) eEl.value = eDate || '';
                                 }
 
                                 document.addEventListener('DOMContentLoaded', function () {
@@ -1388,11 +1556,27 @@ SQL;
                                         });
                                     });
 
-                                    ['borrow_start_date', 'borrow_end_date', 'organization_name', 'activity_name', 'coordinator_phone'].forEach(function (id) {
+                                    ['borrow_start_date', 'borrow_end_date', 'organization_name', 'activity_name', 'coordinator_phone', 'activity_coordinator', 'participant_count'].forEach(function (id) {
                                         const el = document.getElementById(id);
                                         if (el) {
-                                            el.addEventListener('change', syncFlagForm);
+                                            if (id === 'borrow_start_date' || id === 'participant_count') {
+                                                el.addEventListener('change', function() {
+                                                    validateStartDate();
+                                                    syncFlagForm();
+                                                });
+                                            } else {
+                                                el.addEventListener('change', syncFlagForm);
+                                            }
                                             el.addEventListener('input', syncFlagForm);
+                                        }
+                                    });
+
+                                    ['has_alcohol', 'has_fire', 'has_sales'].forEach(function(name) {
+                                        const el = document.querySelector('input[name="' + name + '"]');
+                                        if (el) {
+                                            el.addEventListener('change', function() {
+                                                validateStartDate();
+                                            });
                                         }
                                     });
 

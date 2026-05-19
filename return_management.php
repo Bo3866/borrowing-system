@@ -222,13 +222,13 @@ if ($dbError === '') {
                                     $mail->isSMTP();
                                     $mail->Host       = 'smtp.gmail.com';
                                     $mail->SMTPAuth   = true;
-                                    $mail->Username   = 'sasass041919@gmail.com';
-                                    $mail->Password   = 'xogusuplsoapxayc';
+                                    $mail->Username   = 'right.jing0104@gmail.com';
+                                    $mail->Password   = 'hwarm0625.0603';
                                     $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
                                     $mail->Port       = 465;
                                     $mail->CharSet    = 'UTF-8';
 
-                                    $mail->setFrom('sasass041919@gmail.com', '器材借用系統');
+                                    $mail->setFrom('right.jing0104@gmail.com', '器材借用系統');
                                     $mail->addAddress($userRow['email'], $userRow['full_name']);
 
                                     $mail->isHTML(true);

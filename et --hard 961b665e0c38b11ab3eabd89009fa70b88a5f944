@@ -31,13 +31,13 @@ Date:   Mon May 18 22:55:16 2026 +0800
     fix: set PHP timezone to Asia/Taipei; make checked_in_at default NULL; bind certificate_id for user in borrow and save_draft
 
 [33mcommit ba51cefa236e599968eae85130831ca9473b8b2a[m
-Author: Bo3866 <werther0422@gmail.com>
+Author: Bo3866 <right.jing0104@gmail.com>
 Date:   Mon May 18 22:27:45 2026 +0800
 
     fix: keep item button as '已加入' when in cart
 
 [33mcommit baef19a21d154ee1b8b180c9add2972b20a6dd90[m
-Author: Bo3866 <werther0422@gmail.com>
+Author: Bo3866 <right.jing0104@gmail.com>
 Date:   Mon May 18 22:19:33 2026 +0800
 
     feat: make stepper items clickable with validation
@@ -57,7 +57,7 @@ Date:   Mon May 18 22:14:25 2026 +0800
     Merge branch 'main' of https://github.com/Bo3866/borrowing-system
 
 [33mcommit ecc5989ef8f4f196030edec79b18a48d5cdd5a27[m
-Author: Bo3866 <werther0422@gmail.com>
+Author: Bo3866 <right.jing0104@gmail.com>
 Date:   Mon May 18 22:14:23 2026 +0800
 
     20260518_2
@@ -70,13 +70,13 @@ Date:   Mon May 18 22:14:12 2026 +0800
 
 [33mcommit fce53bcc3055b3c554d31972b55c5b30dd5154cd[m
 Merge: 2a4bc57 aea7ed7
-Author: Bo3866 <werther0422@gmail.com>
+Author: Bo3866 <right.jing0104@gmail.com>
 Date:   Mon May 18 22:08:52 2026 +0800
 
     Resolve merge conflict in borrow_debug.log
 
 [33mcommit 2a4bc575898bc1a7426b1d2cba306dd4a0cf1343[m
-Author: Bo3866 <werther0422@gmail.com>
+Author: Bo3866 <right.jing0104@gmail.com>
 Date:   Mon May 18 22:08:16 2026 +0800
 
     20260518_1
@@ -166,7 +166,7 @@ Date:   Fri May 15 11:14:12 2026 +0800
     Move proposal_file to reservations: add migration and update borrow flow
 
 [33mcommit 87e9572cd8bf74d986f08c6e6edd9235162ec7a4[m
-Author: Bo3866 <werther0422@gmail.com>
+Author: Bo3866 <right.jing0104@gmail.com>
 Date:   Fri May 15 10:48:43 2026 +0800
 
     123
@@ -238,7 +238,7 @@ Date:   Wed May 13 21:08:03 2026 +0800
     活動申請
 
 [33mcommit c3c85eacc1bae0c0a0867723b28752a270fb4f1c[m
-Author: Bo3866 <werther0422@gmail.com>
+Author: Bo3866 <right.jing0104@gmail.com>
 Date:   Wed May 13 15:41:37 2026 +0800
 
     20260513 變更

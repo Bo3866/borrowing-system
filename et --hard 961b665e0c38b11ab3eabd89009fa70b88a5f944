@@ -1,0 +1,272 @@
+[33mcommit f8b397f0507ce211f273839258fef85210631ad0[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m
+Merge: c2e58ac 961b665
+Author: WNZ <andrewq502@gmail.com>
+Date:   Mon May 18 23:21:57 2026 +0800
+
+    Merge branch 'main' of https://github.com/Bo3866/borrowing-system
+
+[33mcommit 961b665e0c38b11ab3eabd89009fa70b88a5f944[m
+Author: 蔡絜涵 <413402162@cloud.fju.edu.tw>
+Date:   Mon May 18 23:15:21 2026 +0800
+
+    強制覆蓋
+
+[33mcommit c2e58acfd1c06c86dc39c92b5dce4bd21e04c19a[m
+Merge: 91faa75 1eae3ac
+Author: WNZ <andrewq502@gmail.com>
+Date:   Mon May 18 23:07:33 2026 +0800
+
+    Merge branch 'main' of https://github.com/Bo3866/borrowing-system
+
+[33mcommit 91faa7549f24afa50b72e015e144ebcb5362175f[m
+Author: WNZ <andrewq502@gmail.com>
+Date:   Mon May 18 23:06:57 2026 +0800
+
+    可用狀態查詢月曆更改
+
+[33mcommit 1eae3ac7e45b63fdb7638f58293bd0f7563475c9[m
+Author: 蔡絜涵 <413402162@cloud.fju.edu.tw>
+Date:   Mon May 18 22:55:16 2026 +0800
+
+    fix: set PHP timezone to Asia/Taipei; make checked_in_at default NULL; bind certificate_id for user in borrow and save_draft
+
+[33mcommit ba51cefa236e599968eae85130831ca9473b8b2a[m
+Author: Bo3866 <werther0422@gmail.com>
+Date:   Mon May 18 22:27:45 2026 +0800
+
+    fix: keep item button as '已加入' when in cart
+
+[33mcommit baef19a21d154ee1b8b180c9add2972b20a6dd90[m
+Author: Bo3866 <werther0422@gmail.com>
+Date:   Mon May 18 22:19:33 2026 +0800
+
+    feat: make stepper items clickable with validation
+
+[33mcommit 267a900b0b640c6e3eedafb353e5ea123c86a2a2[m
+Merge: 5399c26 ecc5989
+Author: WNZ <andrewq502@gmail.com>
+Date:   Mon May 18 22:16:20 2026 +0800
+
+    Merge branch 'main' of https://github.com/Bo3866/borrowing-system
+
+[33mcommit 5399c26efe4251f878de114d24f3718cc912a73c[m
+Merge: e06076b fce53bc
+Author: WNZ <andrewq502@gmail.com>
+Date:   Mon May 18 22:14:25 2026 +0800
+
+    Merge branch 'main' of https://github.com/Bo3866/borrowing-system
+
+[33mcommit ecc5989ef8f4f196030edec79b18a48d5cdd5a27[m
+Author: Bo3866 <werther0422@gmail.com>
+Date:   Mon May 18 22:14:23 2026 +0800
+
+    20260518_2
+
+[33mcommit e06076b6992f9f67a279bbb825e0d73751bdbb23[m
+Author: WNZ <andrewq502@gmail.com>
+Date:   Mon May 18 22:14:12 2026 +0800
+
+    角色1首頁報到功能刪除
+
+[33mcommit fce53bcc3055b3c554d31972b55c5b30dd5154cd[m
+Merge: 2a4bc57 aea7ed7
+Author: Bo3866 <werther0422@gmail.com>
+Date:   Mon May 18 22:08:52 2026 +0800
+
+    Resolve merge conflict in borrow_debug.log
+
+[33mcommit 2a4bc575898bc1a7426b1d2cba306dd4a0cf1343[m
+Author: Bo3866 <werther0422@gmail.com>
+Date:   Mon May 18 22:08:16 2026 +0800
+
+    20260518_1
+
+[33mcommit aea7ed7860606cf4da22632f5c768d14aa65bbe8[m
+Author: WNZ <andrewq502@gmail.com>
+Date:   Mon May 18 21:58:43 2026 +0800
+
+    進度條 報到狀態改為審核狀態
+
+[33mcommit 18d4487a1d23bcb1f722ac67493f0136fd4b3885[m
+Author: WNZ <andrewq502@gmail.com>
+Date:   Mon May 18 19:37:11 2026 +0800
+
+    審核進度條 使用狀態更新
+
+[33mcommit 881a105a4dcd063ff7e71394c6175f2ed8920d54[m
+Author: 蔡絜涵 <413402162@cloud.fju.edu.tw>
+Date:   Mon May 18 16:57:43 2026 +0800
+
+    草稿
+
+[33mcommit 356e44dcf45f86b31f6d5e962650553c40f18af2[m
+Author: 蔡絜涵 <413402162@cloud.fju.edu.tw>
+Date:   Mon May 18 16:54:26 2026 +0800
+
+    草稿
+
+[33mcommit 4adb88bb50fab40784d24c6f7b9a0f4943098100[m
+Author: 蔡絜涵 <413402162@cloud.fju.edu.tw>
+Date:   Mon May 18 16:36:35 2026 +0800
+
+    草稿
+
+[33mcommit 707a3dfcff80d1bb29c5148da5c5abdf60e2c352[m
+Author: 蔡絜涵 <413402162@cloud.fju.edu.tw>
+Date:   Mon May 18 15:44:34 2026 +0800
+
+    草稿
+
+[33mcommit 876fc6c872b5ecad00888cbed463d7c5cad4dc61[m
+Author: 蔡絜涵 <413402162@cloud.fju.edu.tw>
+Date:   Mon May 18 15:27:46 2026 +0800
+
+    旗幟表單
+
+[33mcommit d2fb1318ba29e4e48a93aac2c6ae20e45c3ad429[m
+Author: 蔡絜涵 <413402162@cloud.fju.edu.tw>
+Date:   Mon May 18 15:07:42 2026 +0800
+
+    資料庫修改
+
+[33mcommit b09fa75df37551cb9b78df4b3a4bcfaab279aa6b[m
+Author: pxy0817 <413402590@cloud.fju.edu.tw>
+Date:   Mon May 18 14:44:42 2026 +0800
+
+    修好我的申請紀錄
+
+[33mcommit b50c1ae1a3ab4487831fb8f4b992999109eee457[m
+Author: pxy0817 <413402590@cloud.fju.edu.tw>
+Date:   Mon May 18 13:04:38 2026 +0800
+
+    修好暫存、草稿箱
+
+[33mcommit 923241e2e5333ffde858719eef3c01ca42855307[m
+Author: 蔡絜涵 <413402162@cloud.fju.edu.tw>
+Date:   Mon May 18 10:16:20 2026 +0800
+
+    可借數量
+
+[33mcommit b1d362aab3c738ee6d47a75d59954712e6f87272[m
+Author: 蔡絜涵 <413402162@cloud.fju.edu.tw>
+Date:   Mon May 18 10:10:38 2026 +0800
+
+    可借用數量
+
+[33mcommit 40e34e3ce23ca8e36c61874500f57f2e36a7efe3[m
+Author: 蔡絜涵 <413402162@cloud.fju.edu.tw>
+Date:   Fri May 15 11:18:53 2026 +0800
+
+    123
+
+[33mcommit 6a7f5501e10c84d56a88399608ffb31886d912ac[m
+Author: 蔡絜涵 <413402162@cloud.fju.edu.tw>
+Date:   Fri May 15 11:14:12 2026 +0800
+
+    Move proposal_file to reservations: add migration and update borrow flow
+
+[33mcommit 87e9572cd8bf74d986f08c6e6edd9235162ec7a4[m
+Author: Bo3866 <werther0422@gmail.com>
+Date:   Fri May 15 10:48:43 2026 +0800
+
+    123
+
+[33mcommit 2d8e05abfbc9379d54f38ab565302576c833467e[m
+Author: 蔡絜涵 <413402162@cloud.fju.edu.tw>
+Date:   Fri May 15 09:32:14 2026 +0800
+
+    bug修好
+
+[33mcommit 45ea28904f2bada2edcc3415337600d7eb9188c3[m
+Author: 蔡絜涵 <413402162@cloud.fju.edu.tw>
+Date:   Fri May 15 09:28:17 2026 +0800
+
+    Fix amend/approve: avoid selecting non-existent flag columns; add migration for has_* flags
+
+[33mcommit 3b9b5c07130ea694f7bd993141319242bc33e2c6[m
+Author: pxy0817 <413402590@cloud.fju.edu.tw>
+Date:   Fri May 15 00:19:11 2026 +0800
+
+    暫存申請
+
+[33mcommit ea00dbfc730b2c8788d29f9014a402340cb3e036[m
+Author: 蔡絜涵 <413402162@cloud.fju.edu.tw>
+Date:   Thu May 14 21:25:33 2026 +0800
+
+    還要再改
+
+[33mcommit 498fec4d1c2b2201b28e0d39cef8bea6cfbb376b[m
+Author: forjenny94edu <411402168@cloud.fju.edu.tw>
+Date:   Thu May 14 21:11:13 2026 +0800
+
+    補件代入尚未完成
+
+[33mcommit d9a99ea3d558a6761fbb850a0de166f040a38dee[m
+Author: 蔡絜涵 <413402162@cloud.fju.edu.tw>
+Date:   Thu May 14 20:36:48 2026 +0800
+
+    Remove temporary test files
+
+[33mcommit db455bcaca7e9714c80bc650e6e8ee0820d365cc[m
+Author: 蔡絜涵 <413402162@cloud.fju.edu.tw>
+Date:   Thu May 14 20:32:23 2026 +0800
+
+    Fix undefined array key warnings in return_management.php
+
+[33mcommit c5185b6de01987c1d3762aa3baeb22f55aa3f4f2[m
+Author: forjenny94edu <411402168@cloud.fju.edu.tw>
+Date:   Thu May 14 20:21:43 2026 +0800
+
+    三單完成
+
+[33mcommit 38fbb96ba05d47ae07c9880b9f3b47313306ccb0[m
+Author: 蔡絜涵 <413402162@cloud.fju.edu.tw>
+Date:   Thu May 14 19:23:01 2026 +0800
+
+    Consolidate reservations: use single reservation_id per submission
+
+[33mcommit 6fb4cd2aa45c0e780fdfc1aad693281861e8e69c[m
+Author: forjenny94edu <411402168@cloud.fju.edu.tw>
+Date:   Thu May 14 18:20:46 2026 +0800
+
+    活動器材場地申請
+
+[33mcommit c8c64997afae4149f68dd6642c7b79bf484dc0fd[m
+Author: forjenny94edu <411402168@cloud.fju.edu.tw>
+Date:   Wed May 13 21:08:03 2026 +0800
+
+    活動申請
+
+[33mcommit c3c85eacc1bae0c0a0867723b28752a270fb4f1c[m
+Author: Bo3866 <werther0422@gmail.com>
+Date:   Wed May 13 15:41:37 2026 +0800
+
+    20260513 變更
+
+[33mcommit 86a4af2432b964778572a4ecfa6f4591db58b79d[m
+Merge: 95af6d4 5c3ed89
+Author: 蔡絜涵 <413402162@cloud.fju.edu.tw>
+Date:   Tue May 12 21:17:13 2026 +0800
+
+    Merge branch 'main' of https://github.com/Bo3866/borrowing-system
+
+[33mcommit 95af6d4520ac733c095cc44c7f947f544d30a9aa[m
+Author: 蔡絜涵 <413402162@cloud.fju.edu.tw>
+Date:   Tue May 12 21:16:56 2026 +0800
+
+    Update date selection logic and restrictions in borrow.php
+
+[33mcommit 5c3ed89ee2117f18366b43e1b58425e3f3901579[m
+Author: WNZ <andrewq502@gmail.com>
+Date:   Tue May 12 20:15:06 2026 +0800
+
+    第三方審核 進度條修改
+
+[33mcommit 38a4063a08888599889be6456f9bfae45af9ea7d[m
+Merge: 593c850 127811f
+Author: 蔡絜涵 <413402162@cloud.fju.edu.tw>
+Date:   Tue May 12 19:54:35 2026 +0800
+
+    Merge branch 'main' of https://github.com/Bo3866/borrowing-system
+
+[33mcommit 593c850ee35bb81fd6d6

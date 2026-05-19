@@ -209,16 +209,7 @@ $formData = [
     'coordinator_other_contact' => '',
     'vehicle_entry' => 'no',
     'setup_flags' => 'no',
-    'flag_details' => '',
-    'flag_applicant_unit' => '',
-    'flag_manager' => '',
-    'flag_phone' => '',
-    'flag_activity_name' => '',
-    'flag_start_date' => '',
-    'flag_end_date' => '',
     'flag_count' => 1,
-    'flag_location' => '',
-    'flag_agreement' => '',
     'resource_type' => 'equipment',
     'equipment_code' => '',
     'space_id' => '',
@@ -226,9 +217,6 @@ $formData = [
     'borrow_start_time' => '',
     'borrow_end_date' => '',
     'borrow_end_time' => '',
-    'has_alcohol' => '',
-    'has_fire' => '',
-    'has_sales' => '',
     'purpose' => '',
     'phone' => $userPhone,
 ];
@@ -254,16 +242,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['coordinator_other_contact'] = trim((string)($_POST['coordinator_other_contact'] ?? ''));
     $formData['vehicle_entry'] = trim((string)($_POST['vehicle_entry'] ?? 'no'));
     $formData['setup_flags'] = trim((string)($_POST['setup_flags'] ?? 'no'));
-    $formData['flag_details'] = trim((string)($_POST['flag_details'] ?? ''));
-    $formData['flag_applicant_unit'] = trim((string)($_POST['flag_applicant_unit'] ?? ''));
-    $formData['flag_manager'] = trim((string)($_POST['flag_manager'] ?? ''));
-    $formData['flag_phone'] = trim((string)($_POST['flag_phone'] ?? ''));
-    $formData['flag_activity_name'] = trim((string)($_POST['flag_activity_name'] ?? ''));
-    $formData['flag_start_date'] = trim((string)($_POST['flag_start_date'] ?? ''));
-    $formData['flag_end_date'] = trim((string)($_POST['flag_end_date'] ?? ''));
     $formData['flag_count'] = (int)($_POST['flag_count'] ?? 1);
-    $formData['flag_location'] = trim((string)($_POST['flag_location'] ?? ''));
-    $formData['flag_agreement'] = isset($_POST['flag_agreement']) ? '1' : '';
     $formData['space_id'] = trim((string)($_POST['space_id'] ?? ''));
     $formData['borrow_start_date'] = trim((string)($_POST['borrow_start_date'] ?? ''));
     
@@ -276,10 +255,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $beh = $_POST['borrow_end_time_h'] ?? '';
     $bem = $_POST['borrow_end_time_m'] ?? '';
     $formData['borrow_end_time'] = ($beh !== '' && $bem !== '') ? sprintf('%02d:%02d:00', $beh, $bem) : '';
-
-    $formData['has_alcohol'] = isset($_POST['has_alcohol']) ? '1' : '';
-    $formData['has_fire'] = isset($_POST['has_fire']) ? '1' : '';
-    $formData['has_sales'] = isset($_POST['has_sales']) ? '1' : '';
 
     $formData['purpose'] = trim((string)($_POST['purpose'] ?? ''));
     $formData['phone'] = trim((string)($_POST['phone'] ?? ''));
@@ -320,12 +295,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif (strtotime($borrowEndAtSql) <= strtotime($borrowStartAtSql)) {
                 $borrowError = '結束時間不可早於或等於開始時間。';
             } else {
-                if ($formData['has_alcohol'] === '1' || $formData['has_fire'] === '1' || $formData['has_sales'] === '1') {
-                    $limitTime = strtotime('+30 days', strtotime(date('Y-m-d 00:00:00')));
-                    if (strtotime($borrowStartAtSql) < $limitTime) {
-                        $borrowError = '送出駁回，有酒精、有明火、需擺攤販售者請於一個月以前送出。';
-                    }
-                }
             }
         }
 
@@ -441,18 +410,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $borrowError = '請完整填寫借用起訖日期與時間。';
         } elseif ($formData['purpose'] === '') {
             $borrowError = '請填寫用途說明。';
-        } elseif ($formData['setup_flags'] === 'yes' && (
-            $formData['flag_applicant_unit'] === '' ||
-            $formData['flag_manager'] === '' ||
-            $formData['flag_phone'] === '' ||
-            $formData['flag_activity_name'] === '' ||
-            $formData['flag_start_date'] === '' ||
-            $formData['flag_end_date'] === '' ||
-            $formData['flag_count'] <= 0 ||
-            $formData['flag_location'] === '' ||
-            $formData['flag_agreement'] !== '1'
-        )) {
-            $borrowError = '選擇插立旗幟「是」時，請完整填寫旗幟插立申請表並勾選聲明。';
         } elseif ($formData['setup_flags'] === 'yes' && $formData['flag_count'] > 20) {
             $borrowError = '宣傳旗幟最多只能選 20 支。';
         } elseif ($formData['setup_flags'] === 'yes' && $formData['borrow_start_date'] !== '' && strtotime($formData['borrow_start_date']) < strtotime('+7 weekdays', strtotime(date('Y-m-d')))) {
@@ -579,9 +536,9 @@ SQL;
                 }
                 
                 $submittedAtVal = date('Y-m-d H:i:s'); // 保證同一批次提交時間一致
-                $insertCols = [$applicantColumn, 'borrow_start_at', 'borrow_end_at', 'organization_name', 'activity_name', 'participant_count', 'staff_count', 'club_president', 'activity_coordinator', 'coordinator_department', 'coordinator_phone', 'coordinator_other_contact', 'vehicle_entry', 'setup_flags', 'flag_details'];
-                $bindValuesTemplate = [$userId, $borrowStartAtSql, $borrowEndAtSql, $formData['organization_name'], $formData['activity_name'], $formData['participant_count'], (int)$formData['staff_count'], $formData['club_president'], $formData['activity_coordinator'], $formData['coordinator_department'], $formData['coordinator_phone'], $formData['coordinator_other_contact'], $formData['vehicle_entry'], $formData['setup_flags'], $formData['flag_details']];
-                $bindTypesTemplate = 'ssssssissssssss';
+                $insertCols = [$applicantColumn, 'borrow_start_at', 'borrow_end_at', 'organization_name', 'activity_name', 'participant_count', 'staff_count', 'club_president', 'activity_coordinator', 'coordinator_department', 'coordinator_phone', 'coordinator_other_contact', 'vehicle_entry', 'setup_flags', 'flag_count'];
+                $bindValuesTemplate = [$userId, $borrowStartAtSql, $borrowEndAtSql, $formData['organization_name'], $formData['activity_name'], $formData['participant_count'], (int)$formData['staff_count'], $formData['club_president'], $formData['activity_coordinator'], $formData['coordinator_department'], $formData['coordinator_phone'], $formData['coordinator_other_contact'], $formData['vehicle_entry'], $formData['setup_flags'], (int)$formData['flag_count']];
+                $bindTypesTemplate = 'ssssssisssssssi';
 
                 if ($hasPurposeCol) {
                     $insertCols[] = 'purpose';
@@ -629,6 +586,7 @@ SQL;
                 mysqli_stmt_close($reservationStmt);
 
                 $createdReservationIds = [$commonReservationId];
+                $reservationId = $commonReservationId;
 
                 if (!empty($cartEquipments)) {
                     $stockCheckStmt = mysqli_prepare(
@@ -733,12 +691,10 @@ SQL;
                     mysqli_stmt_close($updateEquipmentStatusStmt);
                 }
 
-                if (!empty($formData['space_id'])) {
-                    // 若為申請空間且有上傳企劃書，處理上傳並更新 reservations
-                    if (!isset($_FILES['proposal_file']) || $_FILES['proposal_file']['error'] === UPLOAD_ERR_NO_FILE) {
-                        throw new RuntimeException('申請場地需上傳活動企劃書。');
-                    }
+                $proposalFileForReservation = null;
+                $proposalUploadedAtForReservation = null;
 
+                if (isset($_FILES['proposal_file']) && $_FILES['proposal_file']['error'] !== UPLOAD_ERR_NO_FILE) {
                     $file = $_FILES['proposal_file'];
                     if ($file['error'] !== UPLOAD_ERR_OK) {
                         throw new RuntimeException('企劃書上傳失敗（錯誤碼：' . (int)$file['error'] . '）。');
@@ -799,31 +755,30 @@ SQL;
                     mysqli_stmt_bind_param($updateProposalStmt, 'ssi', $proposalFileForReservation, $proposalUploadedAtForReservation, $commonReservationId);
                     mysqli_stmt_execute($updateProposalStmt);
                     mysqli_stmt_close($updateProposalStmt);
+                }
 
-                    // 使用共用的預約單 ID（同一筆申請共用一個 reservation）
-                    $reservationId = $commonReservationId;
+                if (!empty($formData['space_id'])) {
+                    $spaceConflictStmt = mysqli_prepare(
+                        $link,
+                        'SELECT COUNT(*) AS conflict_count
+                         FROM space_reservation_items sri
+                         JOIN reservations r ON r.reservation_id = sri.reservation_id
+                         WHERE sri.space_id = ?
+                             AND r.approval_status IN ("pending", "approved")
+                             AND NOT (r.borrow_end_at < ? OR r.borrow_start_at > ?)'
+                    );
+                    if (!$spaceConflictStmt) {
+                        throw new RuntimeException('檢查空間時段衝突失敗：' . mysqli_error($link));
+                    }
+                    mysqli_stmt_bind_param($spaceConflictStmt, 'sss', $formData['space_id'], $borrowStartAtSql, $borrowEndAtSql);
+                    mysqli_stmt_execute($spaceConflictStmt);
+                    $spaceConflictResult = mysqli_stmt_get_result($spaceConflictStmt);
+                    $spaceConflictRow = $spaceConflictResult ? mysqli_fetch_assoc($spaceConflictResult) : null;
+                    mysqli_stmt_close($spaceConflictStmt);
 
-                                                $spaceConflictStmt = mysqli_prepare(
-                                                                $link,
-                                                                'SELECT COUNT(*) AS conflict_count
-                                                         FROM space_reservation_items sri
-                                                         JOIN reservations r ON r.reservation_id = sri.reservation_id
-                                                         WHERE sri.space_id = ?
-                                                             AND r.approval_status IN ("pending", "approved")
-                                                             AND NOT (r.borrow_end_at < ? OR r.borrow_start_at > ?)'
-                                                );
-                        if (!$spaceConflictStmt) {
-                            throw new RuntimeException('檢查空間時段衝突失敗：' . mysqli_error($link));
-                        }
-                        mysqli_stmt_bind_param($spaceConflictStmt, 'sss', $formData['space_id'], $borrowStartAtSql, $borrowEndAtSql);
-                        mysqli_stmt_execute($spaceConflictStmt);
-                        $spaceConflictResult = mysqli_stmt_get_result($spaceConflictStmt);
-                        $spaceConflictRow = $spaceConflictResult ? mysqli_fetch_assoc($spaceConflictResult) : null;
-                        mysqli_stmt_close($spaceConflictStmt);
-
-                        if ($spaceConflictRow && (int)$spaceConflictRow['conflict_count'] > 0) {
-                            throw new RuntimeException('該時段空間已被預約，請改選其他時段或空間。');
-                        }
+                    if ($spaceConflictRow && (int)$spaceConflictRow['conflict_count'] > 0) {
+                        throw new RuntimeException('該時段空間已被預約，請改選其他時段或空間。');
+                    }
 
                     $spaceItemStmt = mysqli_prepare(
                         $link,
@@ -1291,24 +1246,6 @@ SQL;
                                     </div>
                                 </div>
 
-                                <div class="form-group" style="margin-bottom: 20px;">
-                                    <label>活動特殊性質 (可複選)</label>
-                                    <div style="display: flex; gap: 15px; margin-top: 5px;">
-                                        <label style="display: inline-flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer; white-space: nowrap;">
-                                            <input type="checkbox" id="has_alcohol" name="has_alcohol" value="1" <?php echo $formData['has_alcohol'] ? 'checked' : ''; ?>>
-                                            有酒精
-                                        </label>
-                                        <label style="display: inline-flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer; white-space: nowrap;">
-                                            <input type="checkbox" id="has_fire" name="has_fire" value="1" <?php echo $formData['has_fire'] ? 'checked' : ''; ?>>
-                                            有明火
-                                        </label>
-                                        <label style="display: inline-flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer; white-space: nowrap;">
-                                            <input type="checkbox" id="has_sales" name="has_sales" value="1" <?php echo $formData['has_sales'] ? 'checked' : ''; ?>>
-                                            需擺攤販售
-                                        </label>
-                                    </div>
-                                </div>
-
                                 <div class="step-actions">
                                     <button type="button" class="btn btn-primary btn-next" onclick="goToStep(2)">下一步 ➔ 場地需求 </button>
                                 </div>
@@ -1358,48 +1295,8 @@ SQL;
                                     🚩 輔仁大學校內中央走道宣傳旗幟插立申請表
                                 </h4>
 
-                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; margin-bottom:15px;">
-                                    <div>
-                                        <label>申請單位 <span style="color:red">*</span></label>
-                                        <input type="text" name="flag_applicant_unit" id="flag_applicant_unit" class="form-control" style="height: 38px;" placeholder="請輸入申請單位" value="<?php echo htmlspecialchars($formData['flag_applicant_unit'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
-
-                                    <div>
-                                        <label>負責人 <span style="color:red">*</span></label>
-                                        <input type="text" name="flag_manager" id="flag_manager" class="form-control" style="height: 38px;" placeholder="請輸入負責人姓名" value="<?php echo htmlspecialchars($formData['flag_manager'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
-
-                                    <div>
-                                        <label>連絡電話 <span style="color:red">*</span></label>
-                                        <input type="text" name="flag_phone" id="flag_phone" class="form-control" style="height: 38px;" placeholder="請輸入連絡電話" value="<?php echo htmlspecialchars($formData['flag_phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
-
-                                    <div>
-                                        <label>活動名稱 <span style="color:red">*</span></label>
-                                        <input type="text" name="flag_activity_name" id="flag_activity_name" class="form-control" style="height: 38px;" placeholder="請輸入活動名稱" value="<?php echo htmlspecialchars($formData['flag_activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
-                                </div>
-
-                                <div style="margin-bottom:15px;">
-                                    <label>
-                                        使用日期
-                                        <span style="font-size:0.85em; color:#64748b; font-weight:normal;">
-                                            （系統限制：需為 7 個工作天之後，並自動同步活動起訖日期）
-                                        </span>
-                                        <span style="color:red">*</span>
-                                    </label>
-
-                                    <div style="display:flex; align-items:center; gap:10px; margin-top:5px;">
-                                        <input type="date" name="flag_start_date" id="flag_start_date" class="form-control" style="height: 38px;" value="<?php echo htmlspecialchars($formData['flag_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                        <span>至</span>
-                                        <input type="date" name="flag_end_date" id="flag_end_date" class="form-control" style="height: 38px;" value="<?php echo htmlspecialchars($formData['flag_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
-
-                                    <small id="flagDateHint" style="display:block; margin-top:6px; color:#64748b;"></small>
-                                </div>
-
-                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; margin-bottom:15px;">
-                                    <div>
+                                <div style="display:flex; gap:15px; align-items:center; margin-bottom:15px;">
+                                    <div style="flex:1;">
                                         <label>宣傳旗幟 <span style="color:red">*</span></label>
                                         <div style="display:flex; align-items:center; gap:8px;">
                                             <span>共</span>
@@ -1416,25 +1313,8 @@ SQL;
                                             <span>支</span>
                                         </div>
                                     </div>
-
-                                    <div>
-                                        <label>懸掛位置 <span style="color:red">*</span></label>
-                                        <div style="height: 38px; display: flex; align-items: center; padding: 0 14px; background: #f8fafc; border-radius: 8px; border: 1px solid #cbd5e1; color: #475569; font-weight: 500;">
-                                            中央走道
-                                            <input type="hidden" name="flag_location" value="中央走道">
-                                        </div>
-                                    </div>
                                 </div>
 
-                                <div style="background:#fff; border:1px solid #cbd5e1; border-radius:8px; padding:15px;">
-                                    <label style="display:flex; gap:8px; align-items:flex-start; font-weight:normal; cursor:pointer;">
-                                        <input type="checkbox" name="flag_agreement" id="flag_agreement" value="1" style="margin-top:4px;" <?php echo ($formData['flag_agreement'] === '1') ? 'checked' : ''; ?>>
-                                        <span style="line-height:1.6;">
-                                            本人為旗幟插立總負責人，已詳細閱讀並遵守以下各項注意事項，
-                                            為維護校園安全與景觀，願無條件承擔所插旗幟所致之一切賠償責任，特此聲明。
-                                        </span>
-                                    </label>
-                                </div>
                             </div>
 
                                 <script>
@@ -1491,63 +1371,9 @@ SQL;
 
                                 function syncFlagForm() {
                                     if (!isFlagEnabled()) return;
-
-                                    const activityStart = document.getElementById('borrow_start_date');
-                                    const activityEnd = document.getElementById('borrow_end_date');
-
-                                    const organizationName = document.getElementById('organization_name');
-                                    const activityName = document.getElementById('activity_name');
-                                    const coordinatorPhone = document.getElementById('coordinator_phone');
-                                    const activityCoordinator = document.getElementById('activity_coordinator');
-
-                                    const flagUnit = document.getElementById('flag_applicant_unit');
-                                    const flagActivity = document.getElementById('flag_activity_name');
-                                    const flagPhone = document.getElementById('flag_phone');
-                                    const flagManager = document.getElementById('flag_manager');
-                                    const flagStart = document.getElementById('flag_start_date');
-                                    const flagEnd = document.getElementById('flag_end_date');
-                                    const hint = document.getElementById('flagDateHint');
-
-                                    const minDate = getMinFlagDate();
-
-                                    if (flagUnit && organizationName && flagUnit.value.trim() === '') {
-                                        flagUnit.value = organizationName.value;
-                                    }
-
-                                    if (flagActivity && activityName) {
-                                        flagActivity.value = activityName.value;
-                                    }
-
-                                    if (flagManager && activityCoordinator) {
-                                        flagManager.value = activityCoordinator.value;
-                                    }
-
-                                    if (flagPhone && coordinatorPhone && flagPhone.value.trim() === '') {
-                                        flagPhone.value = coordinatorPhone.value;
-                                    }
-
-                                    if (activityStart && flagStart) {
-                                        flagStart.value = activityStart.value;
-                                    }
-
-                                    if (activityEnd && flagEnd) {
-                                        flagEnd.value = activityEnd.value;
-                                    }
-
-                                    if (activityStart && activityStart.value && activityStart.value < minDate) {
-                                        activityStart.value = '';
-                                        if (flagStart) flagStart.value = '';
-                                        alert('插立旗幟的使用日期只能選 7 個工作天之後的日期。最早可申請日期：' + minDate);
-                                    }
-
-                                    if (activityEnd && activityEnd.value && activityEnd.value < minDate) {
-                                        activityEnd.value = '';
-                                        if (flagEnd) flagEnd.value = '';
-                                        alert('插立旗幟的結束日期也必須是 7 個工作天之後。最早可申請日期：' + minDate);
-                                    }
-
-                                    if (hint) {
-                                        hint.textContent = '最早可申請日期：' + minDate + '；使用日期會自動同步第一步的活動起訖日期。';
+                                    const flagCount = document.getElementById('flag_count');
+                                    if (flagCount && flagCount.value !== '' && Number(flagCount.value) > 20) {
+                                        flagCount.value = 20;
                                     }
                                 }
 
@@ -3642,20 +3468,6 @@ function goToStep(stepNo) {
             return;
         }
         
-        const hasAlcohol = document.getElementById('has_alcohol') && document.getElementById('has_alcohol').checked;
-        const hasFire = document.getElementById('has_fire') && document.getElementById('has_fire').checked;
-        const hasSales = document.getElementById('has_sales') && document.getElementById('has_sales').checked;
-
-        if (hasAlcohol || hasFire || hasSales) {
-            let limitDate = new Date();
-            limitDate.setHours(0,0,0,0);
-            limitDate.setDate(limitDate.getDate() + 30);
-            
-            if (start.getTime() < limitDate.getTime()) {
-                alert("送出駁回，有酒精、有明火、需擺攤販售者請於一個月以前送出。");
-                return;
-            }
-        }
     }
 
     if (currentStepInput) {
@@ -3768,15 +3580,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // 把草稿內旗幟表單欄位重新塞回去
         [
-            'flag_applicant_unit',
-            'flag_manager',
-            'flag_phone',
-            'flag_activity_name',
-            'flag_start_date',
-            'flag_end_date',
             'flag_count',
-            'flag_location',
-            'flag_agreement'
         ].forEach(function (name) {
             const value = data[name];
             const els = document.querySelectorAll('[name="' + name + '"]');

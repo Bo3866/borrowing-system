@@ -52,8 +52,8 @@ try {
     $borrowDate = isset($_POST['borrow_date']) ? trim((string)$_POST['borrow_date']) : null;
     $startPeriodCode = isset($_POST['start_period_code']) ? trim((string)$_POST['start_period_code']) : null;
     $endPeriodCode = isset($_POST['end_period_code']) ? trim((string)$_POST['end_period_code']) : null;
-    $phone = isset($_POST['phone']) ? trim((string)$_POST['phone']) : null;
     $purpose = isset($_POST['purpose']) ? trim((string)$_POST['purpose']) : null;
+    $flagCount = isset($_POST['flag_count']) ? (int)$_POST['flag_count'] : null;
 
     // 如果是編輯現有草稿
     if ($reservationId > 0) {
@@ -131,15 +131,15 @@ try {
                 $paramTypes .= 'ss';
             }
         }
-        if ($phone !== null) {
-            $updateParts[] = 'phone = ?';
-            $params[] = $phone;
-            $paramTypes .= 's';
-        }
         if ($purpose !== null) {
             $updateParts[] = 'purpose = ?';
             $params[] = $purpose;
             $paramTypes .= 's';
+        }
+        if ($flagCount !== null) {
+            $updateParts[] = 'flag_count = ?';
+            $params[] = $flagCount;
+            $paramTypes .= 'i';
         }
         
         // 檢查 reservations 表是否有 purpose 與 certificate_id 欄位
@@ -261,15 +261,16 @@ try {
             $bindParams[] = $selectedSpaces;
             $paramTypes .= 's';
         }
-        if ($phone !== null) {
-            $insertCols[] = 'phone';
-            $bindParams[] = $phone;
-            $paramTypes .= 's';
-        }
         if ($purpose !== null) {
             $insertCols[] = 'purpose';
             $bindParams[] = $purpose;
             $paramTypes .= 's';
+        }
+        
+        if ($flagCount !== null) {
+            $insertCols[] = 'flag_count';
+            $bindParams[] = $flagCount;
+            $paramTypes .= 'i';
         }
         
         if ($hasCertificateIdCol && $certificateId !== null) {

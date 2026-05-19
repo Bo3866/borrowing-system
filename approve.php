@@ -229,8 +229,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
                     $snapshotSql = 'SELECT 
                         organization_name, activity_name, participant_count, staff_count, 
                         club_president, activity_coordinator, coordinator_department, coordinator_phone, 
-                        coordinator_other_contact, vehicle_entry, setup_flags, flag_details,
-                        has_alcohol, has_fire, has_sales, purpose, phone, borrow_start_at, borrow_end_at,
+                        coordinator_other_contact, vehicle_entry, setup_flags,
+                        purpose, borrow_start_at, borrow_end_at,
                         space_id
                     FROM reservations WHERE reservation_id = ?';
                     $snapshotStmt = mysqli_prepare($link, $snapshotSql);

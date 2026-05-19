@@ -40,8 +40,8 @@ if ($dbError === '') {
         'reservation_id', 'user_id', 'approval_status', 'revision_data_json', 'revision_deadline',
         'organization_name', 'activity_name', 'participant_count', 'staff_count', 'club_president',
         'activity_coordinator', 'coordinator_department', 'coordinator_phone', 'coordinator_other_contact',
-        'vehicle_entry', 'setup_flags', 'flag_details', 'proposal_file', 'proposal_uploaded_at', 'has_alcohol', 'has_fire', 'has_sales',
-        'purpose', 'phone', 'borrow_start_at', 'borrow_end_at', 'space_id'
+        'vehicle_entry', 'setup_flags', 'flag_count', 'proposal_file', 'proposal_uploaded_at',
+        'purpose', 'borrow_start_at', 'borrow_end_at', 'space_id'
     ];
     $selectCols = [];
     foreach ($wantedCols as $columnName) {
@@ -131,23 +131,11 @@ if ($dbError === '') {
                     'coordinator_other_contact' => $reservationRow['coordinator_other_contact'] ?? '',
                     'vehicle_entry' => $reservationRow['vehicle_entry'] ?? 'no',
                     'setup_flags' => $reservationRow['setup_flags'] ?? 'no',
-                    'flag_details' => $reservationRow['flag_details'] ?? '',
+                    'flag_count' => $reservationRow['flag_count'] ?? 0,
                     'proposal_file' => $reservationRow['proposal_file'] ?? '',
                     'proposal_uploaded_at' => $reservationRow['proposal_uploaded_at'] ?? '',
-                    'flag_applicant_unit' => $reservationRow['flag_applicant_unit'] ?? '',
-                    'flag_manager' => $reservationRow['flag_manager'] ?? '',
-                    'flag_phone' => $reservationRow['flag_phone'] ?? '',
-                    'flag_activity_name' => $reservationRow['flag_activity_name'] ?? '',
-                    'flag_start_date' => $reservationRow['flag_start_date'] ?? '',
-                    'flag_end_date' => $reservationRow['flag_end_date'] ?? '',
                     'flag_count' => $reservationRow['flag_count'] ?? 0,
-                    'flag_location' => $reservationRow['flag_location'] ?? '',
-                    'flag_agreement' => $reservationRow['flag_agreement'] ?? '',
-                    'has_alcohol' => $reservationRow['has_alcohol'] ?? '',
-                    'has_fire' => $reservationRow['has_fire'] ?? '',
-                    'has_sales' => $reservationRow['has_sales'] ?? '',
                     'purpose' => $reservationRow['purpose'] ?? '',
-                    'phone' => $reservationRow['phone'] ?? '',
                     'borrow_start_at' => $reservationRow['borrow_start_at'] ?? '',
                     'borrow_end_at' => $reservationRow['borrow_end_at'] ?? '',
                     'space_id' => $reservationRow['space_id'] ?? '',
@@ -172,21 +160,8 @@ if ($dbError === '') {
                     'coordinator_other_contact' => trim((string)($_POST['coordinator_other_contact'] ?? '')),
                     'vehicle_entry' => trim((string)($_POST['vehicle_entry'] ?? 'no')),
                     'setup_flags' => trim((string)($_POST['setup_flags'] ?? 'no')),
-                    'flag_details' => trim((string)($_POST['flag_details'] ?? '')),
-                    'flag_applicant_unit' => trim((string)($_POST['flag_applicant_unit'] ?? '')),
-                    'flag_manager' => trim((string)($_POST['flag_manager'] ?? '')),
-                    'flag_phone' => trim((string)($_POST['flag_phone'] ?? '')),
-                    'flag_activity_name' => trim((string)($_POST['flag_activity_name'] ?? '')),
-                    'flag_start_date' => trim((string)($_POST['flag_start_date'] ?? '')),
-                    'flag_end_date' => trim((string)($_POST['flag_end_date'] ?? '')),
                     'flag_count' => (int)($_POST['flag_count'] ?? 0),
-                    'flag_location' => trim((string)($_POST['flag_location'] ?? '')),
-                    'flag_agreement' => isset($_POST['flag_agreement']) ? '1' : '',
-                    'has_alcohol' => isset($_POST['has_alcohol']) ? '1' : '',
-                    'has_fire' => isset($_POST['has_fire']) ? '1' : '',
-                    'has_sales' => isset($_POST['has_sales']) ? '1' : '',
                     'purpose' => trim((string)($_POST['purpose'] ?? '')),
-                    'phone' => trim((string)($_POST['phone'] ?? '')),
                 ];
 
                 $uploadedProposalPath = null;
@@ -445,18 +420,6 @@ if ($dbError === '') {
                                         <input type="checkbox" name="vehicle_entry" value="yes" <?php echo (($revisionData['vehicle_entry'] ?? '') === 'yes') ? 'checked' : ''; ?>>
                                         <span>需要車輛進場</span>
                                     </label>
-                                    <label style="display: flex; align-items: center; gap: 8px; margin: 0;">
-                                        <input type="checkbox" name="has_alcohol" value="1" <?php echo (($revisionData['has_alcohol'] ?? '') === '1') ? 'checked' : ''; ?>>
-                                        <span>有酒精</span>
-                                    </label>
-                                    <label style="display: flex; align-items: center; gap: 8px; margin: 0;">
-                                        <input type="checkbox" name="has_fire" value="1" <?php echo (($revisionData['has_fire'] ?? '') === '1') ? 'checked' : ''; ?>>
-                                        <span>有明火</span>
-                                    </label>
-                                    <label style="display: flex; align-items: center; gap: 8px; margin: 0;">
-                                        <input type="checkbox" name="has_sales" value="1" <?php echo (($revisionData['has_sales'] ?? '') === '1') ? 'checked' : ''; ?>>
-                                        <span>需擺攤販售</span>
-                                    </label>
                                 </div>
                             </div>
 
@@ -522,11 +485,6 @@ if ($dbError === '') {
                                     </div>
                                 </div>
                             <?php endif; ?>
-
-                            <div class="form-group" style="margin-top: 15px;">
-                                <label for="phone">聯絡電話</label>
-                                <input type="text" id="phone" name="phone" class="form-control" placeholder="請輸入聯絡電話" value="<?php echo htmlspecialchars((string)($revisionData['phone'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
-                            </div>
 
                             <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;">
                                 <button type="button" class="btn-secondary" onclick="location.href='return_management.php'">取消</button>

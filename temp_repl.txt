@@ -1,0 +1,8 @@
+﻿                    'coordinator_phone' => trim((string)($_POST['coordinator_phone'] ?? '')),
+                    'coordinator_other_contact' => trim((string)($_POST['coordinator_other_contact'] ?? '')),
+                    'vehicle_entry' => trim((string)($_POST['vehicle_entry'] ?? 'no')),
+                    'setup_flags' => trim((string)($_POST['setup_flags'] ?? 'no')),
+                    'flag_count' => (int)($_POST['flag_count'] ?? 0),
+                    'purpose' => trim((string)($_POST['purpose'] ?? '')),
+                ];
+

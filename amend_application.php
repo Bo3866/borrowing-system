@@ -36,14 +36,18 @@ if ($dbError === '') {
         mysqli_free_result($colRes);
     }
 
+    // 擴充 wantedCols，加入所有特殊需求與路旗欄位
     $wantedCols = [
         'reservation_id', 'user_id', 'approval_status', 'revision_data_json', 'revision_deadline',
         'has_alcohol', 'has_fire', 'has_sales',
         'organization_name', 'activity_name', 'participant_count', 'staff_count', 'club_president',
         'activity_coordinator', 'coordinator_department', 'coordinator_phone', 'coordinator_other_contact',
-        'vehicle_entry', 'setup_flags', 'flag_count', 'proposal_file', 'proposal_uploaded_at',
-        'purpose', 'borrow_start_at', 'borrow_end_at', 'space_id'
+        'vehicle_entry', 'has_alcohol', 'has_fire', 'has_sales',
+        'setup_flags', 'flag_count', 'flag_details', 'flag_applicant_unit', 'flag_manager', 
+        'flag_phone', 'flag_activity_name', 'flag_start_date', 'flag_end_date', 'flag_location', 'flag_agreement',
+        'proposal_file', 'proposal_uploaded_at', 'purpose', 'borrow_start_at', 'borrow_end_at', 'space_id'
     ];
+    
     $selectCols = [];
     foreach ($wantedCols as $columnName) {
         if (in_array($columnName, $availableCols, true)) {
@@ -108,6 +112,7 @@ if ($dbError === '') {
     $hasProposalFileColumn = in_array('proposal_file', $availableCols, true);
     $hasProposalUploadedAtColumn = in_array('proposal_uploaded_at', $availableCols, true);
         
+<<<<<<< HEAD
         if (!$reservationRow) {
             $amendError = '找不到該申請或無權限修改。';
         } elseif ($reservationRow['approval_status'] !== 'need_revision') {
@@ -170,129 +175,214 @@ if ($dbError === '') {
                     'has_sales' => isset($_POST['has_sales']) ? '1' : '',
                     'purpose' => trim((string)($_POST['purpose'] ?? '')),
                 ];
-
-                $uploadedProposalPath = null;
-                $uploadedProposalDbPath = null;
-                $uploadedProposalAt = null;
-
-                if (isset($_FILES['proposal_file']) && $_FILES['proposal_file']['error'] !== UPLOAD_ERR_NO_FILE) {
-                    $proposalFile = $_FILES['proposal_file'];
-                    if ($proposalFile['error'] !== UPLOAD_ERR_OK) {
-                        $amendError = '企劃書上傳失敗（錯誤碼：' . (int)$proposalFile['error'] . '）。';
-                    } else {
-                        $maxBytes = 5 * 1024 * 1024;
-                        if ((int)$proposalFile['size'] > $maxBytes) {
-                            $amendError = '企劃書大小不可超過 5MB。';
-                        } else {
-                            if (class_exists('finfo')) {
-                                $finfo = new finfo(FILEINFO_MIME_TYPE);
-                                $mime = (string)$finfo->file($proposalFile['tmp_name']);
-                            } elseif (function_exists('mime_content_type')) {
-                                $mime = (string)mime_content_type($proposalFile['tmp_name']);
-                            } else {
-                                $ext = strtolower(pathinfo((string)$proposalFile['name'], PATHINFO_EXTENSION));
-                                $mime = ($ext === 'pdf') ? 'application/pdf' : '';
-                            }
-
-                            if ($mime !== 'application/pdf') {
-                                $amendError = '企劃書格式不支援，僅接受 PDF。';
-                            } else {
-                                $uploadDir = __DIR__ . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'proposals';
-                                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
-                                    $amendError = '建立上傳目錄失敗。';
-                                } else {
-                                    $safeBasename = preg_replace('/[^a-zA-Z0-9_-]/', '_', pathinfo((string)$proposalFile['name'], PATHINFO_FILENAME));
-                                    $targetName = time() . '_' . $safeBasename . '.pdf';
-                                    $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $targetName;
-                                    if (!move_uploaded_file($proposalFile['tmp_name'], $targetPath)) {
-                                        $amendError = '企劃書儲存失敗。';
-                                    } else {
-                                        $uploadedProposalPath = $targetPath;
-                                        $uploadedProposalDbPath = 'uploads/proposals/' . $targetName;
-                                        $uploadedProposalAt = date('Y-m-d H:i:s');
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+=======
+    if (!$reservationRow) {
+        $amendError = '找不到該申請或無權限修改。';
+    } elseif ($reservationRow['approval_status'] !== 'need_revision') {
+        $amendError = '該申請不在補件狀態，無法修改。';
+    } else {
+        if (!empty($reservationRow['revision_data_json'])) {
+            $revisionData = (array)json_decode($reservationRow['revision_data_json'], true) ?: [];
+        }
+        
+        // Fallback 初始化，已補齊所有必備及漏掉的欄位
+        if (empty($revisionData)) {
+            $revisionData = [
+                'organization_name'         => $reservationRow['organization_name'] ?? '',
+                'activity_name'             => $reservationRow['activity_name'] ?? '',
+                'participant_count'         => $reservationRow['participant_count'] ?? '',
+                'staff_count'               => $reservationRow['staff_count'] ?? 0,
+                'club_president'            => $reservationRow['club_president'] ?? '',
+                'activity_coordinator'      => $reservationRow['activity_coordinator'] ?? '',
+                'coordinator_department'    => $reservationRow['coordinator_department'] ?? '',
+                'coordinator_phone'         => $reservationRow['coordinator_phone'] ?? '',
+                'coordinator_other_contact' => $reservationRow['coordinator_other_contact'] ?? '',
+                'vehicle_entry'             => $reservationRow['vehicle_entry'] ?? 'no',
                 
-                // Validate required fields
-                if ($updatedFields['organization_name'] === '') {
-                    $amendError = '請填寫單位名稱。';
-                } elseif ($updatedFields['activity_name'] === '') {
-                    $amendError = '請填寫活動名稱。';
-                } elseif ($updatedFields['purpose'] === '') {
-                    $amendError = '請填寫用途說明。';
-                } else {
-                    // Update reservation
-                    mysqli_begin_transaction($link);
-                    try {
-                        $updateFields = [];
-                        $updateValues = [];
-                        $updateTypes = '';
-                        
-                        foreach ($updatedFields as $key => $value) {
-                            $updateFields[] = "{$key} = ?";
-                            $updateValues[] = $value;
-                            if (is_int($value)) {
-                                $updateTypes .= 'i';
-                            } else {
-                                $updateTypes .= 's';
-                            }
-                        }
-                        
-                        $updateValues[] = $reservationId;
-                        $updateTypes .= 'i';
-                        
-                        $updateSql = 'UPDATE reservations SET ' . implode(', ', $updateFields) . ', approval_status = "pending", updated_at = NOW() WHERE reservation_id = ?';
-                        $updateStmt = mysqli_prepare($link, $updateSql);
-                        
-                        if (!$updateStmt) {
-                            throw new RuntimeException('準備更新語句失敗：' . mysqli_error($link));
-                        }
-                        
-                        mysqli_stmt_bind_param($updateStmt, $updateTypes, ...$updateValues);
-                        mysqli_stmt_execute($updateStmt);
-                        $affected = mysqli_stmt_affected_rows($updateStmt);
-                        mysqli_stmt_close($updateStmt);
+                // 特殊勾選
+                'has_alcohol'               => $reservationRow['has_alcohol'] ?? '0',
+                'has_fire'                  => $reservationRow['has_fire'] ?? '0',
+                'has_sales'                 => $reservationRow['has_sales'] ?? '0',
+                
+                // 路旗欄位
+                'setup_flags'               => $reservationRow['setup_flags'] ?? 'no',
+                'flag_count'                => $reservationRow['flag_count'] ?? 0,
+                'flag_details'              => $reservationRow['flag_details'] ?? '',
+                'flag_applicant_unit'       => $reservationRow['flag_applicant_unit'] ?? '',
+                'flag_manager'              => $reservationRow['flag_manager'] ?? '',
+                'flag_phone'                => $reservationRow['flag_phone'] ?? '',
+                'flag_activity_name'        => $reservationRow['flag_activity_name'] ?? '',
+                'flag_start_date'           => $reservationRow['flag_start_date'] ?? '',
+                'flag_end_date'             => $reservationRow['flag_end_date'] ?? '',
+                'flag_location'             => $reservationRow['flag_location'] ?? '',
+                'flag_agreement'            => $reservationRow['flag_agreement'] ?? '0',
+                
+                'proposal_file'             => $reservationRow['proposal_file'] ?? '',
+                'proposal_uploaded_at'      => $reservationRow['proposal_uploaded_at'] ?? '',
+                'purpose'                   => $reservationRow['purpose'] ?? '',
+                'borrow_start_at'           => $reservationRow['borrow_start_at'] ?? '',
+                'borrow_end_at'             => $reservationRow['borrow_end_at'] ?? '',
+                'space_id'                  => $reservationRow['space_id'] ?? '',
+            ];
+        }
+        
+        $revisionData['equipment_items'] = $equipmentItems;
+        $revisionData['space_items'] = $spaceItems;
+        
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            // 收集並處理所有變更欄位（含路旗與勾選機制）
+            $updatedFields = [
+                'organization_name'         => trim((string)($_POST['organization_name'] ?? '')),
+                'activity_name'             => trim((string)($_POST['activity_name'] ?? '')),
+                'participant_count'         => trim((string)($_POST['participant_count'] ?? '')),
+                'staff_count'               => (int)($_POST['staff_count'] ?? 0),
+                'club_president'            => trim((string)($_POST['club_president'] ?? '')),
+                'activity_coordinator'      => trim((string)($_POST['activity_coordinator'] ?? '')),
+                'coordinator_department'    => trim((string)($_POST['coordinator_department'] ?? '')),
+                'coordinator_phone'         => trim((string)($_POST['coordinator_phone'] ?? '')),
+                'coordinator_other_contact' => trim((string)($_POST['coordinator_other_contact'] ?? '')),
+                'vehicle_entry'             => isset($_POST['vehicle_entry']) ? 'yes' : 'no',
+                
+                // 補齊特殊活動勾選處理
+                'has_alcohol'               => isset($_POST['has_alcohol']) ? '1' : '0',
+                'has_fire'                  => isset($_POST['has_fire']) ? '1' : '0',
+                'has_sales'                 => isset($_POST['has_sales']) ? '1' : '0',
+                
+                // 補齊路旗相關 POST 處理
+                'setup_flags'               => trim((string)($_POST['setup_flags'] ?? 'no')),
+                'flag_count'                => (int)($_POST['flag_count'] ?? 0),
+                'flag_details'              => trim((string)($_POST['flag_details'] ?? '')),
+                'flag_applicant_unit'       => trim((string)($_POST['flag_applicant_unit'] ?? '')),
+                'flag_manager'              => trim((string)($_POST['flag_manager'] ?? '')),
+                'flag_phone'                => trim((string)($_POST['flag_phone'] ?? '')),
+                'flag_activity_name'        => trim((string)($_POST['flag_activity_name'] ?? '')),
+                'flag_start_date'           => trim((string)($_POST['flag_start_date'] ?? '')),
+                'flag_end_date'             => trim((string)($_POST['flag_end_date'] ?? '')),
+                'flag_location'             => trim((string)($_POST['flag_location'] ?? '')),
+                'flag_agreement'            => isset($_POST['flag_agreement']) ? '1' : '0',
+                
+                'purpose'                   => trim((string)($_POST['purpose'] ?? '')),
+            ];
+>>>>>>> 08406ea6bf3daedf111ec6eb25373837712993f3
 
-                        if ($amendError === '' && $uploadedProposalDbPath !== null) {
-                            if ($hasProposalFileColumn && $hasProposalUploadedAtColumn) {
-                                $proposalStmt = mysqli_prepare($link, 'UPDATE reservations SET proposal_file = ?, proposal_uploaded_at = ?, updated_at = NOW() WHERE reservation_id = ?');
-                                if (!$proposalStmt) {
-                                    throw new RuntimeException('準備更新企劃書欄位失敗：' . mysqli_error($link));
-                                }
-                                mysqli_stmt_bind_param($proposalStmt, 'ssi', $uploadedProposalDbPath, $uploadedProposalAt, $reservationId);
-                                mysqli_stmt_execute($proposalStmt);
-                                mysqli_stmt_close($proposalStmt);
+            $uploadedProposalPath = null;
+            $uploadedProposalDbPath = null;
+            $uploadedProposalAt = null;
+
+            if (isset($_FILES['proposal_file']) && $_FILES['proposal_file']['error'] !== UPLOAD_ERR_NO_FILE) {
+                $proposalFile = $_FILES['proposal_file'];
+                if ($proposalFile['error'] !== UPLOAD_ERR_OK) {
+                    $amendError = '企劃書上傳失敗（錯誤碼：' . (int)$proposalFile['error'] . '）。';
+                } else {
+                    $maxBytes = 5 * 1024 * 1024;
+                    if ((int)$proposalFile['size'] > $maxBytes) {
+                        $amendError = '企劃書大小不可超過 5MB。';
+                    } else {
+                        if (class_exists('finfo')) {
+                            $finfo = new finfo(FILEINFO_MIME_TYPE);
+                            $mime = (string)$finfo->file($proposalFile['tmp_name']);
+                        } elseif (function_exists('mime_content_type')) {
+                            $mime = (string)mime_content_type($proposalFile['tmp_name']);
+                        } else {
+                            $ext = strtolower(pathinfo((string)$proposalFile['name'], PATHINFO_EXTENSION));
+                            $mime = ($ext === 'pdf') ? 'application/pdf' : '';
+                        }
+
+                        if ($mime !== 'application/pdf') {
+                            $amendError = '企劃書格式不支援，僅接受 PDF。';
+                        } else {
+                            $uploadDir = __DIR__ . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'proposals';
+                            if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+                                $amendError = '建立上傳目錄失敗。';
                             } else {
-                                throw new RuntimeException('資料表尚未建立 proposal_file / proposal_uploaded_at 欄位。');
+                                $safeBasename = preg_replace('/[^a-zA-Z0-9_-]/', '_', pathinfo((string)$proposalFile['name'], PATHINFO_FILENAME));
+                                $targetName = time() . '_' . $safeBasename . '.pdf';
+                                $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $targetName;
+                                if (!move_uploaded_file($proposalFile['tmp_name'], $targetPath)) {
+                                    $amendError = '企劃書儲存失敗。';
+                                } else {
+                                    $uploadedProposalPath = $targetPath;
+                                    $uploadedProposalDbPath = 'uploads/proposals/' . $targetName;
+                                    $uploadedProposalAt = date('Y-m-d H:i:s');
+                                }
                             }
                         }
-                        
-                        if ($affected <= 0) {
-                            throw new RuntimeException('更新失敗，請稍後再試。');
-                        }
-                        
-                        mysqli_commit($link);
-                        $amendSuccess = '補件已提交，已重新進入審核流程。';
-                        // Refresh displayed data
-                        $revisionData = $updatedFields;
-                        if ($uploadedProposalDbPath !== null) {
-                            $revisionData['proposal_file'] = $uploadedProposalDbPath;
-                            $revisionData['proposal_uploaded_at'] = $uploadedProposalAt;
-                        }
-                    } catch (Throwable $e) {
-                        mysqli_rollback($link);
-                        if ($uploadedProposalPath !== null && is_file($uploadedProposalPath)) {
-                            @unlink($uploadedProposalPath);
-                        }
-                        $amendError = $e->getMessage();
                     }
                 }
             }
+            
+            // 驗證必填欄位
+            if ($updatedFields['organization_name'] === '') {
+                $amendError = '請填寫單位名稱。';
+            } elseif ($updatedFields['activity_name'] === '') {
+                $amendError = '請填寫活動名稱。';
+            } elseif ($updatedFields['purpose'] === '') {
+                $amendError = '請填寫用途說明。';
+            } elseif ($amendError === '') {
+                // 執行更新
+                mysqli_begin_transaction($link);
+                try {
+                    $updateFields = [];
+                    $updateValues = [];
+                    $updateTypes = '';
+                    
+                    foreach ($updatedFields as $key => $value) {
+                        // 確保該欄位確實在資料庫中才做更新，防止結構衝突
+                        if (in_array($key, $availableCols, true)) {
+                            $updateFields[] = "{$key} = ?";
+                            $updateValues[] = $value;
+                            $updateTypes .= is_int($value) ? 'i' : 's';
+                        }
+                    }
+                    
+                    $updateValues[] = $reservationId;
+                    $updateTypes .= 'i';
+                    
+                    $updateSql = 'UPDATE reservations SET ' . implode(', ', $updateFields) . ', approval_status = "pending", updated_at = NOW() WHERE reservation_id = ?';
+                    $updateStmt = mysqli_prepare($link, $updateSql);
+                    
+                    if (!$updateStmt) {
+                        throw new RuntimeException('準備更新語句失敗：' . mysqli_error($link));
+                    }
+                    
+                    mysqli_stmt_bind_param($updateStmt, $updateTypes, ...$updateValues);
+                    mysqli_stmt_execute($updateStmt);
+                    mysqli_stmt_close($updateStmt);
+
+                    if ($uploadedProposalDbPath !== null) {
+                        if ($hasProposalFileColumn && $hasProposalUploadedAtColumn) {
+                            $proposalStmt = mysqli_prepare($link, 'UPDATE reservations SET proposal_file = ?, proposal_uploaded_at = ?, updated_at = NOW() WHERE reservation_id = ?');
+                            if (!$proposalStmt) {
+                                throw new RuntimeException('準備更新企劃書欄位失敗：' . mysqli_error($link));
+                            }
+                            mysqli_stmt_bind_param($proposalStmt, 'ssi', $uploadedProposalDbPath, $uploadedProposalAt, $reservationId);
+                            mysqli_stmt_execute($proposalStmt);
+                            mysqli_stmt_close($proposalStmt);
+                        } else {
+                            throw new RuntimeException('資料表尚未建立 proposal_file / proposal_uploaded_at 欄位。');
+                        }
+                    }
+                    
+                    mysqli_commit($link);
+                    $amendSuccess = '補件已提交，已重新進入審核流程。';
+                    
+                    // 修正：用 array_merge 融合新舊資料，確保設備與空間陣列不會被洗掉
+                    $revisionData = array_merge($revisionData, $updatedFields);
+                    if ($uploadedProposalDbPath !== null) {
+                        $revisionData['proposal_file'] = $uploadedProposalDbPath;
+                        $revisionData['proposal_uploaded_at'] = $uploadedProposalAt;
+                    }
+                } catch (Throwable $e) {
+                    mysqli_rollback($link);
+                    if ($uploadedProposalPath !== null && is_file($uploadedProposalPath)) {
+                        @unlink($uploadedProposalPath);
+                    }
+                    $amendError = $e->getMessage();
+                }
+            }
         }
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -333,6 +423,7 @@ if ($dbError === '') {
                 <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
             </div>
         </nav>
+
 
         <main class="main-content">
             <section class="borrow-page">
@@ -427,6 +518,7 @@ if ($dbError === '') {
                                         <input type="checkbox" name="vehicle_entry" value="yes" <?php echo (($revisionData['vehicle_entry'] ?? '') === 'yes') ? 'checked' : ''; ?>>
                                         <span>需要車輛進場</span>
                                     </label>
+<<<<<<< HEAD
                                     <div style="display:flex; align-items:center; gap:12px; margin-left: 8px;">
                                         <span style="font-weight:600;">插立旗幟</span>
                                         <label style="display:flex; align-items:center; gap:8px; margin:0;">
@@ -449,6 +541,20 @@ if ($dbError === '') {
                                             <span>我已閱讀並同意旗幟插立注意事項</span>
                                         </label>
                                     </div>
+=======
+                                    <label style="display: flex; align-items: center; gap: 8px; margin: 0;">
+                                        <input type="checkbox" name="has_alcohol" value="1" <?php echo (($revisionData['has_alcohol'] ?? '0') === '1') ? 'checked' : ''; ?>>
+                                        <span>有酒精</span>
+                                    </label>
+                                    <label style="display: flex; align-items: center; gap: 8px; margin: 0;">
+                                        <input type="checkbox" name="has_fire" value="1" <?php echo (($revisionData['has_fire'] ?? '0') === '1') ? 'checked' : ''; ?>>
+                                        <span>有明火</span>
+                                    </label>
+                                    <label style="display: flex; align-items: center; gap: 8px; margin: 0;">
+                                        <input type="checkbox" name="has_sales" value="1" <?php echo (($revisionData['has_sales'] ?? '0') === '1') ? 'checked' : ''; ?>>
+                                        <span>需擺攤販售</span>
+                                    </label>
+>>>>>>> 08406ea6bf3daedf111ec6eb25373837712993f3
                                 </div>
                             </div>
                                 <div class="form-group" style="margin-top: 12px;">
@@ -488,7 +594,6 @@ if ($dbError === '') {
                                 <?php endif; ?>
                             </div>
 
-                            <!-- ??? -->
                             <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-top: 20px;">
                                 <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                                     <label for="borrow_start_at">借用開始時間</label>
@@ -500,7 +605,6 @@ if ($dbError === '') {
                                 </div>
                             </div>
 
-                            <!-- ??蝛粹? -->
                             <?php if (!empty($revisionData['space_items'])): ?>
                                 <div class="form-group" style="margin-top: 15px;">
                                     <label>預約空間</label>
@@ -516,7 +620,6 @@ if ($dbError === '') {
                                 </div>
                             <?php endif; ?>
 
-                            <!-- ??閮剖? -->
                             <?php if (!empty($revisionData['equipment_items'])): ?>
                                 <div class="form-group" style="margin-top: 15px;">
                                     <label>預約設備</label>
@@ -557,4 +660,3 @@ if ($dbError === '') {
     </script>
 </body>
 </html>
-<?php }

@@ -285,7 +285,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
                     $snapshotSql = 'SELECT 
                         organization_name, activity_name, participant_count, staff_count, 
                         club_president, activity_coordinator, coordinator_department, coordinator_phone, 
-                        coordinator_other_contact, vehicle_entry, setup_flags,
+                          coordinator_other_contact, vehicle_entry, has_alcohol, has_fire, has_sales, setup_flags,
                         purpose, borrow_start_at, borrow_end_at,
                         space_id
                     FROM reservations WHERE reservation_id = ?';
@@ -393,13 +393,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
                 $mail->isSMTP();
                 $mail->Host       = 'smtp.gmail.com';
                 $mail->SMTPAuth   = true;
-                $mail->Username   = 'sasass041919@gmail.com';
-                $mail->Password   = 'xogusuplsoapxayc';
+                $mail->Username   = 'right.jing0104@gmail.com';
+                $mail->Password   = 'hwarm0625.0603';
                 $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
                 $mail->Port       = 465;
                 $mail->CharSet    = 'UTF-8';
 
-                $mail->setFrom('sasass041919@gmail.com', '器材借用系統');
+                $mail->setFrom('right.jing0104@gmail.com', '器材借用系統');
 
                 // Approved
                 if (count($notifyApproved) > 0) {

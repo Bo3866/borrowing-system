@@ -38,6 +38,7 @@ if ($dbError === '') {
 
     $wantedCols = [
         'reservation_id', 'user_id', 'approval_status', 'revision_data_json', 'revision_deadline',
+        'has_alcohol', 'has_fire', 'has_sales',
         'organization_name', 'activity_name', 'participant_count', 'staff_count', 'club_president',
         'activity_coordinator', 'coordinator_department', 'coordinator_phone', 'coordinator_other_contact',
         'vehicle_entry', 'setup_flags', 'flag_count', 'proposal_file', 'proposal_uploaded_at',
@@ -134,6 +135,9 @@ if ($dbError === '') {
                     'flag_count' => $reservationRow['flag_count'] ?? 0,
                     'proposal_file' => $reservationRow['proposal_file'] ?? '',
                     'proposal_uploaded_at' => $reservationRow['proposal_uploaded_at'] ?? '',
+                    'has_alcohol' => $reservationRow['has_alcohol'] ?? '',
+                    'has_fire' => $reservationRow['has_fire'] ?? '',
+                    'has_sales' => $reservationRow['has_sales'] ?? '',
                     'flag_count' => $reservationRow['flag_count'] ?? 0,
                     'purpose' => $reservationRow['purpose'] ?? '',
                     'borrow_start_at' => $reservationRow['borrow_start_at'] ?? '',
@@ -161,6 +165,9 @@ if ($dbError === '') {
                     'vehicle_entry' => trim((string)($_POST['vehicle_entry'] ?? 'no')),
                     'setup_flags' => trim((string)($_POST['setup_flags'] ?? 'no')),
                     'flag_count' => (int)($_POST['flag_count'] ?? 0),
+                    'has_alcohol' => isset($_POST['has_alcohol']) ? '1' : '',
+                    'has_fire' => isset($_POST['has_fire']) ? '1' : '',
+                    'has_sales' => isset($_POST['has_sales']) ? '1' : '',
                     'purpose' => trim((string)($_POST['purpose'] ?? '')),
                 ];
 
@@ -415,13 +422,52 @@ if ($dbError === '') {
 
                             <div class="form-group" style="margin-top: 20px; border-top: 1px solid #ccc; padding-top: 15px;">
                                 <label>特殊需求</label>
-                                <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                                <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: center;">
                                     <label style="display: flex; align-items: center; gap: 8px; margin: 0;">
                                         <input type="checkbox" name="vehicle_entry" value="yes" <?php echo (($revisionData['vehicle_entry'] ?? '') === 'yes') ? 'checked' : ''; ?>>
                                         <span>需要車輛進場</span>
                                     </label>
+                                    <div style="display:flex; align-items:center; gap:12px; margin-left: 8px;">
+                                        <span style="font-weight:600;">插立旗幟</span>
+                                        <label style="display:flex; align-items:center; gap:8px; margin:0;">
+                                            <input type="radio" name="setup_flags" value="no" style="margin:0;" <?php echo (($revisionData['setup_flags'] ?? 'no') === 'no') ? 'checked' : ''; ?> onchange="toggleFlagDetailsAmend()"> 否
+                                        </label>
+                                        <label style="display:flex; align-items:center; gap:8px; margin:0;">
+                                            <input type="radio" name="setup_flags" value="yes" style="margin:0;" <?php echo (($revisionData['setup_flags'] ?? '') === 'yes') ? 'checked' : ''; ?> onchange="toggleFlagDetailsAmend()"> 是
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div id="flagDetailsSectionAmend" style="display: none; margin-top:12px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:12px;">
+                                    <div style="display:flex; gap:12px; align-items:center;">
+                                        <label style="margin:0;">旗幟數量</label>
+                                        <input type="number" name="flag_count" min="1" max="20" value="<?php echo htmlspecialchars((string)($revisionData['flag_count'] ?? 0), ENT_QUOTES, 'UTF-8'); ?>" style="width:100px;">
+                                    </div>
+                                    <div style="margin-top:8px;">
+                                        <label style="display:flex; align-items:center; gap:8px; margin:0;">
+                                            <input type="checkbox" name="flag_agree" value="1" <?php echo (isset($revisionData['flag_agree']) && $revisionData['flag_agree']) ? 'checked' : ''; ?>>
+                                            <span>我已閱讀並同意旗幟插立注意事項</span>
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
+                                <div class="form-group" style="margin-top: 12px;">
+                                    <label>特殊項目（請勾選適用項目）</label>
+                                    <div style="display:flex; gap:20px; margin-top:8px; align-items:center;">
+                                        <label style="display:flex; align-items:center; gap:8px; margin:0;">
+                                            <input type="checkbox" name="has_fire" value="1" <?php echo (($revisionData['has_fire'] ?? '') === '1') ? 'checked' : ''; ?>>
+                                            <span>明火</span>
+                                        </label>
+                                        <label style="display:flex; align-items:center; gap:8px; margin:0;">
+                                            <input type="checkbox" name="has_alcohol" value="1" <?php echo (($revisionData['has_alcohol'] ?? '') === '1') ? 'checked' : ''; ?>>
+                                            <span>含酒精</span>
+                                        </label>
+                                        <label style="display:flex; align-items:center; gap:8px; margin:0;">
+                                            <input type="checkbox" name="has_sales" value="1" <?php echo (($revisionData['has_sales'] ?? '') === '1') ? 'checked' : ''; ?>>
+                                            <span>販售活動</span>
+                                        </label>
+                                    </div>
+                                </div>
 
                             <div class="form-group" style="margin-top: 15px;">
                                 <label for="purpose">用途說明 <span style="color:red">*</span></label>
@@ -496,6 +542,19 @@ if ($dbError === '') {
             </section>
         </main>
     </div>
+    <script>
+        function toggleFlagDetailsAmend() {
+            try {
+                const yes = document.querySelector('input[name="setup_flags"][value="yes"]');
+                const section = document.getElementById('flagDetailsSectionAmend');
+                if (!section || !yes) return;
+                section.style.display = yes.checked ? 'block' : 'none';
+            } catch (e) { /* ignore */ }
+        }
+        document.addEventListener('DOMContentLoaded', function(){
+            toggleFlagDetailsAmend();
+        });
+    </script>
 </body>
 </html>
 <?php }

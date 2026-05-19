@@ -456,6 +456,10 @@ if ($dbError === '' && count($rows) > 0) {
                                                             $statusLabel = $approvalStatus;
                                                             if ($approvalStatus === 'rejected') {
                                                                 $statusLabel = '審核未通過';
+                                                            } elseif ($approvalStatus === 'need_revision') {
+                                                                $statusLabel = '需要補件';
+                                                            } elseif ($approvalStatus === 'pending') {
+                                                                $statusLabel = '待審核';
                                                             }
                                                             echo '<span class="return-status return-status-pending">' . htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8') . '</span>';
                                                         }

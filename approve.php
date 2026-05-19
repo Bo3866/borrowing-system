@@ -80,7 +80,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
             $notifyNeedRevision = [];
             $userEmailNameMap = [];
 
+            // prepare a diagnostic query to collect current states for each reservation
+            $diagStmt = mysqli_prepare($link, 'SELECT reservation_id, approval_status, approval_stage, updated_at FROM reservations WHERE reservation_id = ?');
+            $diagnostics = [];
+
             foreach ($reservationIds as $reservationId) {
+                if ($diagStmt) {
+                    mysqli_stmt_bind_param($diagStmt, 'i', $reservationId);
+                    mysqli_stmt_execute($diagStmt);
+                    $dres = mysqli_stmt_get_result($diagStmt);
+                    $diagnostics[$reservationId] = $dres ? mysqli_fetch_assoc($dres) : null;
+                }
                 // If approval_stage exists, enforce stage-based approval
                 if ($hasApprovalStage) {
                     $selStmt = mysqli_prepare($link, 'SELECT approval_stage, approval_status FROM reservations WHERE reservation_id = ? FOR UPDATE');
@@ -101,24 +111,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
 
                     // Only allow user to process if their role matches the current approval stage
                     $canProcess = false;
-                    if ($currentRole === '2') {
-                        $canProcess = ($currentApprovalStage === '3');
-                    } elseif ($currentRole === '3') {
-                        // role 3 can process both 'd' (課指組) and '3' (最終)
-                        $canProcess = in_array($currentApprovalStage, ['d', '3'], true);
+                    // allow these roles to request revision regardless of stage
+                    if ($_POST['action'] === 'request_revision' && in_array($currentRole, ['a', 'b', 'c', '3'], true)) {
+                        $canProcess = true;
                     } else {
-                        $canProcess = ($currentRole === $currentApprovalStage);
+                        if ($currentRole === '2') {
+                            $canProcess = ($currentApprovalStage === '3');
+                        } elseif ($currentRole === '3') {
+                            // role 3 can process both 'd' (課指組) and '3' (最終)
+                            $canProcess = in_array($currentApprovalStage, ['d', '3'], true);
+                        } else {
+                            $canProcess = ($currentRole === $currentApprovalStage);
+                        }
                     }
                     if (!$canProcess) {
+                        error_log(sprintf('approve.php: skip reservation %d - role %s cannot process stage %s for action %s', $reservationId, $currentRole, $currentApprovalStage, $_POST['action']));
                         continue;
                     }
 
                     if ($_POST['action'] === 'request_revision') {
-                        $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET approval_status = ?, updated_at = NOW(), revision_deadline = CONCAT(DATE_ADD(CURDATE(), INTERVAL 1 DAY), " 23:59:59") WHERE reservation_id = ? AND approval_status = "pending"');
-                        if (!$updateStmt) throw new RuntimeException('準備要求補件失敗：' . mysqli_error($link));
-                        mysqli_stmt_bind_param($updateStmt, 'si', $action, $reservationId);
+                        // Build a snapshot of existing reservation columns (only columns that exist)
+                        $cols = [];
+                        $colRes = mysqli_query($link, "SHOW COLUMNS FROM reservations");
+                        if ($colRes) {
+                            while ($crow = mysqli_fetch_assoc($colRes)) {
+                                $cols[] = $crow['Field'];
+                            }
+                        }
+
+                        $candidates = [
+                            'organization_name','activity_name','participant_count','staff_count',
+                            'club_president','activity_coordinator','coordinator_department','coordinator_phone',
+                            'coordinator_other_contact','vehicle_entry','setup_flags','purpose',
+                            'borrow_start_at','borrow_end_at','space_id','proposal_file','proposal_uploaded_at'
+                        ];
+                        $useCols = array_values(array_intersect($candidates, $cols));
+                        $snapshotData = null;
+                        if (!empty($useCols)) {
+                            $selSql = 'SELECT ' . implode(', ', $useCols) . ' FROM reservations WHERE reservation_id = ? FOR UPDATE';
+                            $selS = mysqli_prepare($link, $selSql);
+                            if ($selS) {
+                                mysqli_stmt_bind_param($selS, 'i', $reservationId);
+                                mysqli_stmt_execute($selS);
+                                $rres = mysqli_stmt_get_result($selS);
+                                $snapshotData = $rres ? mysqli_fetch_assoc($rres) : null;
+                                mysqli_stmt_close($selS);
+                            }
+                        }
+
+                        $revisionDataJson = $snapshotData ? json_encode($snapshotData, JSON_UNESCAPED_UNICODE) : null;
+
+                        // update approval_status and store revision snapshot atomically
+                        $updateSql = 'UPDATE reservations SET approval_status = ?, updated_at = NOW(), revision_deadline = CONCAT(DATE_ADD(CURDATE(), INTERVAL 1 DAY), " 23:59:59"), revision_data_json = ? WHERE reservation_id = ? AND approval_status = "pending"';
+                        $updateStmt = mysqli_prepare($link, $updateSql);
+                        if (!$updateStmt) {
+                            error_log('approve.php: prepare UPDATE request_revision failed: ' . mysqli_error($link));
+                            throw new RuntimeException('準備要求補件失敗：' . mysqli_error($link));
+                        }
+                        mysqli_stmt_bind_param($updateStmt, 'ssi', $action, $revisionDataJson, $reservationId);
+                        error_log(sprintf('approve.php: about to execute request_revision UPDATE reservation=%d user=%s role=%s pre_status=%s pre_stage=%s', $reservationId, $currentUserId, $currentRole, $row['approval_status'] ?? 'NULL', $currentApprovalStage));
                         mysqli_stmt_execute($updateStmt);
                         $affected = mysqli_stmt_affected_rows($updateStmt);
+                        if ($affected <= 0) {
+                            error_log(sprintf('approve.php: UPDATE affected=0 for reservation %d action=request_revision status=%s stage=%s mysqli_err=%s', $reservationId, $row['approval_status'] ?? 'NULL', $currentApprovalStage, mysqli_error($link)));
+                        }
                         mysqli_stmt_close($updateStmt);
                         if ($affected > 0) {
                             $totalAffected++;
@@ -307,7 +363,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
             }
 
             if ($totalAffected <= 0) {
-                throw new RuntimeException('更新失敗：申請可能已被審核或您無權處理所選項目。');
+                $details = [];
+                foreach ($reservationIds as $rid) {
+                    if (!isset($diagnostics[$rid]) || $diagnostics[$rid] === null) {
+                        $details[] = "#{$rid}=<no row>";
+                    } else {
+                        $d = $diagnostics[$rid];
+                        $details[] = sprintf('#%d=status=%s,stage=%s,updated_at=%s', $rid, $d['approval_status'] ?? 'NULL', $d['approval_stage'] ?? 'NULL', $d['updated_at'] ?? 'NULL');
+                    }
+                }
+                throw new RuntimeException('更新失敗：申請可能已被審核或您無權處理所選項目。詳細：' . implode(' ; ', $details));
             }
 
             mysqli_commit($link);

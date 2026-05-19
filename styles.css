@@ -804,6 +804,30 @@ h3 {
     }
 }
 
+/* ===== History page simplified styles ===== */
+.history-header { display:flex; flex-direction:column; gap:12px; margin-bottom:16px; }
+.summary-cards-simple { display:flex; gap:12px; flex-wrap:wrap; }
+.summary-card-simple { background:#fff; border:1px solid #e6eef7; border-radius:10px; padding:12px 14px; min-width:160px; box-shadow:none; }
+.summary-card-simple h4 { margin:0 0 6px 0; color:#334e68; font-size:0.95rem; }
+.summary-card-simple .big { font-weight:700; color:#102a43; font-size:1.1rem; }
+.filters-inline { display:flex; gap:8px; align-items:center; margin-top:8px; }
+.filters-inline .tabs { display:flex; gap:8px; }
+.filters-inline .tab { padding:6px 10px; border-radius:8px; background:transparent; border:1px solid transparent; cursor:pointer; color:#254b63; }
+.filters-inline .tab.active { background:#f1f7fb; border-color:#d6e9ff; }
+.filters-inline .search-input { padding:8px 10px; border-radius:8px; border:1px solid #dbeaf6; min-width:240px; }
+.filters-inline .status-select { padding:8px 10px; border-radius:8px; border:1px solid #dbeaf6; }
+.management-table { width:100%; border-collapse:collapse; background:#fff; border:1px solid #e8f0f7; }
+.management-table thead th { background:#0f1724; color:#fff; padding:10px 12px; text-align:left; font-weight:700; }
+.management-table tbody td { padding:10px 12px; border-top:1px solid #f1f6fb; vertical-align:top; }
+.management-table tbody tr:nth-child(odd) { background:#fbfdff; }
+.management-table tbody tr:hover { background:#f4fbff; }
+.filter-hint { color:#6b7b88; font-size:0.95rem; }
+
+@media (max-width:900px) {
+    .summary-cards-simple { justify-content:space-between; }
+    .filters-inline { flex-direction:column; align-items:stretch; gap:10px; }
+}
+
 /* ===== 篩選區域 ===== */
 .filter-section {
     background: white;

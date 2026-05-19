@@ -70,6 +70,19 @@ if ($dbError === '') {
         }
     }
 
+    // 自動遷移：確保 checked_in_at 欄位存在（報到時間）
+    if ($dbError === '') {
+        try {
+            if (!in_array('checked_in_at', $reservationColumns, true)) {
+                $migrationSql = 'ALTER TABLE reservations ADD COLUMN checked_in_at DATETIME NULL COMMENT "報到時間"';
+                mysqli_query($link, $migrationSql);
+                $reservationColumns[] = 'checked_in_at';
+            }
+        } catch (Throwable $e) {
+            // 忽略列已存在錯誤
+        }
+    }
+
     // 自動遷移：確保 rejection_reason 欄位存在
     if ($dbError === '') {
         try {
@@ -282,6 +295,8 @@ if ($dbError === '') {
                 r.updated_at,
                 (r.returned_at IS NOT NULL) AS return_confirmed,
                 r.returned_at AS return_confirmed_at,
+                r.checked_in_at AS checked_in_at,
+                (r.checked_in_at IS NOT NULL) AS checked_in,
                 (
                     SELECT GROUP_CONCAT(DISTINCT ec.equipment_code ORDER BY ec.equipment_code SEPARATOR ', ')
                     FROM equipment_reservation_items eri
@@ -415,6 +430,7 @@ if ($dbError === '' && count($rows) > 0) {
 
                                             $isReturned = (int)$row['return_confirmed'] === 1;
                                             $approvalStatus = (string)$row['approval_status'];
+                                            $isCheckedIn = isset($row['checked_in']) && (int)$row['checked_in'] === 1;
                                             $approvalStage = (string)($row['approval_stage'] ?? 'a');
 
                                             // Map approval stages to step indices (for the stepper)
@@ -470,12 +486,14 @@ if ($dbError === '' && count($rows) > 0) {
                                                 <?php if ($isReturned) { ?>
                                                     <span class="return-status return-status-ok">已離場</span>
                                                     <br><small>時間: <?php echo htmlspecialchars((string)$row['return_confirmed_at'], ENT_QUOTES, 'UTF-8'); ?></small>
-                                                <?php } elseif ($approvalStatus === 'approved') { ?>
+                                                <?php } elseif ($approvalStatus === 'approved' && $isCheckedIn) { ?>
                                                     <form method="post" style="margin-top: 8px;" onclick="event.stopPropagation();">
                                                         <input type="hidden" name="action" value="confirm_return">
                                                         <input type="hidden" name="reservation_id" value="<?php echo (int)$row['reservation_id']; ?>">
                                                         <button type="submit" class="btn-secondary" style="font-size: 12px; padding: 4px 12px;" onclick="return confirm('確認此申請已歸還或離場？')">確認歸還／離場</button>
                                                     </form>
+                                                <?php } elseif ($approvalStatus === 'approved' && ! $isCheckedIn) { ?>
+                                                    <span class="return-status return-status-pending">已核准，尚未報到</span>
                                                 <?php } else { ?>
                                                     <span class="return-status return-status-pending">不可離場</span>
                                                 <?php } ?>

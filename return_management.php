@@ -410,12 +410,13 @@ if ($dbError === '' && count($rows) > 0) {
                                     <th>借用時段</th>
                                     <th>借用項目</th>
                                     <th>狀態</th>
+                                    <th>修改</th>
                                     <th>歸還</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if (count($rows) === 0) { ?>
-                                    <tr><td colspan="6">目前沒有可顯示的申請資料。</td></tr>
+                                    <tr><td colspan="7">目前沒有可顯示的申請資料。</td></tr>
                                 <?php } else { ?>
                                     <?php foreach ($rows as $row) { ?>
                                         <?php
@@ -482,6 +483,13 @@ if ($dbError === '' && count($rows) > 0) {
                                                     }
                                                 ?>
                                             </td>
+                                            <td style="text-align: center;">
+                                                <?php if ($approvalStatus === 'pending') { ?>
+                                                    <a href="edit_application.php?reservation_id=<?php echo (int)$row['reservation_id']; ?>" class="btn-primary" style="display:inline-block; padding:6px 12px; text-decoration:none; font-size:12px; border-radius:6px;" onclick="event.stopPropagation();">修改申請</a>
+                                                <?php } else { ?>
+                                                    -
+                                                <?php } ?>
+                                            </td>
                                             <td>
                                                 <?php if ($isReturned) { ?>
                                                     <span class="return-status return-status-ok">已離場</span>
@@ -501,7 +509,7 @@ if ($dbError === '' && count($rows) > 0) {
                                         </tr>
                                         <!-- 展開式進度條 -->
                                         <tr class="accordion-content" id="accordion-<?php echo (int)$row['reservation_id']; ?>" style="display: none;">
-                                            <td colspan="6">
+                                            <td colspan="7">
                                                 <?php
                                                     // Prepare approved/rejected stage lists and timestamps for this row
                                                     $approvedStages = [];

@@ -132,6 +132,14 @@ $approvalMap = [
         'class' => 'bg-red-50 text-red-700 border-red-200/60'
     ],
 ];
+
+// approval stage code -> human readable label
+$stageMap = [
+    'a' => '學務長教師',
+    'b' => '軍訓室教師',
+    'c' => '輔導人員',
+    'd' => '課指組審核',
+];
 ?>
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -151,6 +159,17 @@ $approvalMap = [
     </style>
     <!-- FontAwesome 圖示庫 -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        /* Center main content and limit width for a denser layout */
+        .container.main-content {
+            max-width: 1200px !important;
+            margin: 0 auto !important;
+            padding-right: 1rem !important;
+            padding-left: 1rem !important;
+        }
+        /* ensure grid occupies the full width inside the centered container */
+        .container.main-content .grid.grid-cols-12 { width: 100%; }
+    </style>
     <!-- Google Fonts: Noto Sans TC -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -175,6 +194,31 @@ $approvalMap = [
             background: #94a3b8;
         }
     </style>
+    <style>
+        /* Conservative readability adjustments to avoid layout shifts */
+        .container.main-content h5 { font-size: 1.125rem; }
+        /* Drawer adjustments */
+        #detail-drawer { font-size: 15px; }
+        /* Applicant ID badge (increase visibility) */
+        .applicant-badge {
+            font-size: 0.95rem !important;
+            padding: 0.25rem 0.6rem !important;
+            background-color: #f1f5f9 !important;
+            color: #475569 !important;
+            border-radius: 8px !important;
+            display: inline-block;
+            text-align: center;
+        }
+        /* Increase small helper text (timestamps, small meta) for readability */
+        .container.main-content .text-xs,
+        .container.main-content .text-[10px],
+        .container.main-content .text-[11px],
+        .container.main-content .font-mono,
+        .container.main-content .text-slate-400 {
+            font-size: 1rem !important;
+            line-height: 1.25 !important;
+        }
+    </style>
 </head>
 <body class="history-page">
 
@@ -193,6 +237,11 @@ $approvalMap = [
     <!-- 2. 主要內容區 (使用您的 container / main-content 骨架包覆) -->
     <div class="container main-content">
 
+        <!-- 頁面標題 -->
+        <div class="page-header mb-4">
+            <h2 class="text-2xl font-bold">借用紀錄查詢</h2>
+        </div>
+
         <!-- 資料庫錯誤提示區 -->
         <?php if ($dbError !== '') { ?>
             <div class="bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-xl text-sm flex items-center gap-3 shadow-xs">
@@ -208,7 +257,7 @@ $approvalMap = [
                     <div>
                         <p style="color:#64748b;margin:0;font-weight:600;">總借用次數</p>
                         <h3 style="font-size:1.5rem;margin:6px 0;color:var(--text-color);font-weight:700;"><?php echo number_format($totalCount); ?></h3>
-                        <p style="font-size:0.85rem;color:#94a3b8;margin:0;">系統最多保留 2000 筆</p>
+                        <p style="font-size:0.85rem;color:#94a3b8;margin:0;">最多 2000 筆</p>
                     </div>
                     <div style="width:44px;height:44px;border-radius:10px;background:#f8fafc;display:flex;align-items:center;justify-content:center;color:#64748b;border:1px solid rgba(44,62,80,0.06);">
                         <i class="fa-solid fa-list-ol"></i>
@@ -220,7 +269,7 @@ $approvalMap = [
                     <div>
                         <p style="color:#64748b;margin:0;font-weight:600;">需要補件</p>
                         <h3 style="font-size:1.5rem;margin:6px 0;color:#d97706;font-weight:700;"><?php echo number_format($needRevisionCount); ?> <span style="font-size:0.9rem;color:#94a3b8;font-weight:400;">件</span></h3>
-                        <p style="font-size:0.85rem;color:#d97706;margin:0;">待使用者修改</p>
+                        <p style="font-size:0.85rem;color:#d97706;margin:0;">待修改</p>
                     </div>
                     <div style="width:44px;height:44px;border-radius:10px;background:#fff7ed;display:flex;align-items:center;justify-content:center;color:#d97706;border:1px solid rgba(217,119,6,0.08);">
                         <i class="fa-solid fa-file-pen"></i>
@@ -232,7 +281,7 @@ $approvalMap = [
                     <div>
                         <p style="color:#64748b;margin:0;font-weight:600;">逾期未歸還</p>
                         <h3 style="font-size:1.5rem;margin:6px 0;color:#e11d48;font-weight:700;"><?php echo number_format($overdueCount); ?> <span style="font-size:0.9rem;color:#94a3b8;font-weight:400;">件</span></h3>
-                        <p style="font-size:0.85rem;color:#e11d48;margin:0;">需啟動催收聯絡</p>
+                        <p style="font-size:0.85rem;color:#e11d48;margin:0;">需催收</p>
                     </div>
                     <div style="width:44px;height:44px;border-radius:10px;background:#fff0f6;display:flex;align-items:center;justify-content:center;color:#e11d48;border:1px solid rgba(225,29,72,0.08);">
                         <i class="fa-solid fa-hourglass-end"></i>
@@ -244,7 +293,7 @@ $approvalMap = [
                     <div>
                         <p style="color:#64748b;margin:0;font-weight:600;">今日已完成報到</p>
                         <h3 style="font-size:1.5rem;margin:6px 0;color:#059669;font-weight:700;"><?php echo number_format($todayCheckedIn); ?> <span style="font-size:0.9rem;color:#94a3b8;font-weight:400;">場次</span></h3>
-                        <p style="font-size:0.85rem;color:#059669;margin:0;">今日簽到成功率</p>
+                        <p style="font-size:0.85rem;color:#059669;margin:0;">今日簽到</p>
                     </div>
                     <div style="width:44px;height:44px;border-radius:10px;background:#ecfdf5;display:flex;align-items:center;justify-content:center;color:#059669;border:1px solid rgba(5,150,105,0.08);">
                         <i class="fa-solid fa-clipboard-user"></i>
@@ -268,15 +317,13 @@ $approvalMap = [
                 </button>
             </div>
 
-            <div class="text-xs text-slate-400 font-medium hidden lg:flex items-center gap-1.5">
-                <i class="fa-solid fa-circle-info"></i> 顯示最多最近 2000 筆紀錄。按 Enter 發送搜尋。
-            </div>
+            
 
             <!-- 搜尋與狀態下拉選單 -->
             <div class="flex items-center gap-3 w-full lg:w-auto lg:flex-1 lg:max-w-xl">
                 <div class="relative flex-1">
                     <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
-                          <input id="q" type="text" <?php if ($q !== '') { echo 'value="' . htmlspecialchars($q, ENT_QUOTES, 'UTF-8') . '"'; } ?> placeholder="搜尋申請人姓名、學工號、Email、器材或場地..." 
+                          <input id="q" type="text" <?php if ($q !== '') { echo 'value="' . htmlspecialchars($q, ENT_QUOTES, 'UTF-8') . '"'; } ?> placeholder="搜尋姓名/學號/Email/器材/場地" 
                               class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition">
                 </div>
                 <select id="statusFilter" class="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-lg px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:bg-white cursor-pointer shrink-0">
@@ -292,12 +339,9 @@ $approvalMap = [
         <!-- 表格表頭設計（重新計算比例，移除編號欄，完美對齊） -->
         <div class="bg-slate-800 text-slate-200 px-6 py-4 rounded-t-xl text-xs font-semibold grid grid-cols-12 gap-4 items-center shadow-xs">
             <div class="col-span-3 pl-2">申請人</div>
-            <div class="col-span-3">借用時段</div>
-            <div class="col-span-3.5">資源內容</div>
-            <div class="col-span-1 text-center">審核狀態</div>
-            <div class="col-span-0.5"></div>
-            <div class="col-span-1 text-center">報到 / 歸還</div>
-            <div class="col-span-1 text-right pr-2">送出時間</div>
+            <div class="col-span-4">借用時段</div>
+            <div class="col-span-3">資源內容</div>
+            <div class="col-span-2 text-center">審核狀態</div>
         </div>
 
         <!-- 歷史紀錄列表容器 (Record List PHP loop) -->
@@ -335,27 +379,27 @@ $approvalMap = [
                          data-return="<?php echo $r['returned_at'] ? htmlspecialchars((string)$r['returned_at'], ENT_QUOTES, 'UTF-8') : '—'; ?>"
                          data-equipments="<?php echo htmlspecialchars((string)$r['equipment_names'], ENT_QUOTES, 'UTF-8'); ?>"
                          data-spaces="<?php echo htmlspecialchars((string)$r['space_names'], ENT_QUOTES, 'UTF-8'); ?>"
-                         data-stage="<?php echo htmlspecialchars((string)($r['approval_stage'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
+                         data-stage="<?php echo htmlspecialchars((string)(isset($r['approval_status']) && $r['approval_status'] === 'approved' ? '已完成' : ($stageMap[$r['approval_stage'] ?? ''] ?? ($r['approval_stage'] ?? ''))), ENT_QUOTES, 'UTF-8'); ?>">
                         
                         <!-- 1. 申請人 (佔 3 格極寬裕) -->
                         <div class="col-span-3 min-w-0 pl-2">
                             <h5 class="font-bold text-slate-800 text-sm truncate group-hover:text-indigo-600 transition flex items-center gap-1.5">
                                 <?php echo htmlspecialchars($r['full_name'], ENT_QUOTES, 'UTF-8'); ?>
-                                <span class="text-[10px] bg-slate-100 text-slate-500 font-mono px-1.5 py-0.5 rounded">
+                                <span class="applicant-badge text-[10px] bg-slate-100 text-slate-500 font-mono px-1.5 py-0.5 rounded">
                                     <?php echo htmlspecialchars($r['applicant_user_id'], ENT_QUOTES, 'UTF-8'); ?>
                                 </span>
                             </h5>
-                            <p class="text-slate-400 text-xs font-mono truncate mt-0.5"><?php echo htmlspecialchars((string)$r['email'], ENT_QUOTES, 'UTF-8'); ?></p>
+                            
                         </div>
 
-                        <!-- 2. 借用時段 (佔 3 格) -->
-                        <div class="col-span-3 font-mono text-xs text-slate-600 leading-tight">
+                        <!-- 2. 借用時段 (佔 4 格) -->
+                        <div class="col-span-4 font-mono text-xs text-slate-600 leading-tight">
                             <div class="flex items-center gap-1.5"><i class="fa-regular fa-clock text-[10px] text-slate-400"></i> <?php echo htmlspecialchars((string)$r['borrow_start_at'], ENT_QUOTES, 'UTF-8'); ?></div>
                             <div class="flex items-center gap-1.5 mt-1 text-slate-400">至 <?php echo htmlspecialchars((string)$r['borrow_end_at'], ENT_QUOTES, 'UTF-8'); ?></div>
                         </div>
 
-                        <!-- 3. 資源內容標籤群 (佔 3.5 格) -->
-                        <div class="col-span-3.5">
+                        <!-- 3. 資源內容標籤群 (佔 3 格) -->
+                        <div class="col-span-3">
                             <div class="flex flex-col gap-1.5 max-w-full">
                                 <?php if (empty($equipments) && empty($spaces)) { ?>
                                     <span class="text-slate-400 text-xs">-</span>
@@ -380,7 +424,7 @@ $approvalMap = [
                         </div>
 
                         <!-- 4. 審核狀態 -->
-                        <div class="col-span-1 text-center">
+                        <div class="col-span-2 text-center">
                             <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold border <?php echo $statusConf['class']; ?>">
                                 <?php if ($statusKey === 'need_revision') { ?>
                                     <span class="w-1.5 h-1.5 rounded-full bg-orange-500 animate-ping"></span>
@@ -389,31 +433,9 @@ $approvalMap = [
                             </span>
                         </div>
 
-                        <div class="col-span-0.5"></div>
+                        <!-- 報到 / 歸還 欄已移除 -->
 
-                        <!-- 5. 報到 / 歸還 -->
-                        <div class="col-span-1 text-center font-mono text-[11px] leading-tight text-slate-500">
-                            <div class="<?php echo $r['checked_in_at'] ? 'text-emerald-600 font-medium' : ''; ?>">
-                                <?php echo $r['checked_in_at'] ? '已簽到' : '—'; ?>
-                            </div>
-                            <div class="text-[10px] text-slate-400 mt-0.5 truncate">
-                                <?php echo $r['returned_at'] ? '已點收' : '未歸還'; ?>
-                            </div>
-                        </div>
-
-                        <!-- 6. 送出時間與詳情指標 -->
-                        <div class="col-span-1 text-right font-mono text-[11px] text-slate-400 flex items-center justify-end gap-2">
-                            <span>
-                                <?php 
-                                    $dt = explode(' ', (string)$r['submitted_at']);
-                                    echo htmlspecialchars($dt[0] ?? '', ENT_QUOTES, 'UTF-8'); 
-                                    if (isset($dt[1])) {
-                                        echo "<br><span class=\"text-[10px] text-slate-300\">{$dt[1]}</span>";
-                                    }
-                                ?>
-                            </span>
-                            <i class="fa-solid fa-chevron-right text-xs text-slate-300 group-hover:text-indigo-500 transition ml-1"></i>
-                        </div>
+                        <!-- 6. 送出時間欄已移除 -->
 
                     </div>
                 <?php } ?>
@@ -441,20 +463,7 @@ $approvalMap = [
         <!-- Drawer Content -->
         <div class="space-y-6">
             
-            <!-- 審核與補件動態提示區 -->
-            <div id="patch-alert-box" class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800 space-y-2 hidden">
-                <div class="flex items-center gap-2 font-bold text-sm">
-                    <i class="fa-solid fa-circle-exclamation text-amber-600 text-base"></i>
-                    <span>需要補件說明 / 審核階段</span>
-                </div>
-                <p id="patch-reason" class="text-slate-600 leading-relaxed">
-                    本案借用尚未上傳對應申請文件，請點擊下方聯絡使用者補件。
-                </p>
-                <div class="pt-2 flex gap-2">
-                    <a id="drawer-email-btn" href="#" class="bg-amber-600 text-white px-3 py-1.5 rounded-md font-medium hover:bg-amber-700 transition">Email通知補件</a>
-                    <button onclick="location.href='approve.php'" class="bg-white border border-amber-300 text-slate-700 px-3 py-1.5 rounded-md font-medium hover:bg-slate-50 transition">前往審核面板處理</button>
-                </div>
-            </div>
+            <!-- 補件提示區已移除 -->
 
             <!-- 申請人詳情卡片 -->
             <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
@@ -632,7 +641,6 @@ $approvalMap = [
                             </div>
                             <div>
                                 <p class="font-bold text-slate-800 text-xs">${eq}</p>
-                                <p class="text-[10px] text-slate-400 mt-0.5">校級公共設備器材</p>
                             </div>
                         </div>
                     </div>
@@ -649,7 +657,6 @@ $approvalMap = [
                             </div>
                             <div>
                                 <p class="font-bold text-slate-800 text-xs">${sp}</p>
-                                <p class="text-[10px] text-slate-400 mt-0.5">專屬學術空間場地</p>
                             </div>
                         </div>
                     </div>
@@ -660,13 +667,7 @@ $approvalMap = [
                 resourcesContainer.innerHTML = `<p class="text-slate-400 text-xs text-center py-2">無申請項目資訊</p>`;
             }
 
-            // 控制補件提示的顯示
-            const patchBox = document.getElementById('patch-alert-box');
-            if (status === 'need_revision') {
-                patchBox.classList.remove('hidden');
-            } else {
-                patchBox.classList.add('hidden');
-            }
+            // 補件提示區已移除，不再顯示
 
             // 開啟 Drawer 的動畫效果
             const overlay = document.getElementById('drawer-overlay');
@@ -690,6 +691,29 @@ $approvalMap = [
                 overlay.classList.add('hidden');
             }, 300);
         }
+    </script>
+    <script>
+        // 強制在 DOM 載入後調整小字字級，確保樣式不被現有框架覆寫
+        document.addEventListener('DOMContentLoaded', function () {
+            try {
+                const sel = '.container.main-content .text-xs, .container.main-content .text-[10px], .container.main-content .text-[11px], .container.main-content .font-mono, .container.main-content .text-slate-400';
+                document.querySelectorAll(sel).forEach(el => {
+                    el.style.fontSize = '1rem';
+                    el.style.lineHeight = '1.25';
+                });
+
+                // Drawer and badge adjustments
+                const drawer = document.getElementById('detail-drawer');
+                if (drawer) drawer.style.fontSize = '15px';
+
+                document.querySelectorAll('.applicant-badge').forEach(el => {
+                    el.style.fontSize = '0.95rem';
+                    el.style.padding = '0.25rem 0.6rem';
+                });
+            } catch (e) {
+                console.warn('Font adjust script error', e);
+            }
+        });
     </script>
 </body>
 </html>

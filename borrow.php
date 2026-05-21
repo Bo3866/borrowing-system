@@ -1179,9 +1179,9 @@ SQL;
                                         <select id="participant_count" name="participant_count" class="" required style="padding: 8px;">
                                             <option value="" <?php echo (($formData['participant_count'] ?? '') === '') ? 'selected' : ''; ?>>請選擇</option>
                                             <option value="50人以下" <?php echo (($formData['participant_count'] ?? '') === '50人以下') ? 'selected' : ''; ?>>50人以下</option>
-                                            <option value="50~100人" <?php echo (($formData['participant_count'] ?? '') === '50~100人') ? 'selected' : ''; ?>>50~100人</option>
-                                            <option value="100~200人" <?php echo (($formData['participant_count'] ?? '') === '100~200人') ? 'selected' : ''; ?>>100~200人</option>
-                                            <option value="200人以上" <?php echo (($formData['participant_count'] ?? '') === '200人以上') ? 'selected' : ''; ?>>200人以上</option>
+                                            <option value="51~100人" <?php echo (($formData['participant_count'] ?? '') === '51~100人') ? 'selected' : ''; ?>>51~100人</option>
+                                            <option value="101~200人" <?php echo (($formData['participant_count'] ?? '') === '101~200人') ? 'selected' : ''; ?>>101~200人</option>
+                                            <option value="201人以上" <?php echo (($formData['participant_count'] ?? '') === '201人以上') ? 'selected' : ''; ?>>201人以上</option>
                                         </select>
                                     </div>
                                     <div class="form-group" style="flex: 1; min-width: 150px;">
@@ -1190,10 +1190,10 @@ SQL;
                                     </div>
                                 </div>
                                 <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
-                                    // <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
-                                    //     <label for="club_president">社 / 會長 <span style="color:red">*</span></label>
-                                    //     <input type="text" id="club_president" name="club_president" class="" placeholder="請輸入姓名" value="<?php echo htmlspecialchars($formData['club_president'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
-                                    // </div>
+                                    <!-- <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
+                                         <label for="club_president">社 / 會長 <span style="color:red">*</span></label>
+                                         <input type="text" id="club_president" name="club_president" class="" placeholder="請輸入姓名" value="<?php echo htmlspecialchars($formData['club_president'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
+                                    </div> -->
                                     <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                                         <label for="activity_coordinator">活動負責人<span style="color:red">*</span></label>
                                         <input type="text" id="activity_coordinator" name="activity_coordinator" class="form-control" placeholder="請輸入活動負責人姓名" value="<?php echo htmlspecialchars($formData['activity_coordinator'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
@@ -1248,7 +1248,7 @@ SQL;
                                         ?>
                                         <select name="borrow_start_time_h" class="form-control" required style="padding: 8px; width: 80px;">
                                             <option value="">選擇</option>
-                                            <?php for($h=0; $h<=23; $h++) { 
+                                            <?php for($h=7; $h<=22; $h++) { 
                                                 $selected = ($curBsh !== '' && $curBsh === $h) ? 'selected' : '';
                                             ?>
                                                 <option value="<?php echo $h; ?>" <?php echo $selected; ?>><?php echo $h; ?></option>
@@ -1259,7 +1259,11 @@ SQL;
                                         <select name="borrow_start_time_m" class="form-control" required style="padding: 8px; width: 80px;">
                                             <option value="">選擇</option>
                                             <option value="00" <?php echo ($curBsm !== '' && $curBsm === 00) ? 'selected' : ''; ?>>00</option>
+                                            <option value="10" <?php echo ($curBsm !== '' && $curBsm === 10) ? 'selected' : ''; ?>>10</option>
+                                            <option value="20" <?php echo ($curBsm !== '' && $curBsm === 20) ? 'selected' : ''; ?>>20</option>
                                             <option value="30" <?php echo ($curBsm !== '' && $curBsm === 30) ? 'selected' : ''; ?>>30</option>
+                                            <option value="40" <?php echo ($curBsm !== '' && $curBsm === 40) ? 'selected' : ''; ?>>40</option>
+                                            <option value="50" <?php echo ($curBsm !== '' && $curBsm === 50) ? 'selected' : ''; ?>>50</option>
                                         </select>
                                         <span>分</span>
                                     </div>
@@ -1279,7 +1283,7 @@ SQL;
                                         ?>
                                         <select name="borrow_end_time_h" class="form-control" required style="padding: 8px; width: 80px;">
                                             <option value="">選擇</option>
-                                            <?php for($h=0; $h<=23; $h++) { 
+                                            <?php for($h=7; $h<=22; $h++) { 
                                                 $selected = ($curBeh !== '' && $curBeh === $h) ? 'selected' : '';
                                             ?>
                                                 <option value="<?php echo $h; ?>" <?php echo $selected; ?>><?php echo $h; ?></option>
@@ -1290,7 +1294,11 @@ SQL;
                                         <select name="borrow_end_time_m" class="form-control" required style="padding: 8px; width: 80px;">
                                             <option value="">選擇</option>
                                             <option value="00" <?php echo ($curBem !== '' && $curBem === 00) ? 'selected' : ''; ?>>00</option>
+                                            <option value="10" <?php echo ($curBem !== '' && $curBem === 10) ? 'selected' : ''; ?>>10</option>
+                                            <option value="20" <?php echo ($curBem !== '' && $curBem === 20) ? 'selected' : ''; ?>>20</option>
                                             <option value="30" <?php echo ($curBem !== '' && $curBem === 30) ? 'selected' : ''; ?>>30</option>
+                                            <option value="40" <?php echo ($curBsm !== '' && $curBsm === 40) ? 'selected' : ''; ?>>40</option>
+                                            <option value="50" <?php echo ($curBsm !== '' && $curBsm === 50) ? 'selected' : ''; ?>>50</option>
                                         </select>
                                         <span>分</span>
                                     </div>
@@ -3585,10 +3593,8 @@ function getMinDateByParticipantCount(countValue) {
         d.setDate(d.getDate() + 30);
         return d;
     } else {
-        // 一般情況：7 天後 (日曆天)
-        let d = new Date();
-        d.setDate(d.getDate() + 7);
-        return d;
+        // 一般情況：7 個工作天後
+        return getWorkingDaysFromToday(7);
     }
 }
 

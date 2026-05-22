@@ -393,13 +393,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
                 $mail->isSMTP();
                 $mail->Host       = 'smtp.gmail.com';
                 $mail->SMTPAuth   = true;
-                $mail->Username   = 'right.jing0104@gmail.com';
-                $mail->Password   = 'hwarm0625.0603';
+                $mail->Username   = 'sasa0522522@gmail.com';
+                $mail->Password   = 'jvtc kohj khyb yjbn';
                 $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
                 $mail->Port       = 465;
                 $mail->CharSet    = 'UTF-8';
 
-                $mail->setFrom('right.jing0104@gmail.com', '器材借用系統');
+                $mail->setFrom('sasa0522522@gmail.com', '器材借用系統');
 
                 // Approved
                 if (count($notifyApproved) > 0) {

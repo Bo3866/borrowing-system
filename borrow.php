@@ -1430,7 +1430,28 @@ SQL;
                                 </label>
                             </div>
 
+<div id="alcoholDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:8px;">
+                                <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
+                                    酒精使用申請表
+                                </div>
+                                <div style="padding: 20px;">
+                                    <p style="color: #64748b; font-size: 14px; margin-bottom: 0;">此為酒精使用申請區域（將依據您的後續需求建立內容）。</p>
+                                    <!-- 之後會在這裡建立酒精相關欄位 -->
+                                </div>
+                            </div>
+
                                 <script>
+                                function isAlcoholEnabled() {
+                                    const checkedAlc = document.querySelector('input[name="has_alcohol"]');
+                                    return checkedAlc && checkedAlc.checked;
+                                }
+
+                                function toggleAlcoholDetails() {
+                                    const alcSection = document.getElementById('alcoholDetailsSection');
+                                    if (!alcSection) return;
+                                    alcSection.style.display = isAlcoholEnabled() ? 'block' : 'none';
+                                }
+
                                 function isFlagEnabled() {
                                     const checkedFlag = document.querySelector('input[name="setup_flags"]:checked');
                                     return checkedFlag && checkedFlag.value === 'yes';
@@ -1598,6 +1619,9 @@ SQL;
                                         if (el) {
                                             el.addEventListener('change', function() {
                                                 validateStartDate();
+                                                if (name === 'has_alcohol' && typeof toggleAlcoholDetails === 'function') {
+                                                    toggleAlcoholDetails();
+                                                }
                                             });
                                         }
                                     });
@@ -1617,6 +1641,10 @@ SQL;
 
                                     toggleFlagDetails();
                                     syncFlagForm();
+                                    
+                                    if (typeof toggleAlcoholDetails === 'function') {
+                                        toggleAlcoholDetails();
+                                    }
 
                                     // 註解掉避免重複綁定 saveDraft
                                     // const saveBtns = document.querySelectorAll('.saveDraftBtn');
@@ -3801,6 +3829,10 @@ document.addEventListener('DOMContentLoaded', function () {
         // 若原本函式存在，再跑一次，讓日期與顯示狀態同步
         if (typeof window.toggleFlagDetails === 'function') {
             window.toggleFlagDetails();
+        }
+        
+        if (typeof window.toggleAlcoholDetails === 'function') {
+            window.toggleAlcoholDetails();
         }
 
         if (typeof window.syncFlagForm === 'function') {

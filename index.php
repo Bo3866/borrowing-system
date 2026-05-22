@@ -177,6 +177,13 @@ if ($link) {
                         <p>目前系統運作順暢，審核與通知服務皆在線。</p>
                         <span class="status-badge">穩定運行</span>
                     </div>
+                    <?php if ($currentRole === '9') { ?>
+                    <div class="card dashboard-card">
+                        <h3>🤝 交接排程</h3>
+                        <p>查看已核准申請並新增器材交接時間，方便現場交接作業。</p>
+                        <button class="btn-primary" onclick="location.href='handover_schedule.php'">前往排程</button>
+                    </div>
+                    <?php } ?>
                 </div>
 
                 <div class="card dashboard-qr-card">

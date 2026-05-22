@@ -19,6 +19,10 @@ $isManager = $isManager ?? in_array($currentRole, ['2','3','a','b','c'], true);
             <button class="nav-btn" onclick="location.href='history_all.php'">歷史借用紀錄</button>
         <?php } ?>
 
+        <?php if ($currentRole === '9') { ?>
+            <button class="nav-btn" onclick="location.href='handover_schedule.php'">器材交接排程</button>
+        <?php } ?>
+
         <?php if ($isManager) { ?>
             <button class="nav-btn" onclick="location.href='approve.php'">審核面板</button>
             <?php if (in_array($currentRole, ['2','3'], true)) { ?>

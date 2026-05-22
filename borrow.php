@@ -1209,7 +1209,7 @@ SQL;
                                 </div>
 
                                 <div class="form-group" style="margin-top: 10px;">
-                                    <label>活動特殊性質（可複選）</label>
+                                    <label>活動特殊性質（可複選）- 勾選則下一頁將出現表單</label>
                                     <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-top: 8px;">
                                         <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; white-space: nowrap;">
                                             <input type="checkbox" name="has_alcohol" value="1" <?php echo ($formData['has_alcohol'] === '1') ? 'checked' : ''; ?>>
@@ -1426,7 +1426,7 @@ SQL;
 
 <div id="alcoholDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:8px;">
                                 <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
-                                    酒精使用申請表
+                                    酒精飲品活動須知
                                 </div>
                                 <div style="padding: 20px;">
                                     <p style="color: #64748b; font-size: 14px; margin-bottom: 0;">此為酒精使用申請區域（將依據您的後續需求建立內容）。</p>

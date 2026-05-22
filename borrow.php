@@ -1426,15 +1426,68 @@ SQL;
 
 <div id="alcoholDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:8px;">
                                 <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
-                                    酒精飲品活動須知
+                                    輔仁大學學生自治組織暨社團辦理提供酒精飲品活動須知
                                 </div>
                                 <div style="padding: 20px;">
-                                    <p style="color: #64748b; font-size: 14px; margin-bottom: 0;">此為酒精使用申請區域（將依據您的後續需求建立內容）。</p>
-                                    <!-- 之後會在這裡建立酒精相關欄位 -->
+                                    <p style="color: #1e293b; font-size: 15px; margin-bottom: 15px; line-height: 1.6; font-weight: bold;">
+                                        關於本校學生社團活動具酒精飲品活動，為避免參與人員酒後行為脫序、危及自身或他人安全，或造成飲用人健康上之負擔，請確認以下事項皆已納入活動規劃，並遵守相關規範︰
+                                    </p>
+                                    
+                                    <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 25px;">
+                                        <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; margin-left: -20px; font-weight: bold; color: #3b82f6;">
+                                            <input type="checkbox" id="alcohol_agree_all" onchange="toggleAllAlcoholAgreements(this)" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
+                                            <span style="font-size: 15px; line-height: 1.6;">同意全部</span>
+                                        </label>
+                                        <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                                            <input type="checkbox" name="alcohol_agree_1" value="yes" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
+                                            <span style="font-size: 15px; line-height: 1.6;">辦理活動供應酒精性飲品者，需於活動申請時，於企劃書中敘明酒精飲品種類、準備數量、活動形式，連同活動申請表及本須知於活動前一個月送至課外活動指導組。</span>
+                                        </label>
+                                        <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                                            <input type="checkbox" name="alcohol_agree_2" value="yes" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
+                                            <span style="font-size: 15px; line-height: 1.6;">為避免同學酒後行為脫序、危及自身或他人安全，或造成飲用人健康上之負擔，請於企劃書敘明失序行為因應措施。</span>
+                                        </label>
+                                        <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                                            <input type="checkbox" name="alcohol_agree_3" value="yes" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
+                                            <span style="font-size: 15px; line-height: 1.6;">於活動期間主辦單位務必於活動現場明顯處所加註「未滿十八歲請勿購買/領取酒精性飲品」及「飲酒過量有害身體健康」與「禁止酒駕」之警語，提醒活動參與者避免飲酒過量。</span>
+                                        </label>
+                                        <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                                            <input type="checkbox" name="alcohol_agree_4" value="yes" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
+                                            <span style="font-size: 15px; line-height: 1.6;">依「兒童及少年福利與權益保障法」規定，販賣、交付或供應酒或檳榔予兒童及少年者，處新臺幣一萬元以上十萬元以下罰鍰。主辦單位應要求活動中發送或販賣酒精飲料之人員核對領取/購買人身分證明文件，並禁止對未滿十八歲之人發送或販賣。</span>
+                                        </label>
+                                        <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                                            <input type="checkbox" name="alcohol_agree_5" value="yes" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
+                                            <span style="font-size: 15px; line-height: 1.6;">主辦單位應提供《辦理提供酒精飲品活動理性飲酒同意書》 供有飲酒意願之參加人員簽署，並提醒參加人員有關警語所示事項(包含未滿十八歲請勿飲酒，於活動中飲用酒精飲料者不得駕駛汽車、機車、腳踏車等)。於活動結束翌日(遇例假日順延)將該同意書送至課外活動指導組備查</span>
+                                        </label>
+                                    </div>
+
+                                    <div style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 20px; align-items: center; background: #f8fafc; padding: 20px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <label for="alcohol_coordinator" style="margin: 0; font-size: 15px; font-weight: bold; white-space: nowrap;">活動負責人</label>
+                                            <input type="text" id="alcohol_coordinator" name="alcohol_coordinator" placeholder="姓名" style="width: 150px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <label for="alcohol_president" style="margin: 0; font-size: 15px; font-weight: bold; white-space: nowrap;">社長</label>
+                                            <input type="text" id="alcohol_president" name="alcohol_president" placeholder="姓名" style="width: 150px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
+                                        </div>
+                                        <span style="font-size: 15px; color: #1e293b; font-weight: bold;">已知悉以上事項，願負一切責任。</span>
+                                    </div>
+                                    
+                                    <p style="color: #000; font-size: 15px; font-weight: bold; margin-bottom: 0; text-align: center;">
+                                        活動時所有接觸酒精飲品與會者請簽署酒精飲品活動理性飲酒同意書，請於活動結束翌日(遇例假日順延)送課指組備查。
+                                    </p>
                                 </div>
                             </div>
 
                                 <script>
+                                function toggleAllAlcoholAgreements(source) {
+                                    const checkboxes = document.querySelectorAll('input[name^="alcohol_agree_"]');
+                                    checkboxes.forEach(function(cb) {
+                                        if(cb !== source) {
+                                            cb.checked = source.checked;
+                                        }
+                                    });
+                                }
+
                                 function isAlcoholEnabled() {
                                     const checkedAlc = document.querySelector('input[name="has_alcohol"]');
                                     return checkedAlc && checkedAlc.checked;
@@ -1443,7 +1496,47 @@ SQL;
                                 function toggleAlcoholDetails() {
                                     const alcSection = document.getElementById('alcoholDetailsSection');
                                     if (!alcSection) return;
-                                    alcSection.style.display = isAlcoholEnabled() ? 'block' : 'none';
+                                    const show = isAlcoholEnabled();
+                                    alcSection.style.display = show ? 'block' : 'none';
+                                    
+                                    // 依據顯示狀態啟用或禁用子欄位，避免隱藏時被驗證或送出
+                                    alcSection.querySelectorAll('input').forEach(function(el) {
+                                        if (show) {
+                                            el.removeAttribute('disabled');
+                                        } else {
+                                            el.setAttribute('disabled', 'disabled');
+                                        }
+                                    });
+                                }
+
+                                function validateAlcoholForm() {
+                                    if (!isAlcoholEnabled()) return true;
+                                    
+                                    const checkboxes = document.querySelectorAll('#alcoholDetailsSection input[type="checkbox"]');
+                                    let allChecked = true;
+                                    checkboxes.forEach(function(cb) {
+                                        if (!cb.checked) allChecked = false;
+                                    });
+                                    
+                                    const coordinator = document.getElementById('alcohol_coordinator').value.trim();
+                                    const president = document.getElementById('alcohol_president').value.trim();
+                                    
+                                    if (!allChecked) {
+                                        alert('請先勾選並確認遵守「酒精飲品活動須知」的所有規範事項。');
+                                        return false;
+                                    }
+                                    
+                                    if (!coordinator) {
+                                        alert('請填寫「酒精飲品活動須知」的活動負責人。');
+                                        return false;
+                                    }
+                                    
+                                    if (!president) {
+                                        alert('請填寫「酒精飲品活動須知」的社長。');
+                                        return false;
+                                    }
+                                    
+                                    return true;
                                 }
 
                                 function isFlagEnabled() {
@@ -1659,7 +1752,7 @@ SQL;
 
                                 <div class="step-actions">
                                     <button type="button" class="btn btn-secondary" onclick="goToStep(1)"> ⬅ 回上一步</button>
-                                    <button type="button" class="btn btn-primary btn-next" onclick="goToStep(3)">下一步 ➔ 挑選器材與場地</button>
+                                    <button type="button" class="btn btn-primary btn-next" onclick="if(validateAlcoholForm()) { goToStep(3); }">下一步 ➔ 挑選器材與場地</button>
                                 </div>
 
                                 <div class="draft-action-row">

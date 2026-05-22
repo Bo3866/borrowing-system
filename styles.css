@@ -40,7 +40,6 @@ body {
 .navbar {
     background: linear-gradient(135deg, var(--primary-color) 0%, #34495e 100%);
     color: white;
-    /* navbar background spans full width; use small horizontal padding so content can distribute */
     padding: 1rem 1rem;
     display: flex;
     justify-content: space-between;
@@ -50,7 +49,15 @@ body {
     position: sticky;
     top: 0;
     z-index: 1000;
+    
+    /* 🛠️ 修改與新增的關鍵屬性 */
     width: 100%;
+    box-sizing: border-box; /* 關鍵：確保 padding 不會把 100% 寬度額外撐大 */
+}
+
+/* 🛠️ 在 CSS 檔案的最頂端（全域設定）加入這段 */
+html {
+    scrollbar-gutter: stable; /* 關鍵：鎖定右側滾動條空間，防止內容因滾动條隱現而左右抖動 */
 }
 
 .navbar-brand h1 {
@@ -61,12 +68,15 @@ body {
 
 .navbar-menu {
     display: flex;
-    gap: 1rem;
-    flex: 1 1 auto;
-    justify-content: space-between; /* distribute items across full width */
+    gap: 1rem;          /* 關鍵：按鈕與按鈕之間只維持固定的 1rem (16px) 間距 */
+    
+    /* 修正部分 */
+    flex: 0 1 auto;     /* 改為不主動放大填滿 */
+    justify-content: flex-end; /* 讓所有分頁按鈕自然地往右邊靠攏對齊 */
+    
     align-items: center;
-    flex-wrap: nowrap; /* force single-line layout */
-    overflow-x: auto; /* allow horizontal scroll when too many items */
+    flex-wrap: nowrap;  /* 強制單行排版 */
+    overflow-x: auto;   /* 當項目過多時允許水平滾動 */
 }
 
 .nav-btn {
@@ -1811,7 +1821,7 @@ h3 {
     color: #856404;
     border: 1px solid #ffeeba;
 }
-}
+
 
 .stepper-track {
     display: flex;

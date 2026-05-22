@@ -495,7 +495,7 @@ try {
 <body>
 
 <nav class="navbar">
-    <div class="navbar-brand"><h1>校園資源租借系統</h1></div>
+    <div class="navbar-brand"><h1>📚校園資源租借系統</h1></div>
     <div class="navbar-menu">
         <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
         <button class="nav-btn" onclick="location.href='approve.php'">審核面板</button>

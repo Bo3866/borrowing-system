@@ -235,13 +235,13 @@ if ($dbError === '') {
                                     $mail->isSMTP();
                                     $mail->Host       = 'smtp.gmail.com';
                                     $mail->SMTPAuth   = true;
-                                    $mail->Username   = 'right.jing0104@gmail.com';
-                                    $mail->Password   = 'hwarm0625.0603';
+                                    $mail->Username   = 'sasa0522522@gmail.com';
+                                    $mail->Password   = 'jvtc kohj khyb yjbn';
                                     $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
                                     $mail->Port       = 465;
                                     $mail->CharSet    = 'UTF-8';
 
-                                    $mail->setFrom('right.jing0104@gmail.com', '器材借用系統');
+                                    $mail->setFrom('sasa0522522@gmail.com', '器材借用系統');
                                     $mail->addAddress($userRow['email'], $userRow['full_name']);
 
                                     $mail->isHTML(true);
@@ -377,18 +377,20 @@ if ($dbError === '' && count($rows) > 0) {
         .stepper-text { white-space: nowrap; }
         .stepper-subtext { white-space: nowrap; }
     </style>
-</head>
+ </head>
 <body>
+    <!-- 導覽列 放到 container 之外以讓背景拉滿整個視窗 -->
+    <nav class="navbar">
+        <div class="navbar-brand"><h1>📚 校園資源租借系統</h1></div>
+        <div class="navbar-menu">
+            <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
+            <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
+            <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['user_id'], ENT_QUOTES, 'UTF-8'); ?></button>
+            <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
+        </div>
+    </nav>
+
     <div class="container">
-        <nav class="navbar">
-            <div class="navbar-brand"><h1>📚 校園資源租借系統</h1></div>
-            <div class="navbar-menu">
-                <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
-                <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
-                <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['user_id'], ENT_QUOTES, 'UTF-8'); ?></button>
-                <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
-            </div>
-        </nav>
 
         <main class="main-content">
             <section class="card">

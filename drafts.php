@@ -92,20 +92,22 @@ if ($dbError === '') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>草稿箱｜校園資源租借系統</title>
     <link rel="stylesheet" href="styles.css?v=<?php echo time(); ?>">
-</head>
+ </head>
 <body>
+    <!-- 導覽列 放到 container 之外以讓背景拉滿整個視窗 -->
+    <nav class="navbar">
+        <div class="navbar-brand">
+            <h1>📋 草稿箱</h1>
+        </div>
+        <div class="navbar-menu">
+            <button class="nav-btn" onclick="location.href='borrow.php'">回借用頁面</button>
+            <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
+            <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8'); ?></button>
+            <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
+        </div>
+    </nav>
+
     <div class="container">
-        <nav class="navbar">
-            <div class="navbar-brand">
-                <h1>📋 草稿箱</h1>
-            </div>
-            <div class="navbar-menu">
-                <button class="nav-btn" onclick="location.href='borrow.php'">回借用頁面</button>
-                <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
-                <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8'); ?></button>
-                <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
-            </div>
-        </nav>
 
         <main class="main-content">
             <section class="borrow-page">

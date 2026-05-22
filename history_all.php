@@ -222,17 +222,7 @@ $stageMap = [
 </head>
 <body class="history-page">
 
-    <nav class="navbar">
-        <div class="navbar-brand"><h1>📚 校園資源租借系統</h1></div>
-        <div class="navbar-menu">
-            <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
-            <button class="nav-btn" onclick="location.href='borrow.php'">我要租借</button>
-            <button class="nav-btn" onclick="location.href='approve.php'">審核面板</button>
-            <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
-            <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8'); ?></button>
-            <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
-        </div>
-    </nav>
+    <?php include __DIR__ . '/nav.php'; ?>
 
     <!-- 2. 主要內容區 (使用您的 container / main-content 骨架包覆) -->
     <div class="container main-content">
@@ -499,6 +489,12 @@ $stageMap = [
                         <p class="font-medium text-slate-700">申請送出時間</p>
                         <p class="text-slate-500 mt-0.5" id="drawer-submitted-time">-</p>
                     </div>
+                    <div id="drawer-stage-inline-wrap" style="display:none;">
+                        <p class="mt-1 text-sm">
+                            <span id="drawer-stage-inline-label" class="text-xs text-slate-500 mr-2" style="display:inline;">目前審核階段：</span>
+                            <span id="drawer-stage-inline" class="inline-block text-[11px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-full">-</span>
+                        </p>
+                    </div>
                     <div class="relative">
                         <div class="absolute -left-[30px] top-0.5 w-4 h-4 rounded-full bg-emerald-50 border-2 border-emerald-500 flex items-center justify-center text-[8px] text-emerald-600"><i class="fa-solid fa-play"></i></div>
                         <p class="font-medium text-slate-700">借用起算時段</p>
@@ -602,6 +598,19 @@ $stageMap = [
             document.getElementById('drawer-end-time').innerText = end;
             document.getElementById('drawer-stage').innerText = stage;
             document.getElementById('drawer-status-label').innerText = statusLabel;
+            // populate inline stage badge in the timeline (visible at top of drawer)
+            const stageInlineWrap = document.getElementById('drawer-stage-inline-wrap');
+            const stageInlineEl = document.getElementById('drawer-stage-inline');
+            const stageInlineLabel = document.getElementById('drawer-stage-inline-label');
+            if (stageInlineWrap && stageInlineEl) {
+                if (stage && stage !== 'N/A' && stage !== '') {
+                    if (stageInlineLabel) stageInlineLabel.style.display = 'inline';
+                    stageInlineEl.textContent = stage;
+                    stageInlineWrap.style.display = 'block';
+                } else {
+                    stageInlineWrap.style.display = 'none';
+                }
+            }
 
             // 信箱通知按鈕
             const mailBtn = document.getElementById('drawer-email-btn');

@@ -36,6 +36,10 @@ if (!isset($_SESSION['user_id'])) {
 $userId = (string)$_SESSION['user_id'];
 $displayName = (string)($_SESSION['full_name'] ?? $_SESSION['user_id']);
 $roleName = (string)($_SESSION['role_name'] ?? '');
+// normalize role vars to match index.php usage
+$currentRole = $roleName;
+$isLoggedIn = isset($_SESSION['user_id']);
+$isManager = in_array($currentRole, ['2','3','a','b','c'], true);
 
 // 節次設定：可依附件節次代號與時間調整
 $periodSlots = [
@@ -847,12 +851,12 @@ SQL;
                                 $mail->isSMTP();
                                 $mail->Host       = 'smtp.gmail.com'; 
                                 $mail->SMTPAuth   = true;
-                                $mail->Username   = 'right.jing0104@gmail.com';
-                                $mail->Password   = 'hwarm0625.0603';      
+                                $mail->Username   = 'sasa0522522@gmail.com';
+                                $mail->Password   = 'jvtc kohj khyb yjbn';
                                 $mail->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
                                 $mail->Port       = 465;
                                 $mail->CharSet    = 'UTF-8';
-                                $mail->setFrom('right.jing0104@gmail.com', '器材借用系統');
+                                $mail->setFrom('sasa0522522@gmail.com', '器材借用系統');
                                 $mail->addAddress($userEmail, $displayName);
                                 $mail->isHTML(true);
                                 $mail->Subject = '【系統通知】預約申請已成功送出';
@@ -1097,19 +1101,9 @@ SQL;
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh-tw.js"></script>
 </head>
 <body>
-    <div class="container">
-        <nav class="navbar">
-            <div class="navbar-brand">
-                <h1>📚 校園資源租借系統</h1>
-            </div>
-            <div class="navbar-menu">
-                <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
-                <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
-                <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8'); ?></button>
-                <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
-            </div>
-        </nav>
+    <?php include __DIR__ . '/nav.php'; ?>
 
+    <div class="container">
         <main class="main-content">
             <section class="borrow-page">
                 <h2>申請</h2>

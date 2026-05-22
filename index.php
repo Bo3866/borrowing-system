@@ -110,38 +110,8 @@ if ($link) {
     </style>
 </head>
 <body>
+    <?php include __DIR__ . '/nav.php'; ?>
     <div class="container">
-        <!-- 導航欄 -->
-        <nav class="navbar">
-            <div class="navbar-brand">
-                <h1>📚 校園資源租借系統</h1>
-            </div>
-            <div class="navbar-menu">
-                <button class="nav-btn" onclick="navigateTo('dashboard')">首頁</button>
-                <button class="nav-btn" onclick="handleBorrowClick(event)">我要租借</button>
-                <button class="nav-btn" onclick="location.href='return_management.php'">我的申請</button>
-                
-                <?php if ($isManager) { ?>
-                    <button class="nav-btn" onclick="location.href='approve.php'">審核面板</button>
-                    <?php if (in_array($currentRole, ['2','3'], true)) { ?>
-                        <button class="nav-btn" id="btnManualRemind" type="button" onclick="handleManualRemindClick(event)">檢查逾期並催繳</button>
-                        <button class="nav-btn" onclick="location.href='equipment_inventory.php'">庫存管理</button>
-                    <?php } ?>
-                <?php if (in_array($currentRole, ['3'], true)) { ?>
-                    <button class="nav-btn" onclick="location.href='qr_admin.php'">生成報到 QR</button>
-                <?php } ?>
-                <?php } ?>
-                <?php if ($isManager || (isset($currentRole) && $currentRole === '1')) { ?>
-                    <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
-                <?php } ?>
-                <?php if ($isLoggedIn) { ?>
-                    <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8'); ?></button>
-                    <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
-                <?php } else { ?>
-                    <button class="nav-btn" onclick="location.href='login.php'">登入</button>
-                <?php } ?>
-            </div>
-        </nav>
 
         <!-- 主要內容區域 -->
         <main class="main-content">
@@ -207,6 +177,13 @@ if ($link) {
                         <p>目前系統運作順暢，審核與通知服務皆在線。</p>
                         <span class="status-badge">穩定運行</span>
                     </div>
+                    <?php if ($currentRole === '9') { ?>
+                    <div class="card dashboard-card">
+                        <h3>🤝 交接排程</h3>
+                        <p>查看已核准申請並新增器材交接時間，方便現場交接作業。</p>
+                        <button class="btn-primary" onclick="location.href='handover_schedule.php'">前往排程</button>
+                    </div>
+                    <?php } ?>
                 </div>
 
                 <div class="card dashboard-qr-card">

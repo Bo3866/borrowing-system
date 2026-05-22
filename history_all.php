@@ -222,17 +222,7 @@ $stageMap = [
 </head>
 <body class="history-page">
 
-    <nav class="navbar">
-        <div class="navbar-brand"><h1>📚 校園資源租借系統</h1></div>
-        <div class="navbar-menu">
-            <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
-            <button class="nav-btn" onclick="location.href='borrow.php'">我要租借</button>
-            <button class="nav-btn" onclick="location.href='approve.php'">審核面板</button>
-            <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
-            <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8'); ?></button>
-            <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
-        </div>
-    </nav>
+    <?php include __DIR__ . '/nav.php'; ?>
 
     <!-- 2. 主要內容區 (使用您的 container / main-content 骨架包覆) -->
     <div class="container main-content">

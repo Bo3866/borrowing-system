@@ -36,6 +36,10 @@ if (!isset($_SESSION['user_id'])) {
 $userId = (string)$_SESSION['user_id'];
 $displayName = (string)($_SESSION['full_name'] ?? $_SESSION['user_id']);
 $roleName = (string)($_SESSION['role_name'] ?? '');
+// normalize role vars to match index.php usage
+$currentRole = $roleName;
+$isLoggedIn = isset($_SESSION['user_id']);
+$isManager = in_array($currentRole, ['2','3','a','b','c'], true);
 
 // 節次設定：可依附件節次代號與時間調整
 $periodSlots = [
@@ -1097,18 +1101,7 @@ SQL;
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh-tw.js"></script>
 </head>
 <body>
-    <!-- 導航列 放到 container 之外以讓背景拉滿整個視窗 -->
-    <nav class="navbar">
-        <div class="navbar-brand">
-            <h1>📚 校園資源租借系統</h1>
-        </div>
-        <div class="navbar-menu">
-            <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
-            <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
-            <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8'); ?></button>
-            <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
-        </div>
-    </nav>
+    <?php include __DIR__ . '/nav.php'; ?>
 
     <div class="container">
         <main class="main-content">

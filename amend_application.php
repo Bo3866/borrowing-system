@@ -347,17 +347,7 @@ if ($dbError === '') {
 </head>
 <body>
     <!-- 導覽列 放到 container 之外以讓背景拉滿整個視窗 -->
-    <nav class="navbar">
-        <div class="navbar-brand">
-            <h1>📚 校園資源租借系統</h1>
-        </div>
-        <div class="navbar-menu">
-            <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
-            <button class="nav-btn" onclick="location.href='return_management.php'">申請管理</button>
-            <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8'); ?></button>
-            <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
-        </div>
-    </nav>
+        <?php include __DIR__ . '/nav.php'; ?>
 
     <div class="container">
 

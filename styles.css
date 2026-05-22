@@ -40,11 +40,8 @@ body {
 .navbar {
     background: linear-gradient(135deg, var(--primary-color) 0%, #34495e 100%);
     color: white;
-    /* navbar background spans full width; center inner content to max 1200px */
-    padding-top: 1rem;
-    padding-bottom: 1rem;
-    padding-left: max(1rem, calc((100% - 1200px) / 2));
-    padding-right: max(1rem, calc((100% - 1200px) / 2));
+    /* navbar background spans full width; use small horizontal padding so content can distribute */
+    padding: 1rem 1rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -59,12 +56,17 @@ body {
 .navbar-brand h1 {
     font-size: 1.8rem;
     font-weight: 600;
+    white-space: nowrap;
 }
 
 .navbar-menu {
     display: flex;
     gap: 1rem;
-    flex-wrap: wrap;
+    flex: 1 1 auto;
+    justify-content: space-between; /* distribute items across full width */
+    align-items: center;
+    flex-wrap: nowrap; /* force single-line layout */
+    overflow-x: auto; /* allow horizontal scroll when too many items */
 }
 
 .nav-btn {
@@ -77,6 +79,8 @@ body {
     transition: var(--transition);
     font-size: 0.95rem;
     font-weight: 500;
+
+    white-space: nowrap; /* keep button labels on one line */
 }
 
 .nav-btn:hover {

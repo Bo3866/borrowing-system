@@ -1097,19 +1097,20 @@ SQL;
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh-tw.js"></script>
 </head>
 <body>
-    <div class="container">
-        <nav class="navbar">
-            <div class="navbar-brand">
-                <h1>📚 校園資源租借系統</h1>
-            </div>
-            <div class="navbar-menu">
-                <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
-                <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
-                <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8'); ?></button>
-                <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
-            </div>
-        </nav>
+    <!-- 導航列 放到 container 之外以讓背景拉滿整個視窗 -->
+    <nav class="navbar">
+        <div class="navbar-brand">
+            <h1>📚 校園資源租借系統</h1>
+        </div>
+        <div class="navbar-menu">
+            <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
+            <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
+            <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8'); ?></button>
+            <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
+        </div>
+    </nav>
 
+    <div class="container">
         <main class="main-content">
             <section class="borrow-page">
                 <h2>申請</h2>

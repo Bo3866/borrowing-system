@@ -40,7 +40,11 @@ body {
 .navbar {
     background: linear-gradient(135deg, var(--primary-color) 0%, #34495e 100%);
     color: white;
-    padding: 1rem 2rem;
+    /* navbar background spans full width; center inner content to max 1200px */
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+    padding-left: max(1rem, calc((100% - 1200px) / 2));
+    padding-right: max(1rem, calc((100% - 1200px) / 2));
     display: flex;
     justify-content: space-between;
     align-items: center;

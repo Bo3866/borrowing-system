@@ -777,16 +777,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         });
     </script>
-</head>
+ </head>
 <body>
+    <!-- 導覽列 放到 container 之外以讓背景拉滿整個視窗 -->
+    <nav class="navbar">
+        <div class="navbar-brand"><h1>📚 校園資源租借系統</h1></div>
+        <div class="navbar-menu">
+            <button class="nav-btn" onclick="location.href='index.php'"><i class="fas fa-home"></i> 回首頁</button>
+            <button class="nav-btn" onclick="location.href='logout.php'"><i class="fas fa-sign-out-alt"></i> 登出</button>
+        </div>
+    </nav>
+
     <div class="container">
-        <nav class="navbar">
-            <div class="navbar-brand"><h1>📚 校園資源租借系統</h1></div>
-            <div class="navbar-menu">
-                <button class="nav-btn" onclick="location.href='index.php'"><i class="fas fa-home"></i> 回首頁</button>
-                <button class="nav-btn" onclick="location.href='logout.php'"><i class="fas fa-sign-out-alt"></i> 登出</button>
-            </div>
-        </nav>
 
         <main class="main-content">
             <div class="card maintenance-card">

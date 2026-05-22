@@ -100,7 +100,7 @@ if (!isset($_SESSION['user_id'])) {
 <div class="draft-container">
     <div class="draft-header">
         <h2>📂 草稿箱</h2>
-        <a href="borrow.php" class="btn-back">頁</a>
+        <a href="borrow.php" class="btn-back">回申請頁面</a>
     </div>
 
     <div id="draftList"></div>

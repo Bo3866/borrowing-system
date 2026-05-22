@@ -36,10 +36,6 @@ if (!isset($_SESSION['user_id'])) {
 $userId = (string)$_SESSION['user_id'];
 $displayName = (string)($_SESSION['full_name'] ?? $_SESSION['user_id']);
 $roleName = (string)($_SESSION['role_name'] ?? '');
-// normalize role vars to match index.php usage
-$currentRole = $roleName;
-$isLoggedIn = isset($_SESSION['user_id']);
-$isManager = in_array($currentRole, ['2','3','a','b','c'], true);
 
 // 節次設定：可依附件節次代號與時間調整
 $periodSlots = [
@@ -257,7 +253,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['has_sales'] = isset($_POST['has_sales']) ? '1' : '';
     $formData['setup_flags'] = trim((string)($_POST['setup_flags'] ?? 'no'));
     $formData['flag_count'] = (int)($_POST['flag_count'] ?? 1);
+    // Flag-specific fields (sync/backfill from step1 when not provided)
+    $formData['flag_organization_name'] = trim((string)($_POST['flag_organization_name'] ?? $formData['organization_name']));
+    $formData['flag_activity_name'] = trim((string)($_POST['flag_activity_name'] ?? $formData['activity_name']));
+    $formData['flag_responsible_person'] = trim((string)($_POST['flag_responsible_person'] ?? $formData['activity_coordinator']));
+    $formData['flag_contact_phone'] = trim((string)($_POST['flag_contact_phone'] ?? $formData['coordinator_phone']));
     $formData['flag_agreement'] = isset($_POST['flag_agreement']) ? '1' : '';
+    $formData['has_alcohol'] = isset($_POST['has_alcohol']) ? '1' : '';
+    $formData['has_fire'] = isset($_POST['has_fire']) ? '1' : '';
+    $formData['has_sales'] = isset($_POST['has_sales']) ? '1' : '';
     $formData['space_id'] = trim((string)($_POST['space_id'] ?? ''));
     $formData['borrow_start_date'] = trim((string)($_POST['borrow_start_date'] ?? ''));
     
@@ -308,8 +312,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (strtotime($borrowStartAtSql) < time()) {
                 $borrowError = '借用開始時間不可為過去時間。';
             } elseif (strtotime($borrowEndAtSql) <= strtotime($borrowStartAtSql)) {
-                $borrowError = '結束時間不可早於或等於開始時間。';
+                $borrowError = '活動結束時間必須晚於活動開始時間。';
             } else {
+                $startDateOnly = strtotime($formData['borrow_start_date']);
+                $endDateOnly = strtotime($formData['borrow_end_date']);
+
+                if ($startDateOnly !== false && $endDateOnly !== false) {
+                    $diffDays = (int)ceil(($endDateOnly - $startDateOnly) / 86400);
+
+                    if ($diffDays > 4) {
+                        $borrowError = '活動天數最多不可超過 4 天，請重新選擇。';
+                    }
+                }
             }
         }
 
@@ -429,8 +443,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $borrowError = '宣傳旗幟最多只能選 20 支。';
         } elseif ($formData['setup_flags'] === 'yes' && $formData['flag_count'] < 1) {
             $borrowError = '宣傳旗幟數量至少為 1 支。';
-        } elseif ($formData['setup_flags'] === 'yes' && empty($formData['flag_agreement'])) {
-            $borrowError = '您必須勾選同意旗幟插立各項注意事項及無條件承擔賠償責任聲明。';
+        } elseif ($formData['setup_flags'] === 'yes' && !isset($_POST['flag_agreement'])) {
+            $borrowError = '請勾選：已閱讀並同意旗幟插立注意事項。';
         } elseif ($formData['setup_flags'] === 'yes' && $formData['borrow_start_date'] !== '' && strtotime($formData['borrow_start_date']) < strtotime('+7 weekdays', strtotime(date('Y-m-d')))) {
             $borrowError = '插立旗幟使用日期只能選 7 個工作天之後的日期。';
         } else {
@@ -440,13 +454,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $formData['has_fire'] === '1' || 
                 $formData['has_sales'] === '1' || 
                 $formData['participant_count'] === '100~200人' || 
-                $formData['participant_count'] === '200人以上'
+                $formData['participant_count'] === '200人以上' ||
+                (isset($formData['staff_count']) && (int)$formData['staff_count'] >= 100)
             ) {
                 $requires30Days = true;
             }
 
-            if ($requires30Days && $formData['borrow_start_date'] !== '' && strtotime($formData['borrow_start_date']) < strtotime('+30 days', strtotime(date('Y-m-d')))) {
-                $borrowError = '包含特殊性質（酒精、明火、攤販或超過100人）的活動，必須在 30 天之前申請。';
+            $min30Timestamp = strtotime('+30 days', strtotime(date('Y-m-d')));
+
+            if ($requires30Days && $formData['borrow_start_date'] !== '' && strtotime($formData['borrow_start_date']) < $min30Timestamp) {
+                $borrowError = '包含特殊性質（酒精、明火、攤販或超過100人）的活動，開始日期必須在 30 天之後。';
+            } elseif ($requires30Days && $formData['borrow_end_date'] !== '' && strtotime($formData['borrow_end_date']) < $min30Timestamp) {
+                $borrowError = '包含特殊性質（酒精、明火、攤販或超過100人）的活動，結束日期也必須在 30 天之後。';
             } elseif ($formData['setup_flags'] === 'yes' && $formData['borrow_start_date'] !== '' && strtotime($formData['borrow_start_date']) < strtotime('+7 weekdays', strtotime(date('Y-m-d')))) {
                 $borrowError = '插立旗幟使用日期只能選 7 個工作天之後的日期。';
             } else {
@@ -851,12 +870,12 @@ SQL;
                                 $mail->isSMTP();
                                 $mail->Host       = 'smtp.gmail.com'; 
                                 $mail->SMTPAuth   = true;
-                                $mail->Username   = 'sasa0522522@gmail.com';
-                                $mail->Password   = 'jvtc kohj khyb yjbn';
+                                $mail->Username   = 'right.jing0104@gmail.com';
+                                $mail->Password   = 'hwarm0625.0603';      
                                 $mail->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
                                 $mail->Port       = 465;
                                 $mail->CharSet    = 'UTF-8';
-                                $mail->setFrom('sasa0522522@gmail.com', '器材借用系統');
+                                $mail->setFrom('right.jing0104@gmail.com', '器材借用系統');
                                 $mail->addAddress($userEmail, $displayName);
                                 $mail->isHTML(true);
                                 $mail->Subject = '【系統通知】預約申請已成功送出';
@@ -1101,9 +1120,19 @@ SQL;
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh-tw.js"></script>
 </head>
 <body>
-    <?php include __DIR__ . '/nav.php'; ?>
-
     <div class="container">
+        <nav class="navbar">
+            <div class="navbar-brand">
+                <h1>📚 校園資源租借系統</h1>
+            </div>
+            <div class="navbar-menu">
+                <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
+                <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
+                <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8'); ?></button>
+                <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
+            </div>
+        </nav>
+
         <main class="main-content">
             <section class="borrow-page">
                 <h2>申請</h2>
@@ -1173,9 +1202,9 @@ SQL;
                                         <select id="participant_count" name="participant_count" class="" required style="padding: 8px;">
                                             <option value="" <?php echo (($formData['participant_count'] ?? '') === '') ? 'selected' : ''; ?>>請選擇</option>
                                             <option value="50人以下" <?php echo (($formData['participant_count'] ?? '') === '50人以下') ? 'selected' : ''; ?>>50人以下</option>
-                                            <option value="51~100人" <?php echo (($formData['participant_count'] ?? '') === '51~100人') ? 'selected' : ''; ?>>51~100人</option>
-                                            <option value="101~200人" <?php echo (($formData['participant_count'] ?? '') === '101~200人') ? 'selected' : ''; ?>>101~200人</option>
-                                            <option value="201人以上" <?php echo (($formData['participant_count'] ?? '') === '201人以上') ? 'selected' : ''; ?>>201人以上</option>
+                                            <option value="50~100人" <?php echo (($formData['participant_count'] ?? '') === '50~100人') ? 'selected' : ''; ?>>50~100人</option>
+                                            <option value="100~200人" <?php echo (($formData['participant_count'] ?? '') === '100~200人') ? 'selected' : ''; ?>>100~200人</option>
+                                            <option value="200人以上" <?php echo (($formData['participant_count'] ?? '') === '200人以上') ? 'selected' : ''; ?>>200人以上</option>
                                         </select>
                                     </div>
                                     <div class="form-group" style="flex: 1; min-width: 150px;">
@@ -1183,16 +1212,7 @@ SQL;
                                         <input type="number" id="staff_count" name="staff_count" class="form-control" placeholder="請輸入人數" min="1" required>
                                     </div>
                                 </div>
-                                <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
-                                    <!-- <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
-                                         <label for="club_president">社 / 會長 <span style="color:red">*</span></label>
-                                         <input type="text" id="club_president" name="club_president" class="" placeholder="請輸入姓名" value="<?php echo htmlspecialchars($formData['club_president'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
-                                    </div> -->
-                                    <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
-                                        <label for="activity_coordinator">活動負責人<span style="color:red">*</span></label>
-                                        <input type="text" id="activity_coordinator" name="activity_coordinator" class="form-control" placeholder="請輸入活動負責人姓名" value="<?php echo htmlspecialchars($formData['activity_coordinator'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
-                                </div>
+                             
                                 <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
                                     <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                                         <label for="coordinator_department">系級<span style="color:red">*</span></label>
@@ -1208,20 +1228,20 @@ SQL;
                                     <input type="text" id="coordinator_other_contact" name="coordinator_other_contact" class="form-control" placeholder="請輸入其他聯絡方式（如 Email）" value="<?php echo htmlspecialchars($formData['coordinator_other_contact'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                 </div>
 
-                                <div class="form-group" style="margin-top: 10px;">
-                                    <label>活動特殊性質（可複選）- 勾選則下一頁將出現表單</label>
-                                    <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-top: 8px;">
-                                        <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; white-space: nowrap;">
-                                            <input type="checkbox" name="has_alcohol" value="1" <?php echo ($formData['has_alcohol'] === '1') ? 'checked' : ''; ?>>
-                                            <span>有酒精</span>
-                                        </label>
-                                        <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; white-space: nowrap;">
+                                <div class="form-group" style="margin-top: 12px;">
+                                    <label>特殊項目（請勾選適用項目）</label>
+                                    <div style="display:flex; gap:20px; margin-top:8px; align-items:center;">
+                                        <label style="display:flex; align-items:center; gap:8px; margin:0;">
                                             <input type="checkbox" name="has_fire" value="1" <?php echo ($formData['has_fire'] === '1') ? 'checked' : ''; ?>>
-                                            <span>有明火</span>
+                                            <span>明火</span>
                                         </label>
-                                        <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; white-space: nowrap;">
+                                        <label style="display:flex; align-items:center; gap:8px; margin:0;">
+                                            <input type="checkbox" name="has_alcohol" value="1" <?php echo ($formData['has_alcohol'] === '1') ? 'checked' : ''; ?>>
+                                            <span>含酒精</span>
+                                        </label>
+                                        <label style="display:flex; align-items:center; gap:8px; margin:0;">
                                             <input type="checkbox" name="has_sales" value="1" <?php echo ($formData['has_sales'] === '1') ? 'checked' : ''; ?>>
-                                            <span>需擺攤販售</span>
+                                            <span>販售活動</span>
                                         </label>
                                     </div>
                                 </div>
@@ -1242,7 +1262,7 @@ SQL;
                                         ?>
                                         <select name="borrow_start_time_h" class="form-control" required style="padding: 8px; width: 80px;">
                                             <option value="">選擇</option>
-                                            <?php for($h=7; $h<=22; $h++) { 
+                                            <?php for($h=0; $h<=23; $h++) { 
                                                 $selected = ($curBsh !== '' && $curBsh === $h) ? 'selected' : '';
                                             ?>
                                                 <option value="<?php echo $h; ?>" <?php echo $selected; ?>><?php echo $h; ?></option>
@@ -1253,11 +1273,7 @@ SQL;
                                         <select name="borrow_start_time_m" class="form-control" required style="padding: 8px; width: 80px;">
                                             <option value="">選擇</option>
                                             <option value="00" <?php echo ($curBsm !== '' && $curBsm === 00) ? 'selected' : ''; ?>>00</option>
-                                            <option value="10" <?php echo ($curBsm !== '' && $curBsm === 10) ? 'selected' : ''; ?>>10</option>
-                                            <option value="20" <?php echo ($curBsm !== '' && $curBsm === 20) ? 'selected' : ''; ?>>20</option>
                                             <option value="30" <?php echo ($curBsm !== '' && $curBsm === 30) ? 'selected' : ''; ?>>30</option>
-                                            <option value="40" <?php echo ($curBsm !== '' && $curBsm === 40) ? 'selected' : ''; ?>>40</option>
-                                            <option value="50" <?php echo ($curBsm !== '' && $curBsm === 50) ? 'selected' : ''; ?>>50</option>
                                         </select>
                                         <span>分</span>
                                     </div>
@@ -1277,7 +1293,7 @@ SQL;
                                         ?>
                                         <select name="borrow_end_time_h" class="form-control" required style="padding: 8px; width: 80px;">
                                             <option value="">選擇</option>
-                                            <?php for($h=7; $h<=22; $h++) { 
+                                            <?php for($h=0; $h<=23; $h++) { 
                                                 $selected = ($curBeh !== '' && $curBeh === $h) ? 'selected' : '';
                                             ?>
                                                 <option value="<?php echo $h; ?>" <?php echo $selected; ?>><?php echo $h; ?></option>
@@ -1288,11 +1304,7 @@ SQL;
                                         <select name="borrow_end_time_m" class="form-control" required style="padding: 8px; width: 80px;">
                                             <option value="">選擇</option>
                                             <option value="00" <?php echo ($curBem !== '' && $curBem === 00) ? 'selected' : ''; ?>>00</option>
-                                            <option value="10" <?php echo ($curBem !== '' && $curBem === 10) ? 'selected' : ''; ?>>10</option>
-                                            <option value="20" <?php echo ($curBem !== '' && $curBem === 20) ? 'selected' : ''; ?>>20</option>
                                             <option value="30" <?php echo ($curBem !== '' && $curBem === 30) ? 'selected' : ''; ?>>30</option>
-                                            <option value="40" <?php echo ($curBsm !== '' && $curBsm === 40) ? 'selected' : ''; ?>>40</option>
-                                            <option value="50" <?php echo ($curBsm !== '' && $curBsm === 50) ? 'selected' : ''; ?>>50</option>
                                         </select>
                                         <span>分</span>
                                     </div>
@@ -1349,65 +1361,53 @@ SQL;
                                     旗幟插立申請表
                                 </div>
 
-                                <div style="padding: 20px;">
-                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
-                                        <div>
-                                            <label style="font-weight:600; display:block; margin-bottom:6px;">申請單位 <span style="color:red">*</span></label>
-                                            <input type="text" id="flag_org" class="form-control" value="<?php echo htmlspecialchars($formData['organization_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" disabled style="background:#eef2ff; border:1px solid #cbd5e1; padding:10px; border-radius:6px; width:100%; color:#475569;">
-                                        </div>
-                                        <div>
-                                            <label style="font-weight:600; display:block; margin-bottom:6px;">負責人 <span style="color:red">*</span></label>
-                                            <input type="text" id="flag_responsible" class="form-control" value="<?php echo htmlspecialchars($formData['activity_coordinator'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" disabled style="background:#eef2ff; border:1px solid #cbd5e1; padding:10px; border-radius:6px; width:100%; color:#475569;">
-                                        </div>
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start; margin-bottom:12px;">
+                                    <div>
+                                        <label>申請單位 <span style="color:red">*</span></label>
+                                        <input type="text" id="flag_organization_name" name="flag_organization_name" class="form-control" value="<?php echo htmlspecialchars($formData['flag_organization_name'] ?? $formData['organization_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
-
-                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
-                                        <div>
-                                            <label style="font-weight:600; display:block; margin-bottom:6px;">連絡電話 <span style="color:red">*</span></label>
-                                            <input type="text" id="flag_phone" class="form-control" value="<?php echo htmlspecialchars($formData['coordinator_phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" disabled style="background:#eef2ff; border:1px solid #cbd5e1; padding:10px; border-radius:6px; width:100%; color:#475569;">
-                                        </div>
-                                        <div>
-                                            <label style="font-weight:600; display:block; margin-bottom:6px;">活動名稱 <span style="color:red">*</span></label>
-                                            <input type="text" id="flag_activity" class="form-control" value="<?php echo htmlspecialchars($formData['activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" disabled style="background:#eef2ff; border:1px solid #cbd5e1; padding:10px; border-radius:6px; width:100%; color:#475569;">
-                                        </div>
+                                    <div>
+                                        <label>活動名稱 <span style="color:red">*</span></label>
+                                        <input type="text" id="flag_activity_name" name="flag_activity_name" class="form-control" value="<?php echo htmlspecialchars($formData['flag_activity_name'] ?? $formData['activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
+                                    <div>
+                                        <label>負責人 <span style="color:red">*</span></label>
+                                        <input type="text" id="flag_responsible_person" name="flag_responsible_person" class="form-control" value="<?php echo htmlspecialchars($formData['flag_responsible_person'] ?? $formData['activity_coordinator'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                    </div>
+                                    <div>
+                                        <label>連絡電話 <span style="color:red">*</span></label>
+                                        <input type="text" id="flag_contact_phone" name="flag_contact_phone" class="form-control" value="<?php echo htmlspecialchars($formData['flag_contact_phone'] ?? $formData['coordinator_phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                    </div>
+                                </div>
 
-                                    <div style="margin-bottom:20px;">
-                                        <label style="font-weight:600; display:block; margin-bottom:6px;">使用日期 <span style="font-weight:normal; font-size:13px; color:#64748b;">(系統已限制需於7個工作天前申請)</span> <span style="color:red">*</span></label>
+                                <div style="display:flex; gap:15px; align-items:center; margin-bottom:15px;">
+                                    <div>
+                                        <label>使用日期 <span style="color:red">*</span></label>
                                         <div style="display:flex; gap:8px; align-items:center;">
-                                            <div style="position:relative;">
-                                                <input type="text" id="flag_start_date" class="form-control" value="<?php echo htmlspecialchars($formData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" disabled style="background:#fff; border:1px solid #cbd5e1; padding:8px 36px 8px 10px; border-radius:6px; width:160px; color:#475569;">
-                                                <span style="position:absolute; right:8px; top:50%; transform:translateY(-50%); color:#0f172a; font-weight:bold;">📅</span>
-                                            </div>
-                                            <span style="color:#475569; padding: 0 5px;">至</span>
-                                            <div style="position:relative;">
-                                                <input type="text" id="flag_end_date" class="form-control" value="<?php echo htmlspecialchars($formData['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" disabled style="background:#fff; border:1px solid #cbd5e1; padding:8px 36px 8px 10px; border-radius:6px; width:160px; color:#475569;">
-                                                <span style="position:absolute; right:8px; top:50%; transform:translateY(-50%); color:#0f172a; font-weight:bold;">📅</span>
-                                            </div>
+                                            <input type="date" id="flag_use_start" name="flag_use_start" class="form-control" readonly style="background:#fff;" value="<?php echo htmlspecialchars($formData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                            <span>至</span>
+                                            <input type="date" id="flag_use_end" name="flag_use_end" class="form-control" readonly style="background:#fff;" value="<?php echo htmlspecialchars($formData['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                         </div>
+                                        <div style="font-size:12px;color:#64748b;margin-top:6px;">說明：使用日期已自動帶入活動起訖時間，無法修改。</div>
                                     </div>
+                                </div>
 
-                                    <div style="display:flex; gap:30px; align-items:center; margin-bottom:5px;">
-                                        <div>
-                                            <label style="font-weight:600; display:block; margin-bottom:6px;">宣傳旗幟 (至多20支) <span style="color:red">*</span></label>
-                                            <div style="display:flex; align-items:center; gap:8px;">
-                                                <span style="color:#475569;">共</span>
-                                                <input type="number"
-                                                    name="flag_count"
-                                                    id="flag_count"
-                                                    class="form-control"
-                                                    min="1"
-                                                    max="20"
-                                                    step="1"
-                                                    style="width:80px;height:38px; background:#fff; border:1px solid #cbd5e1; padding:8px; border-radius:6px;"
-                                                    placeholder="最多20"
-                                                    value="<?php echo htmlspecialchars((string)($formData['flag_count'] ?? '1'), ENT_QUOTES, 'UTF-8'); ?>"
-                                                    oninput="if(this.value>20) {this.value=20; alert('宣傳旗幟最多只能選 20 支');}" required>
-                                                <span style="color:#475569;">支</span>
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <label style="font-weight:600; display:block; margin-bottom:6px;">懸掛位置-中央走道 <span style="color:red">*</span></label>
+                                <div style="display:flex; gap:15px; align-items:center; margin-bottom:15px;">
+                                    <div style="flex:1;">
+                                        <label>宣傳旗幟 <span style="color:red">*</span></label>
+                                        <div style="display:flex; align-items:center; gap:8px;">
+                                            <span>共</span>
+                                            <input type="number"
+                                                name="flag_count"
+                                                id="flag_count"
+                                                class="form-control"
+                                                min="1"
+                                                max="20"
+                                                step="1"
+                                                style="width:100px;height:38px;"
+                                                placeholder="最多20"
+                                                value="<?php echo htmlspecialchars((string)($formData['flag_count'] ?? '1'), ENT_QUOTES, 'UTF-8'); ?>">
+                                            <span>支</span>
                                         </div>
                                     </div>
 
@@ -1417,6 +1417,8 @@ SQL;
                                         <input type="hidden" id="flag_location" name="flag_location" value="中央走道">
                                     </div>
                                 </div>
+
+                                <!-- 單一同意勾選保留於下方（id=flag_agreement） -->
                                 
                                 <label style="display: flex; align-items: flex-start; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; background: #eff6ff; padding: 15px 20px; border-top: 1px solid #cbd5e1; border-radius: 0 0 8px 8px;">
                                     <input type="checkbox" name="flag_agreement" id="flag_agreement" value="1" <?php echo (isset($formData['flag_agreement']) && $formData['flag_agreement'] == '1') ? 'checked' : ''; ?> style="margin-top: 2px;" required>
@@ -1424,121 +1426,7 @@ SQL;
                                 </label>
                             </div>
 
-<div id="alcoholDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:8px;">
-                                <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
-                                    輔仁大學學生自治組織暨社團辦理提供酒精飲品活動須知
-                                </div>
-                                <div style="padding: 20px;">
-                                    <p style="color: #1e293b; font-size: 15px; margin-bottom: 15px; line-height: 1.6; font-weight: bold;">
-                                        關於本校學生社團活動具酒精飲品活動，為避免參與人員酒後行為脫序、危及自身或他人安全，或造成飲用人健康上之負擔，請確認以下事項皆已納入活動規劃，並遵守相關規範︰
-                                    </p>
-                                    
-                                    <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 25px;">
-                                        <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; margin-left: -20px; font-weight: bold; color: #3b82f6;">
-                                            <input type="checkbox" id="alcohol_agree_all" onchange="toggleAllAlcoholAgreements(this)" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
-                                            <span style="font-size: 15px; line-height: 1.6;">同意全部</span>
-                                        </label>
-                                        <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
-                                            <input type="checkbox" name="alcohol_agree_1" value="yes" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
-                                            <span style="font-size: 15px; line-height: 1.6;">辦理活動供應酒精性飲品者，需於活動申請時，於企劃書中敘明酒精飲品種類、準備數量、活動形式，連同活動申請表及本須知於活動前一個月送至課外活動指導組。</span>
-                                        </label>
-                                        <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
-                                            <input type="checkbox" name="alcohol_agree_2" value="yes" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
-                                            <span style="font-size: 15px; line-height: 1.6;">為避免同學酒後行為脫序、危及自身或他人安全，或造成飲用人健康上之負擔，請於企劃書敘明失序行為因應措施。</span>
-                                        </label>
-                                        <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
-                                            <input type="checkbox" name="alcohol_agree_3" value="yes" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
-                                            <span style="font-size: 15px; line-height: 1.6;">於活動期間主辦單位務必於活動現場明顯處所加註「未滿十八歲請勿購買/領取酒精性飲品」及「飲酒過量有害身體健康」與「禁止酒駕」之警語，提醒活動參與者避免飲酒過量。</span>
-                                        </label>
-                                        <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
-                                            <input type="checkbox" name="alcohol_agree_4" value="yes" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
-                                            <span style="font-size: 15px; line-height: 1.6;">依「兒童及少年福利與權益保障法」規定，販賣、交付或供應酒或檳榔予兒童及少年者，處新臺幣一萬元以上十萬元以下罰鍰。主辦單位應要求活動中發送或販賣酒精飲料之人員核對領取/購買人身分證明文件，並禁止對未滿十八歲之人發送或販賣。</span>
-                                        </label>
-                                        <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
-                                            <input type="checkbox" name="alcohol_agree_5" value="yes" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
-                                            <span style="font-size: 15px; line-height: 1.6;">主辦單位應提供《辦理提供酒精飲品活動理性飲酒同意書》 供有飲酒意願之參加人員簽署，並提醒參加人員有關警語所示事項(包含未滿十八歲請勿飲酒，於活動中飲用酒精飲料者不得駕駛汽車、機車、腳踏車等)。於活動結束翌日(遇例假日順延)將該同意書送至課外活動指導組備查</span>
-                                        </label>
-                                    </div>
-
-                                    <div style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 20px; align-items: center; background: #f8fafc; padding: 20px; border-radius: 6px; border: 1px solid #e2e8f0;">
-                                        <div style="display: flex; align-items: center; gap: 8px;">
-                                            <label for="alcohol_coordinator" style="margin: 0; font-size: 15px; font-weight: bold; white-space: nowrap;">活動負責人</label>
-                                            <input type="text" id="alcohol_coordinator" name="alcohol_coordinator" placeholder="姓名" style="width: 150px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
-                                        </div>
-                                        <div style="display: flex; align-items: center; gap: 8px;">
-                                            <label for="alcohol_president" style="margin: 0; font-size: 15px; font-weight: bold; white-space: nowrap;">社長</label>
-                                            <input type="text" id="alcohol_president" name="alcohol_president" placeholder="姓名" style="width: 150px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
-                                        </div>
-                                        <span style="font-size: 15px; color: #1e293b; font-weight: bold;">已知悉以上事項，願負一切責任。</span>
-                                    </div>
-                                    
-                                    <p style="color: #000; font-size: 15px; font-weight: bold; margin-bottom: 0; text-align: center;">
-                                        活動時所有接觸酒精飲品與會者請簽署酒精飲品活動理性飲酒同意書，請於活動結束翌日(遇例假日順延)送課指組備查。
-                                    </p>
-                                </div>
-                            </div>
-
                                 <script>
-                                function toggleAllAlcoholAgreements(source) {
-                                    const checkboxes = document.querySelectorAll('input[name^="alcohol_agree_"]');
-                                    checkboxes.forEach(function(cb) {
-                                        if(cb !== source) {
-                                            cb.checked = source.checked;
-                                        }
-                                    });
-                                }
-
-                                function isAlcoholEnabled() {
-                                    const checkedAlc = document.querySelector('input[name="has_alcohol"]');
-                                    return checkedAlc && checkedAlc.checked;
-                                }
-
-                                function toggleAlcoholDetails() {
-                                    const alcSection = document.getElementById('alcoholDetailsSection');
-                                    if (!alcSection) return;
-                                    const show = isAlcoholEnabled();
-                                    alcSection.style.display = show ? 'block' : 'none';
-                                    
-                                    // 依據顯示狀態啟用或禁用子欄位，避免隱藏時被驗證或送出
-                                    alcSection.querySelectorAll('input').forEach(function(el) {
-                                        if (show) {
-                                            el.removeAttribute('disabled');
-                                        } else {
-                                            el.setAttribute('disabled', 'disabled');
-                                        }
-                                    });
-                                }
-
-                                function validateAlcoholForm() {
-                                    if (!isAlcoholEnabled()) return true;
-                                    
-                                    const checkboxes = document.querySelectorAll('#alcoholDetailsSection input[type="checkbox"]');
-                                    let allChecked = true;
-                                    checkboxes.forEach(function(cb) {
-                                        if (!cb.checked) allChecked = false;
-                                    });
-                                    
-                                    const coordinator = document.getElementById('alcohol_coordinator').value.trim();
-                                    const president = document.getElementById('alcohol_president').value.trim();
-                                    
-                                    if (!allChecked) {
-                                        alert('請先勾選並確認遵守「酒精飲品活動須知」的所有規範事項。');
-                                        return false;
-                                    }
-                                    
-                                    if (!coordinator) {
-                                        alert('請填寫「酒精飲品活動須知」的活動負責人。');
-                                        return false;
-                                    }
-                                    
-                                    if (!president) {
-                                        alert('請填寫「酒精飲品活動須知」的社長。');
-                                        return false;
-                                    }
-                                    
-                                    return true;
-                                }
-
                                 function isFlagEnabled() {
                                     const checkedFlag = document.querySelector('input[name="setup_flags"]:checked');
                                     return checkedFlag && checkedFlag.value === 'yes';
@@ -1577,10 +1465,9 @@ SQL;
                                     const show = isFlagEnabled();
                                     detailsSection.style.display = show ? 'block' : 'none';
 
-                                    // Only enable the editable controls (flag_count and agreement). Keep display fields readonly/disabled.
+                                    // Enable or disable all controls in the flag section when showing/hiding.
                                     detailsSection.querySelectorAll('input, select, textarea').forEach(function (el) {
-                                        const editable = (el.id === 'flag_count' || el.id === 'flag_agreement' || el.name === 'flag_agreement');
-                                        if (show && editable) {
+                                        if (show) {
                                             el.removeAttribute('disabled');
                                         } else {
                                             el.setAttribute('disabled', 'disabled');
@@ -1652,27 +1539,46 @@ SQL;
                                         flagCount.value = 20;
                                     }
 
-                                    // Update display inputs
-                                    const org = document.getElementById('organization_name')?.value || '';
-                                    const act = document.getElementById('activity_name')?.value || '';
-                                    const coord = document.getElementById('activity_coordinator')?.value || '';
-                                    const phone = document.getElementById('coordinator_phone')?.value || '';
-                                    const sDate = document.getElementById('borrow_start_date')?.value || '';
-                                    const eDate = document.getElementById('borrow_end_date')?.value || '';
+                                    // Sync usage dates from main activity dates and lock them
+                                    const bs = document.getElementById('borrow_start_date');
+                                    const be = document.getElementById('borrow_end_date');
+                                    const fus = document.getElementById('flag_use_start');
+                                    const fue = document.getElementById('flag_use_end');
+                                    // Sync basic text fields from step1 into flag fields as well
+                                    const mapping = [
+                                        ['organization_name', 'flag_organization_name'],
+                                        ['activity_name', 'flag_activity_name'],
+                                        ['activity_coordinator', 'flag_responsible_person'],
+                                        ['coordinator_phone', 'flag_contact_phone']
+                                    ];
+                                    mapping.forEach(function(pair){
+                                        const s = document.getElementById(pair[0]);
+                                        const d = document.getElementById(pair[1]);
+                                        if (s && d && (d.value === '' || d.value === null)) {
+                                            d.value = s.value || '';
+                                        }
+                                    });
+                                    if (fus && fue && bs && be) {
+                                        fus.value = bs.value || '';
+                                        fue.value = be.value || '';
+                                        // set min for visual cue (even though fields are read-only)
+                                        try {
+                                            const min = getMinFlagDate();
+                                            fus.setAttribute('min', min);
+                                            fue.setAttribute('min', min);
+                                        } catch (e) {}
 
-                                    const orgEl = document.getElementById('flag_org');
-                                    const actEl = document.getElementById('flag_activity');
-                                    const coordEl = document.getElementById('flag_responsible');
-                                    const phoneEl = document.getElementById('flag_phone');
-                                    const sEl = document.getElementById('flag_start_date');
-                                    const eEl = document.getElementById('flag_end_date');
-
-                                    if (orgEl) orgEl.value = org || '(未填寫)';
-                                    if (actEl) actEl.value = act || '(未填寫)';
-                                    if (coordEl) coordEl.value = coord || '(未填寫)';
-                                    if (phoneEl) phoneEl.value = phone || '(未填寫)';
-                                    if (sEl) sEl.value = sDate || '';
-                                    if (eEl) eEl.value = eDate || '';
+                                        // If the activity start is earlier than allowed minimum, warn user
+                                        if (bs.value) {
+                                            const minDate = new Date(getMinFlagDate());
+                                            const startDate = new Date(bs.value);
+                                            if (startDate < minDate) {
+                                                // show gentle alert and focus the activity start date for correction
+                                                alert('插立旗幟使用日期必須為 7 個工作天之後，請將活動開始日期調整至 ' + getMinFlagDate() + '（或更晚）。');
+                                                bs.focus();
+                                            }
+                                        }
+                                    }
                                 }
 
                                 document.addEventListener('DOMContentLoaded', function () {
@@ -1701,17 +1607,25 @@ SQL;
                                         }
                                     });
 
-                                    ['has_alcohol', 'has_fire', 'has_sales'].forEach(function(name) {
-                                        const el = document.querySelector('input[name="' + name + '"]');
-                                        if (el) {
-                                            el.addEventListener('change', function() {
-                                                validateStartDate();
-                                                if (name === 'has_alcohol' && typeof toggleAlcoholDetails === 'function') {
-                                                    toggleAlcoholDetails();
-                                                }
-                                            });
-                                        }
-                                    });
+                                    // Auto-sync specific step-1 fields into the flag application fields
+                                    (function(){
+                                        const pairs = [
+                                            ['organization_name', 'flag_organization_name'],
+                                            ['activity_name', 'flag_activity_name'],
+                                            ['activity_coordinator', 'flag_responsible_person'],
+                                            ['coordinator_phone', 'flag_contact_phone']
+                                        ];
+                                        pairs.forEach(function(pair){
+                                            const src = document.getElementById(pair[0]);
+                                            const dst = document.getElementById(pair[1]);
+                                            if (!src || !dst) return;
+                                            // initial copy
+                                            dst.value = src.value || dst.value || '';
+                                            // update on input/change
+                                            src.addEventListener('input', function(){ dst.value = src.value; });
+                                            src.addEventListener('change', function(){ dst.value = src.value; });
+                                        });
+                                    })();
 
                                     if (flagCount) {
                                         flagCount.addEventListener('input', function () {
@@ -1728,10 +1642,6 @@ SQL;
 
                                     toggleFlagDetails();
                                     syncFlagForm();
-                                    
-                                    if (typeof toggleAlcoholDetails === 'function') {
-                                        toggleAlcoholDetails();
-                                    }
 
                                     // 註解掉避免重複綁定 saveDraft
                                     // const saveBtns = document.querySelectorAll('.saveDraftBtn');
@@ -1744,7 +1654,7 @@ SQL;
 
                                     draftBtns.forEach(function (btn) {
                                         btn.addEventListener('click', function () {
-                                            window.location.href = 'draft_box.php';
+                                            window.location.href = 'drafts.php';
                                         });
                                     });
                                 });
@@ -1752,7 +1662,7 @@ SQL;
 
                                 <div class="step-actions">
                                     <button type="button" class="btn btn-secondary" onclick="goToStep(1)"> ⬅ 回上一步</button>
-                                    <button type="button" class="btn btn-primary btn-next" onclick="if(validateAlcoholForm()) { goToStep(3); }">下一步 ➔ 挑選器材與場地</button>
+                                    <button type="button" class="btn btn-primary btn-next" onclick="goToStep(3)">下一步 ➔ 挑選器材與場地</button>
                                 </div>
 
                                 <div class="draft-action-row">
@@ -1956,12 +1866,6 @@ SQL;
         </main>
     </div>
 
-    <!-- 草稿管理 JavaScript 模組 - 必須在 borrow.php 邏輯之前加載 -->
-    <script src="DraftManager.js?v=<?php echo time(); ?>"></script>
-    <script>
-        window.draftManager = new DraftManager();
-    </script>
-
     <script>
         // ===== 草稿第三步「已選取項目」同步橋接 =====
         // 用途：暫存前把右側已選項目寫進 cart_items；草稿載入後再把 cart_items 畫回右側清單。
@@ -2112,173 +2016,7 @@ SQL;
         };
     </script>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            const form = document.getElementById('multistep_form');
-            const saveBtn = document.getElementById('saveDraftBtn');
-            const draftBoxBtn = document.getElementById('openDraftBoxBtn');
-            const msg = document.getElementById('submitDebugMsg');
-
-            const STORAGE_KEY = 'borrow_drafts';
-
-            function getDrafts() {
-                return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-            }
-
-            function saveDrafts(drafts) {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(drafts));
-            }
-
-            function collectFormData() {
-                const data = {};
-
-                form.querySelectorAll('input, select, textarea').forEach(el => {
-                    if (!el.name) return;
-
-                    if (el.type === 'file') return;
-
-                    if (el.type === 'checkbox') {
-                        data[el.name] = el.checked ? '1' : '';
-                    } else if (el.type === 'radio') {
-                        if (el.checked) data[el.name] = el.value;
-                    } else {
-                        data[el.name] = el.value;
-                    }
-                });
-
-                return data;
-            }
-
-            function clearFormAfterSave() {
-                // Intentionally left minimal to avoid unexpected navigation/reset during save.
-                console.log('clearFormAfterSave called — no-op to preserve form state after draft save');
-            }
-
-            if (saveBtn) {
-                saveBtn.addEventListener('click', function () {
-                    const drafts = getDrafts();
-
-                    if (window.borrowCartDraftBridge) {
-                        window.borrowCartDraftBridge.syncHiddenBeforeSave();
-                    }
-
-                    const formData = collectFormData();
-
-                    const draft = {
-                        draftId: 'draft_' + Date.now(),
-                        timestamp: new Date().toLocaleString('zh-TW'),
-                        activityName: formData.activity_name || '未填寫活動名稱',
-                        purpose: formData.purpose || '',
-                        currentStep: document.getElementById('current_step')?.value || '1',
-                        formData: formData
-                    };
-
-                    drafts.unshift(draft);
-                    saveDrafts(drafts);
-
-                    if (msg) msg.textContent = '✅ 草稿已暫存，表單內容已保留';
-
-                    // 保留表單與目前步驟，使用者可繼續編輯
-                });
-            }
-
-            if (draftBoxBtn) {
-                draftBoxBtn.addEventListener('click', function () {
-                    window.location.href = 'draft_box.php';
-                });
-            }
-
-            // 從草稿箱載入草稿
-            const params = new URLSearchParams(window.location.search);
-            const loadId = params.get('draft_id');
-
-            if (loadId) {
-                // 使用 DraftManager 取得草稿（若 DraftManager 尚未啟動，退回到 localStorage）
-                let draft = null;
-                if (window.draftManager && typeof window.draftManager.getDraftById === 'function') {
-                    draft = window.draftManager.getDraftById(loadId);
-                }
-
-                if (!draft) {
-                    const drafts = JSON.parse(localStorage.getItem('borrow_drafts') || '[]');
-                    draft = drafts.find(d => d.draftId === loadId);
-                }
-
-                if (draft) {
-                    if (window.draftManager && typeof window.draftManager.loadDraftToForm === 'function') {
-                        window.draftManager.loadDraftToForm(draft);
-                    } else if (draft.formData) {
-                        // Fallback for very old drafts that still have formData
-                        Object.keys(draft.formData).forEach(function (name) {
-                            const els = document.querySelectorAll(`[name="${name}"]`);
-
-                            els.forEach(function (el) {
-                                if (el.type === 'checkbox') {
-                                    el.checked = draft.formData[name] === '1';
-                                } else if (el.type === 'radio') {
-                                    el.checked = el.value === draft.formData[name];
-                                } else if (el.type !== 'file') {
-                                    el.value = draft.formData[name];
-                                }
-                            });
-                        });
-                    }
-
-                    // 將目前編輯的草稿 id 寫入 hidden input，供暫存時覆寫判斷
-                    const currentDraftIdEl = document.getElementById('current_draft_id');
-                    if (currentDraftIdEl) currentDraftIdEl.value = draft.draftId || '';
-
-                    // 草稿如果有第三步已選取項目，先填回 hidden input，並同步畫回右側「已選取項目」。
-                    if (window.borrowCartDraftBridge) {
-                        window.borrowCartDraftBridge.restoreRightPanel(draft);
-                        setTimeout(function () {
-                            window.borrowCartDraftBridge.restoreRightPanel(draft);
-                        }, 200);
-                    }
-
-                    // 草稿資料填回表單後，重新判斷「插立旗幟」是否為是。
-                    // 若 setup_flags = yes，會自動顯示旗幟插立申請表。
-                    if (typeof toggleFlagDetails === 'function') {
-                        toggleFlagDetails();
-                    }
-
-                    // 重新同步旗幟申請表資料與活動日期。
-                    if (typeof syncFlagForm === 'function') {
-                        syncFlagForm();
-                    }
-
-                    const step = draft.currentStep || '1';
-
-                    if (typeof showStep === 'function') {
-                        showStep(step);
-                    } else {
-
-                        document.querySelectorAll('.step-content')
-                            .forEach(el => el.classList.remove('active'));
-
-                        document.querySelectorAll('.stepper-item')
-                            .forEach(el => el.classList.remove('active'));
-
-                        document.getElementById('step-content-' + step)
-                            ?.classList.add('active');
-
-                        document.getElementById('stepper-' + step)
-                            ?.classList.add('active');
-
-                        const currentStepInput =
-                            document.getElementById('current_step');
-
-                        if (currentStepInput) {
-                            currentStepInput.value = step;
-                        }
-                    }
-                }
-            }
-        });
-    </script>
-
-
-    <script>
+        <script>
         // 確保在 DOM 完全加載後執行
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', startApplication);
@@ -2805,347 +2543,181 @@ function startApplication() {
             })();
         }
 
-        // ================== 草稿管理 (Draft Management) ==================
-        function initializeDraftManagement() {
-            (function() {
-            // DOM 元素參考
-            const saveDraftBtn = document.getElementById('saveDraftBtn');
-            const manageDraftBtn = document.getElementById('manageDraftBtn');
-            const draftModalOverlay = document.getElementById('draftModalOverlay');
-            const draftModalCloseBtn = document.getElementById('draftModalCloseBtn');
-            const draftBtnClose = document.getElementById('draftBtnClose');
-            const draftBtnNew = document.getElementById('draftBtnNew');
-            const draftTableContainer = document.getElementById('draftTableContainer');
-            const draftMessage = document.getElementById('draftMessage');
+        async function loadDraftFromDatabase() {
+            const params = new URLSearchParams(window.location.search);
+            const draftId = params.get('draft_id');
 
-            /**
-             * 顯示暫時訊息
-             */
-            function showMessage(text, type = 'success', duration = 3000) {
-                draftMessage.textContent = text;
-                draftMessage.className = `draft-message show ${type}`;
-                
-                if (duration > 0) {
-                    setTimeout(() => {
-                        draftMessage.classList.remove('show');
-                    }, duration);
-                }
-            }
+            if (!draftId) return;
 
-            /**
-             * 渲染草稿列表表格
-             */
-            function renderDraftTable() {
-                const stats = window.draftManager.getDraftStats();
-                
-                if (stats.totalCount === 0) {
-                    draftTableContainer.innerHTML = `
-                        <p class="draft-empty-message">
-                            <div class="draft-empty-icon">📭</div>
-                            暫無已儲存的草稿
-                        </p>
-                    `;
+            try {
+                const res = await fetch(
+                    'api/load_draft.php?draft_id=' + encodeURIComponent(draftId)
+                );
+
+                const data = await res.json();
+
+                if (!data.success) {
+                    alert(data.message || '草稿載入失敗');
                     return;
                 }
 
-                let tableHtml = `
-                    <table class="draft-table">
-                        <thead>
-                            <tr>
-                                <th>暫存時間</th>
-                                <th>用途摘要</th>
-                                <th>操作</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                `;
+                const draft = data.draft || {};
+                const formData = draft.formData || {};
 
-                stats.drafts.forEach(draft => {
-                    const timestamp = draft.timestamp || '未知';
-                    const purposeSummary = window.draftManager.generatePurposeSummary(draft.purpose);
-                    const draftId = draft.draftId;
-                    
-                    tableHtml += `
-                        <tr>
-                            <td>${timestamp}</td>
-                            <td>${purposeSummary}</td>
-                            <td>
-                                <div class="draft-actions">
-                                    <button type="button" class="draft-btn-load" onclick="loadDraft('${draftId}')">載入</button>
-                                    <button type="button" class="draft-btn-delete" onclick="deleteDraft('${draftId}')">刪除</button>
-                                </div>
-                            </td>
-                        </tr>
-                    `;
+                Object.keys(formData).forEach(function (name) {
+                    const els = document.querySelectorAll(`[name="${name}"]`);
+
+                    els.forEach(function (el) {
+                        if (el.type === 'checkbox') {
+                            el.checked = formData[name] === '1' || formData[name] === 1 || formData[name] === true;
+                        } else if (el.type === 'radio') {
+                            el.checked = el.value === String(formData[name]);
+                        } else if (el.type !== 'file') {
+                            el.value = formData[name];
+                        }
+                    });
                 });
 
-                tableHtml += `
-                        </tbody>
-                    </table>
-                `;
+                const currentDraftIdInput = document.getElementById('current_draft_id');
+                if (currentDraftIdInput) {
+                    currentDraftIdInput.value = draft.draft_id || draft.draftId || draftId;
+                }
 
-                draftTableContainer.innerHTML = tableHtml;
+                const fileDisplay = document.getElementById('proposal_file_name_display');
+                if (fileDisplay && draft.proposal_original_name) {
+                    fileDisplay.innerText = '已上傳企劃書：' + draft.proposal_original_name;
+                }
+
+                if (window.borrowCartDraftBridge) {
+                    const bridgeDraft = {
+                        formData: formData,
+                        cart_items: formData.cart_items || formData.cartItems || []
+                    };
+
+                    window.borrowCartDraftBridge.restoreRightPanel(bridgeDraft);
+
+                    setTimeout(function () {
+                        window.borrowCartDraftBridge.restoreRightPanel(bridgeDraft);
+                    }, 200);
+                }
+
+                if (typeof toggleFlagDetails === 'function') {
+                    toggleFlagDetails();
+                }
+
+                if (typeof syncFlagForm === 'function') {
+                    syncFlagForm();
+                }
+
+                const step = draft.current_step || draft.currentStep || formData.current_step || '1';
+
+                const currentStepInput = document.getElementById('current_step');
+                if (currentStepInput) {
+                    currentStepInput.value = step;
+                }
+
+                if (typeof showStep === 'function') {
+                    showStep(step);
+                } else if (typeof goToStep === 'function') {
+                    goToStep(Number(step));
+                }
+            } catch (error) {
+                console.error(error);
+                alert('草稿載入失敗：' + error.message);
             }
+        }
 
-            /**
-             * 全域函數：載入草稿
-             */
-            window.loadDraft = function(draftId) {
-                const draft = window.draftManager.getDraftById(draftId);
-                if (!draft) {
-                    showMessage('找不到此草稿', 'error');
-                    return;
+        function initializeDraftManagement() {
+            const saveDraftBtn = document.getElementById('saveDraftBtn');
+            const openDraftBoxBtn = document.getElementById('openDraftBoxBtn');
+            const msg = document.getElementById('submitDebugMsg');
+
+            async function saveDraft(e) {
+                if (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
                 }
 
-                const success = window.draftManager.loadDraftToForm(draft);
-                if (success) {
-                    // 標記目前正在編輯的草稿 id，供儲存時判斷覆寫或另存
-                    const currentDraftIdEl = document.getElementById('current_draft_id');
-                    if (currentDraftIdEl) currentDraftIdEl.value = draft.draftId || '';
-
-                    closeDraftModal();
-                    showMessage(`✓ 已載入草稿 (${draft.timestamp})`, 'success', 3000);
-                } else {
-                    showMessage('載入草稿失敗，請重新嘗試', 'error');
-                }
-            };
-
-            /**
-             * 全域函數：刪除草稿
-             */
-            window.deleteDraft = function(draftId) {
-                if (!confirm('確定要刪除此草稿嗎？')) {
-                    return;
-                }
-
-                const deleted = window.draftManager.deleteDraft(draftId);
-                if (deleted) {
-                    renderDraftTable();
-                    showMessage('✓ 草稿已刪除', 'success', 2000);
-                } else {
-                    showMessage('刪除草稿失敗', 'error');
-                }
-            };
-
-            /**
-             * 開啟草稿管理中心模態框
-             */
-            function openDraftModal() {
-                renderDraftTable();
-                draftModalOverlay.classList.add('active');
-            }
-
-            /**
-             * 關閉草稿管理中心模態框
-             */
-            function closeDraftModal() {
-                draftModalOverlay.classList.remove('active');
-            }
-
-            window.closeDraftModal = closeDraftModal;
-
-            /**
-             * 保存草稿
-             */
-            /**
-             * 顯示覆寫/另存 modal，回傳使用者選擇：'overwrite'|'save_new'|'cancel'
-             * @returns {Promise<string>}
-             */
-            function showOverwriteModal() {
-                return new Promise(function (resolve) {
-                    let modal = document.getElementById('overwriteModal');
-                    if (!modal) {
-                        modal = document.createElement('div');
-                        modal.id = 'overwriteModal';
-                        modal.innerHTML = `
-                            <div class="overlay"></div>
-                            <div class="overwrite-modal-content">
-                                <div class="modal-body">偵測到您正在編輯已載入的草稿。請選擇要覆寫原有草稿，或另存為新草稿。</div>
-                                <div class="modal-actions">
-                                    <button type="button" class="btn btn-secondary" data-action="cancel">取消</button>
-                                    <button type="button" class="btn btn-primary" data-action="save_new">另存為新草稿</button>
-                                    <button type="button" class="btn btn-danger" data-action="overwrite">覆寫草稿</button>
-                                </div>
-                            </div>
-                        `;
-                        document.body.appendChild(modal);
-
-                        const style = document.createElement('style');
-                        style.textContent = `
-                            #overwriteModal { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 9999; }
-                            #overwriteModal .overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.4); }
-                            #overwriteModal .overwrite-modal-content { position: relative; background: #fff; padding: 18px; border-radius: 8px; width: 420px; max-width: 90%; box-shadow: 0 8px 24px rgba(0,0,0,0.15); z-index: 10000; }
-                            #overwriteModal .modal-body { margin-bottom: 12px; color: #0f172a; }
-                            #overwriteModal .modal-actions { display:flex; gap:8px; justify-content: flex-end; }
-                            #overwriteModal .btn { padding:6px 10px; border-radius:6px; border:1px solid #cbd5e1; cursor:pointer; }
-                            #overwriteModal .btn-primary { background:#3b82f6; color:#fff; border-color:#3b82f6; }
-                            #overwriteModal .btn-danger { background:#ef4444; color:#fff; border-color:#ef4444; }
-                            #overwriteModal .btn-secondary { background:#f1f5f9; color:#0f172a; }
-                        `;
-                        document.head.appendChild(style);
-
-                        modal.addEventListener('click', function (e) {
-                            const action = e.target.getAttribute('data-action');
-                            if (action) {
-                                modal.style.display = 'none';
-                                resolve(action);
-                            }
-                        });
+                try {
+                    if (window.borrowCartDraftBridge) {
+                        window.borrowCartDraftBridge.syncHiddenBeforeSave();
                     }
 
-                    modal.style.display = 'flex';
-                });
-            }
-            async function saveDraft(e) {
-    if (e) {
-        e.preventDefault();
-        e.stopPropagation();
-    }
-    console.log('[Draft] button clicked!');
-    try {
-        if (window.borrowCartDraftBridge) {
-            window.borrowCartDraftBridge.syncHiddenBeforeSave();
-        }
+                    const form = document.getElementById('multistep_form');
+                    if (!form) {
+                        alert('找不到表單，無法暫存。');
+                        return;
+                    }
 
-        const currentDraftIdEl = document.getElementById('current_draft_id');
-        let currentDraftId = currentDraftIdEl ? currentDraftIdEl.value : '';
+                    const fd = new FormData(form);
 
-        console.log('[Draft] start, currentDraftId =', currentDraftId);
+                    const currentDraftId =
+                        document.getElementById('current_draft_id')?.value || '';
 
-        // 取得表單資料
-        const draftData = window.draftManager?.extractFormData?.();
-        if (!draftData) throw new Error('無法提取表單資料');
+                    const currentStep =
+                        document.getElementById('current_step')?.value || '1';
 
-        // ⭐ 記錄「送出前」是否已有 draftId（這才是關鍵）
-        const hadDraftBeforeSave = !!currentDraftId;
+                    fd.set('draft_id', currentDraftId);
+                    fd.set('currentStep', currentStep);
 
-        // ⭐ 如果已有 draft → 先問要怎麼處理
-        if (hadDraftBeforeSave) {
+                    const res = await fetch('api/save_draft.php', {
+                        method: 'POST',
+                        body: fd
+                    });
 
-            const userChoice = await showOverwriteModal();
-            console.log('[Draft] userChoice =', userChoice);
+                    const data = await res.json();
 
-            if (userChoice === 'overwrite') {
+                    if (data.success) {
+                        const draftId = data.draft_id || data.draftId || data.reservation_id || '';
+                        const currentDraftInput = document.getElementById('current_draft_id');
+                        if (currentDraftInput) currentDraftInput.value = draftId;
 
-                // 覆寫
-                draftData.draftId = currentDraftId;
+                        if (msg) {
+                            msg.textContent = '✅ 草稿暫存成功，草稿編號：' + draftId;
+                        }
 
-            } else if (userChoice === 'save_new') {
-
-                // ⭐ 強制新草稿（關鍵修正）
-                draftData.draftId = null;
-                draftData.forceNew = true;
-
-                currentDraftId = '';
-
-                if (currentDraftIdEl) {
-                    currentDraftIdEl.value = '';
+                        alert('草稿暫存成功！\n\n草稿編號：' + draftId);
+                    } else {
+                        if (msg) {
+                            msg.textContent = '❌ ' + (data.message || '草稿暫存失敗');
+                        }
+                        alert(data.message || '草稿暫存失敗');
+                    }
+                } catch (error) {
+                    console.error(error);
+                    if (msg) {
+                        msg.textContent = '❌ 暫存失敗：' + error.message;
+                    }
+                    alert('暫存失敗：' + error.message);
                 }
-
-            } else {
-                showMessage('已取消暫存', 'error', 2000);
-                return;
-            }
-        }
-
-        // ⭐ save
-        const saved = await window.draftManager.saveDraft(draftData);
-
-        console.log('[Draft] saved =', saved);
-
-        if (!saved || !saved.draftId) {
-            throw new Error('草稿儲存失敗：沒有 draftId');
-        }
-
-        // ⭐ 更新 UI state
-        const isNew = !hadDraftBeforeSave || draftData.forceNew === true;
-
-        if (currentDraftIdEl) {
-            currentDraftIdEl.value = saved.draftId;
-        }
-
-        // ⭐ 新增與覆寫都跳出明確的 alert 提示
-        if (isNew) {
-            alert(
-                '新增草稿成功！\n\n草稿代碼：' +
-                saved.draftId +
-                '\n\n您可以在草稿箱中查看。'
-            );
-        } else {
-            alert(
-                '覆寫草稿成功！\n\n草稿代碼：' +
-                saved.draftId +
-                '\n\n原本的草稿內容已更新。'
-            );
-        }
-
-        showMessage(
-            `✓ 草稿已暫存 (${saved.draftId.substring(0, 20)}...)`,
-            'success',
-            3000
-        );
-
-    } catch (error) {
-        console.error('[Draft Error]', error);
-
-        showMessage(
-            `✗ 暫存失敗：${error.message}`,
-            'error',
-            3000
-        );
-    }
-}
-
-            /**
-             * 新增申請（清空表單）
-             */
-            function createNewApplication() {
-                if (!confirm('確定要清空當前表單並建立新申請嗎？\n（已暫存的資料不會遺失）')) {
-                    return;
-                }
-                window.draftManager.clearForm();
-                closeDraftModal();
-                showMessage('✓ 表單已清空，可開始新申請', 'success', 2000);
             }
 
-            // 事件綁定
-            document.querySelectorAll('.saveDraftBtn, #saveDraftBtn').forEach(btn => {
+            if (saveDraftBtn) {
+                saveDraftBtn.addEventListener('click', saveDraft);
+            }
+
+            document.querySelectorAll('.saveDraftBtn').forEach(function (btn) {
                 btn.addEventListener('click', saveDraft);
             });
 
-            if (manageDraftBtn) {
-                manageDraftBtn.addEventListener('click', openDraftModal);
-            }
-
-            if (draftModalCloseBtn) {
-                draftModalCloseBtn.addEventListener('click', closeDraftModal);
-            }
-
-            if (draftBtnClose) {
-                draftBtnClose.addEventListener('click', closeDraftModal);
-            }
-
-            if (draftBtnNew) {
-                draftBtnNew.addEventListener('click', createNewApplication);
-            }
-
-            // 點擊模態框背景關閉
-            if (draftModalOverlay) {
-                draftModalOverlay.addEventListener('click', function(e) {
-                    if (e.target === this) {
-                        closeDraftModal();
-                    }
+            if (openDraftBoxBtn) {
+                openDraftBoxBtn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    window.location.href = 'drafts.php';
                 });
             }
 
-            // 按 Escape 鍵也可關閉
-            document.addEventListener('keydown', function(e) {
-                if (e.key === 'Escape' && draftModalOverlay.classList.contains('active')) {
-                    closeDraftModal();
-                }
+            document.querySelectorAll('.openDraftBoxBtn').forEach(function (btn) {
+                btn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    window.location.href = 'drafts.php';
+                });
             });
-            })();
+
+            loadDraftFromDatabase();
         }
+
+        
         
     </script>
 
@@ -3708,8 +3280,10 @@ function getMinDateByParticipantCount(countValue) {
         d.setDate(d.getDate() + 30);
         return d;
     } else {
-        // 一般情況：7 個工作天後
-        return getWorkingDaysFromToday(7);
+        // 一般情況：7 天後 (日曆天)
+        let d = new Date();
+        d.setDate(d.getDate() + 7);
+        return d;
     }
 }
 
@@ -3917,10 +3491,6 @@ document.addEventListener('DOMContentLoaded', function () {
         if (typeof window.toggleFlagDetails === 'function') {
             window.toggleFlagDetails();
         }
-        
-        if (typeof window.toggleAlcoholDetails === 'function') {
-            window.toggleAlcoholDetails();
-        }
 
         if (typeof window.syncFlagForm === 'function') {
             window.syncFlagForm();
@@ -4037,6 +3607,295 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }, 100);
     });
+})();
+</script>
+
+
+
+
+<script>
+/**
+ * 活動日期與特殊條件驗證最終版
+ *
+ * 規則：
+ * 1. 開始日期、結束日期都不可早於今天
+ * 2. 結束時間必須晚於開始時間
+ * 3. 活動天數 diffDays > 4 才擋下
+ * 4. 活動對象人數 100 人以上、工作人員人數 100 人以上、酒精、明火、販售活動，都必須提前 30 天
+ * 5. 不管先選日期、先勾特殊項目、後改人數、或送出前，都會重新檢查
+ */
+(function () {
+    function getDateOnly(value) {
+        if (!value) return null;
+
+        const date = new Date(value + 'T00:00:00');
+
+        if (isNaN(date.getTime())) return null;
+
+        date.setHours(0, 0, 0, 0);
+
+        return date;
+    }
+
+    function getTimePart(name) {
+        const el = document.querySelector('[name="' + name + '"]');
+
+        if (!el || el.value === '') return null;
+
+        return String(el.value).padStart(2, '0');
+    }
+
+    function getDateTime(dateValue, hourName, minuteName) {
+        const h = getTimePart(hourName);
+        const m = getTimePart(minuteName);
+
+        if (!dateValue || h === null || m === null) return null;
+
+        const date = new Date(dateValue + 'T' + h + ':' + m + ':00');
+
+        return isNaN(date.getTime()) ? null : date;
+    }
+
+    function formatDate(date) {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+
+        return y + '-' + m + '-' + d;
+    }
+
+    function isCheckedByName(name) {
+        const el = document.querySelector('input[name="' + name + '"]');
+
+        return !!(el && el.checked);
+    }
+
+    function getParticipantCountValue() {
+        const el =
+            document.getElementById('participant_count') ||
+            document.querySelector('[name="participant_count"]');
+
+        return el ? (el.value || '') : '';
+    }
+
+    function getStaffCountValue() {
+        const el =
+            document.getElementById('staff_count') ||
+            document.querySelector('[name="staff_count"]');
+
+        const value = el ? parseInt(el.value || '0', 10) : 0;
+
+        return isNaN(value) ? 0 : value;
+    }
+
+    window.is30DaysRequired = function () {
+        const participantCount = getParticipantCountValue();
+        const staffCount = getStaffCountValue();
+
+        return (
+            isCheckedByName('has_alcohol') ||
+            isCheckedByName('has_fire') ||
+            isCheckedByName('has_sales') ||
+            participantCount === '100~200人' ||
+            participantCount === '200人以上' ||
+            staffCount >= 100
+        );
+    };
+
+    window.validateActivityDateRange = function (shouldClearInvalidDates = true) {
+        const startDateInput = document.getElementById('borrow_start_date');
+        const endDateInput = document.getElementById('borrow_end_date');
+
+        if (!startDateInput || !endDateInput) return true;
+
+        const startDateValue = startDateInput.value;
+        const endDateValue = endDateInput.value;
+
+        const startDate = getDateOnly(startDateValue);
+        const endDate = getDateOnly(endDateValue);
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        if (startDate && startDate < today) {
+            alert('活動開始日期不可早於今天，請重新選擇！');
+
+            if (shouldClearInvalidDates) {
+                startDateInput.value = '';
+                endDateInput.value = '';
+            }
+
+            return false;
+        }
+
+        if (endDate && endDate < today) {
+            alert('活動結束日期不可早於今天，請重新選擇！');
+
+            if (shouldClearInvalidDates) {
+                endDateInput.value = '';
+            }
+
+            return false;
+        }
+
+        if (!startDate || !endDate) return true;
+
+        if (startDate > endDate) {
+            alert('活動開始日期不能晚於活動結束日期！');
+
+            if (shouldClearInvalidDates) {
+                endDateInput.value = '';
+            }
+
+            return false;
+        }
+
+        const startDateTime = getDateTime(
+            startDateValue,
+            'borrow_start_time_h',
+            'borrow_start_time_m'
+        );
+
+        const endDateTime = getDateTime(
+            endDateValue,
+            'borrow_end_time_h',
+            'borrow_end_time_m'
+        );
+
+        if (startDateTime && endDateTime && endDateTime <= startDateTime) {
+            alert('活動結束時間必須晚於活動開始時間！');
+
+            if (shouldClearInvalidDates) {
+                const endHour = document.querySelector('[name="borrow_end_time_h"]');
+                const endMin = document.querySelector('[name="borrow_end_time_m"]');
+
+                if (endHour) endHour.value = '';
+                if (endMin) endMin.value = '';
+            }
+
+            return false;
+        }
+
+        const diffDays = Math.ceil(
+            (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+        );
+
+        if (diffDays > 4) {
+            alert('活動天數最多不可超過 4 天，請重新選擇！');
+
+            if (shouldClearInvalidDates) {
+                endDateInput.value = '';
+            }
+
+            return false;
+        }
+
+        if (window.is30DaysRequired()) {
+            const minAllowedDate = new Date(today);
+
+            minAllowedDate.setDate(minAllowedDate.getDate() + 30);
+
+            if (startDate < minAllowedDate || endDate < minAllowedDate) {
+                alert(
+                    '注意：由於您的活動包含特殊性質（酒精、明火、攤販、活動對象100人以上或工作人員100人以上），必須在 30 天之前申請！\n' +
+                    '系統已清空不合規的日期，請重新選擇至少為 ' + formatDate(minAllowedDate) + ' 的日期。'
+                );
+
+                if (shouldClearInvalidDates) {
+                    startDateInput.value = '';
+                    endDateInput.value = '';
+                }
+
+                return false;
+            }
+        }
+
+        return true;
+    };
+
+    window.validateStartDate = function () {
+        return window.validateActivityDateRange(true);
+    };
+
+    function bindDateRuleValidation() {
+        const dateAndTimeSelectors = [
+            '#borrow_start_date',
+            '#borrow_end_date',
+            '[name="borrow_start_time_h"]',
+            '[name="borrow_start_time_m"]',
+            '[name="borrow_end_time_h"]',
+            '[name="borrow_end_time_m"]'
+        ];
+
+        document.querySelectorAll(dateAndTimeSelectors.join(',')).forEach(function (el) {
+            el.addEventListener('change', function () {
+                window.validateActivityDateRange(true);
+            });
+
+            el.addEventListener('blur', function () {
+                window.validateActivityDateRange(true);
+            });
+        });
+
+        document.querySelectorAll('#participant_count, [name="participant_count"], #staff_count, [name="staff_count"]').forEach(function (el) {
+            el.addEventListener('change', function () {
+                window.validateActivityDateRange(true);
+            });
+
+            el.addEventListener('input', function () {
+                window.validateActivityDateRange(true);
+            });
+        });
+
+        ['has_alcohol', 'has_fire', 'has_sales'].forEach(function (key) {
+            document.querySelectorAll('#' + key + ', input[name="' + key + '"]').forEach(function (el) {
+                el.addEventListener('change', function () {
+                    window.validateActivityDateRange(true);
+                });
+
+                el.addEventListener('click', function () {
+                    setTimeout(function () {
+                        window.validateActivityDateRange(true);
+                    }, 0);
+                });
+            });
+        });
+
+        const originalGoToStep = window.goToStep;
+
+        window.goToStep = function (stepNo) {
+            const currentStepInput = document.getElementById('current_step');
+            const currentStep = parseInt(currentStepInput ? currentStepInput.value : '1', 10);
+
+            if (stepNo > 1 && currentStep === 1) {
+                if (!window.validateActivityDateRange(true)) {
+                    return;
+                }
+            }
+
+            if (typeof originalGoToStep === 'function') {
+                return originalGoToStep(stepNo);
+            }
+        };
+
+        const form = document.getElementById('multistep_form');
+
+        if (form) {
+            form.addEventListener('submit', function (e) {
+                if (!window.validateActivityDateRange(true)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return false;
+                }
+            }, true);
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bindDateRuleValidation);
+    } else {
+        bindDateRuleValidation();
+    }
 })();
 </script>
 

@@ -98,6 +98,12 @@ if (!is_array($decoded)) {
 }
 
 $formData = $decoded['formData'] ?? [];
+
+// 將企劃書資訊也塞回 formData，避免前端切換步驟後遺失
+$formData['draft_proposal_file'] = $row['proposal_file'] ?? '';
+$formData['draft_proposal_original_name'] = $row['proposal_original_name'] ?? '';
+$formData['draft_proposal_uploaded_at'] = $row['proposal_uploaded_at'] ?? '';
+
 $currentStep = $decoded['currentStep'] ?? $row['current_step'];
 
 echo json_encode([

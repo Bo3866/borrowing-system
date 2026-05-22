@@ -9,13 +9,7 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(['success' => false, 'message' => '只接受 POST'], JSON_UNESCAPED_UNICODE);
-    exit;
-}
-
 $userId = (string)$_SESSION['user_id'];
-
 $dbError = '';
 $link = getMysqliConnection($dbError);
 
@@ -24,12 +18,8 @@ if ($dbError !== '') {
     exit;
 }
 
-$draftId = isset($_POST['draft_id']) && $_POST['draft_id'] !== ''
-    ? (int)$_POST['draft_id']
-    : 0;
-
+$draftId = isset($_POST['draft_id']) && $_POST['draft_id'] !== '' ? (int)$_POST['draft_id'] : 0;
 $currentStep = (string)($_POST['currentStep'] ?? $_POST['current_step'] ?? '1');
-
 $formData = $_POST;
 unset($formData['draft_id'], $formData['currentStep']);
 
@@ -40,10 +30,37 @@ $proposalFile = null;
 $proposalOriginalName = null;
 $proposalUploadedAt = null;
 
-if (
-    isset($_FILES['proposal_file']) &&
-    $_FILES['proposal_file']['error'] !== UPLOAD_ERR_NO_FILE
-) {
+$postedDraftProposalFile = trim((string)($_POST['draft_proposal_file'] ?? ''));
+$postedDraftProposalOriginalName = trim((string)($_POST['draft_proposal_original_name'] ?? ''));
+$postedDraftProposalUploadedAt = trim((string)($_POST['draft_proposal_uploaded_at'] ?? ''));
+
+// 如果是更新草稿，但本次沒有重新選 PDF，必須保留原本資料庫中的企劃書
+if ($draftId > 0 && $postedDraftProposalFile === '') {
+    $oldProposalStmt = mysqli_prepare(
+        $link,
+        'SELECT proposal_file, proposal_original_name, proposal_uploaded_at
+         FROM reservation_drafts
+         WHERE draft_id = ? AND user_id = ?
+         LIMIT 1'
+    );
+
+    if ($oldProposalStmt) {
+        mysqli_stmt_bind_param($oldProposalStmt, 'is', $draftId, $userId);
+        mysqli_stmt_execute($oldProposalStmt);
+        $oldProposalResult = mysqli_stmt_get_result($oldProposalStmt);
+        $oldProposalRow = $oldProposalResult ? mysqli_fetch_assoc($oldProposalResult) : null;
+        mysqli_stmt_close($oldProposalStmt);
+
+        if ($oldProposalRow && !empty($oldProposalRow['proposal_file'])) {
+            $postedDraftProposalFile = (string)$oldProposalRow['proposal_file'];
+            $postedDraftProposalOriginalName = (string)($oldProposalRow['proposal_original_name'] ?? '');
+            $postedDraftProposalUploadedAt = (string)($oldProposalRow['proposal_uploaded_at'] ?? '');
+        }
+    }
+}
+
+
+if (isset($_FILES['proposal_file']) && $_FILES['proposal_file']['error'] !== UPLOAD_ERR_NO_FILE) {
     $file = $_FILES['proposal_file'];
 
     if ($file['error'] !== UPLOAD_ERR_OK) {
@@ -72,9 +89,7 @@ if (
         exit;
     }
 
-    // 專門存放草稿企劃書 PDF 的資料夾
     $uploadDir = dirname(__DIR__) . '/uploads/draft_proposals';
-
     if (!is_dir($uploadDir)) {
         if (!mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
             echo json_encode(['success' => false, 'message' => '建立企劃書資料夾失敗'], JSON_UNESCAPED_UNICODE);
@@ -108,53 +123,42 @@ if ($draftJson === false) {
 
 if ($draftId > 0) {
     if ($proposalFile !== null) {
-        $sql = "
-            UPDATE reservation_drafts
-            SET activity_name = ?,
-                purpose = ?,
-                proposal_file = ?,
-                proposal_original_name = ?,
-                proposal_uploaded_at = ?,
-                current_step = ?,
-                draft_data = ?
-            WHERE draft_id = ? AND user_id = ?
-        ";
-
+        $sql = "UPDATE reservation_drafts
+                SET activity_name = ?, purpose = ?, proposal_file = ?, proposal_original_name = ?,
+                    proposal_uploaded_at = ?, current_step = ?, draft_data = ?
+                WHERE draft_id = ? AND user_id = ?";
         $stmt = mysqli_prepare($link, $sql);
-        mysqli_stmt_bind_param(
-            $stmt,
-            'sssssssis',
-            $activityName,
-            $purpose,
-            $proposalFile,
-            $proposalOriginalName,
-            $proposalUploadedAt,
-            $currentStep,
-            $draftJson,
-            $draftId,
-            $userId
-        );
+        mysqli_stmt_bind_param($stmt, 'sssssssis', $activityName, $purpose, $proposalFile, $proposalOriginalName, $proposalUploadedAt, $currentStep, $draftJson, $draftId, $userId);
     } else {
-        $sql = "
-            UPDATE reservation_drafts
-            SET activity_name = ?,
-                purpose = ?,
-                current_step = ?,
-                draft_data = ?
-            WHERE draft_id = ? AND user_id = ?
-        ";
+        if ($postedDraftProposalFile !== '') {
+            $proposalUploadedAtValue = $postedDraftProposalUploadedAt !== '' ? $postedDraftProposalUploadedAt : date('Y-m-d H:i:s');
 
-        $stmt = mysqli_prepare($link, $sql);
-        mysqli_stmt_bind_param(
-            $stmt,
-            'ssssis',
-            $activityName,
-            $purpose,
-            $currentStep,
-            $draftJson,
-            $draftId,
-            $userId
-        );
+            $sql = "UPDATE reservation_drafts
+                    SET activity_name = ?, purpose = ?,
+                        proposal_file = ?, proposal_original_name = ?, proposal_uploaded_at = ?,
+                        current_step = ?, draft_data = ?
+                    WHERE draft_id = ? AND user_id = ?";
+            $stmt = mysqli_prepare($link, $sql);
+            mysqli_stmt_bind_param(
+                $stmt,
+                'sssssssis',
+                $activityName,
+                $purpose,
+                $postedDraftProposalFile,
+                $postedDraftProposalOriginalName,
+                $proposalUploadedAtValue,
+                $currentStep,
+                $draftJson,
+                $draftId,
+                $userId
+            );
+        } else {
+            $sql = "UPDATE reservation_drafts
+                    SET activity_name = ?, purpose = ?, current_step = ?, draft_data = ?
+                    WHERE draft_id = ? AND user_id = ?";
+            $stmt = mysqli_prepare($link, $sql);
+            mysqli_stmt_bind_param($stmt, 'ssssis', $activityName, $purpose, $currentStep, $draftJson, $draftId, $userId);
+        }
     }
 
     if (!$stmt || !mysqli_stmt_execute($stmt)) {
@@ -166,53 +170,30 @@ if ($draftId > 0) {
         'success' => true,
         'message' => '草稿已更新',
         'draft_id' => $draftId,
-        'proposal_file' => $proposalFile,
-        'proposal_original_name' => $proposalOriginalName
+        'proposal_file' => $proposalFile ?? $postedDraftProposalFile,
+        'proposal_original_name' => $proposalOriginalName ?? $postedDraftProposalOriginalName,
+        'proposal_uploaded_at' => $proposalUploadedAt ?? $postedDraftProposalUploadedAt
     ], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-$sql = "
-    INSERT INTO reservation_drafts
-    (
-        user_id,
-        activity_name,
-        purpose,
-        proposal_file,
-        proposal_original_name,
-        proposal_uploaded_at,
-        current_step,
-        draft_data
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-";
-
+$sql = "INSERT INTO reservation_drafts
+        (user_id, activity_name, purpose, proposal_file, proposal_original_name, proposal_uploaded_at, current_step, draft_data)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
 $stmt = mysqli_prepare($link, $sql);
-mysqli_stmt_bind_param(
-    $stmt,
-    'ssssssss',
-    $userId,
-    $activityName,
-    $purpose,
-    $proposalFile,
-    $proposalOriginalName,
-    $proposalUploadedAt,
-    $currentStep,
-    $draftJson
-);
+mysqli_stmt_bind_param($stmt, 'ssssssss', $userId, $activityName, $purpose, $proposalFile, $proposalOriginalName, $proposalUploadedAt, $currentStep, $draftJson);
 
 if (!$stmt || !mysqli_stmt_execute($stmt)) {
     echo json_encode(['success' => false, 'message' => '草稿新增失敗：' . mysqli_error($link)], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-$newDraftId = (int)mysqli_insert_id($link);
-
 echo json_encode([
     'success' => true,
     'message' => '草稿已暫存',
-    'draft_id' => $newDraftId,
+    'draft_id' => (int)mysqli_insert_id($link),
     'proposal_file' => $proposalFile,
-    'proposal_original_name' => $proposalOriginalName
+    'proposal_original_name' => $proposalOriginalName,
+    'proposal_uploaded_at' => $proposalUploadedAt
 ], JSON_UNESCAPED_UNICODE);
 ?>

@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 session_start();
 
 function getEquipmentIcon($name) {
@@ -278,6 +278,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['purpose'] = trim((string)($_POST['purpose'] ?? ''));
     $formData['phone'] = trim((string)($_POST['phone'] ?? ''));
 
+    // 企劃書後端檔案路徑：必須在前面先抓，後面驗證才不會誤判沒有企劃書
+    $draftProposalFileForReservation = null;
+    $draftProposalUploadedAtForReservation = null;
+
+    $formData['draft_proposal_file'] = trim((string)($_POST['draft_proposal_file'] ?? ''));
+    $formData['draft_proposal_original_name'] = trim((string)($_POST['draft_proposal_original_name'] ?? ''));
+    $formData['draft_proposal_uploaded_at'] = trim((string)($_POST['draft_proposal_uploaded_at'] ?? ''));
+
+    if ($formData['draft_proposal_file'] !== '') {
+        $draftProposalFileForReservation = $formData['draft_proposal_file'];
+        $draftProposalUploadedAtForReservation = $formData['draft_proposal_uploaded_at'] !== ''
+            ? $formData['draft_proposal_uploaded_at']
+            : date('Y-m-d H:i:s');
+    } else {
+        $currentDraftIdForProposalEarly = isset($_POST['current_draft_id']) ? (int)$_POST['current_draft_id'] : 0;
+
+        if ($currentDraftIdForProposalEarly > 0) {
+            $draftProposalStmtEarly = mysqli_prepare(
+                $link,
+                'SELECT proposal_file, proposal_uploaded_at
+                 FROM reservation_drafts
+                 WHERE draft_id = ? AND user_id = ?
+                 LIMIT 1'
+            );
+
+            if ($draftProposalStmtEarly) {
+                mysqli_stmt_bind_param($draftProposalStmtEarly, 'is', $currentDraftIdForProposalEarly, $userId);
+                mysqli_stmt_execute($draftProposalStmtEarly);
+                $draftProposalResultEarly = mysqli_stmt_get_result($draftProposalStmtEarly);
+                $draftProposalRowEarly = $draftProposalResultEarly ? mysqli_fetch_assoc($draftProposalResultEarly) : null;
+                mysqli_stmt_close($draftProposalStmtEarly);
+
+                if ($draftProposalRowEarly && !empty($draftProposalRowEarly['proposal_file'])) {
+                    $draftProposalFileForReservation = (string)$draftProposalRowEarly['proposal_file'];
+                    $draftProposalUploadedAtForReservation = !empty($draftProposalRowEarly['proposal_uploaded_at'])
+                        ? (string)$draftProposalRowEarly['proposal_uploaded_at']
+                        : date('Y-m-d H:i:s');
+
+                    $formData['draft_proposal_file'] = $draftProposalFileForReservation;
+                    $formData['draft_proposal_uploaded_at'] = $draftProposalUploadedAtForReservation;
+                }
+            }
+        }
+    }
+
+    $formData['alcohol_coordinator'] = trim((string)($_POST['alcohol_coordinator'] ?? ''));
+    $formData['alcohol_president'] = trim((string)($_POST['alcohol_president'] ?? ''));
+
+
     $cartEquipments = [];
     $cartSpaceId = null;
 
@@ -439,6 +488,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $borrowError = '請完整填寫借用起訖日期與時間。';
         } elseif ($formData['purpose'] === '') {
             $borrowError = '請填寫用途說明。';
+        } elseif (
+            (!isset($_FILES['proposal_file']) || $_FILES['proposal_file']['error'] === UPLOAD_ERR_NO_FILE) &&
+            empty($draftProposalFileForReservation)
+        ) {
+            $borrowError = '請上傳企劃書。';
         } elseif ($formData['setup_flags'] === 'yes' && $formData['flag_count'] > 20) {
             $borrowError = '宣傳旗幟最多只能選 20 支。';
         } elseif ($formData['setup_flags'] === 'yes' && $formData['flag_count'] < 1) {
@@ -490,7 +544,26 @@ CREATE TABLE IF NOT EXISTS reservations (
     certificate_id BIGINT UNSIGNED NULL,
     returned_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,    organization_name VARCHAR(100) NULL,
+    activity_name VARCHAR(100) NULL,
+    participant_count VARCHAR(50) NULL,
+    staff_count INT NULL DEFAULT 0,
+    club_president VARCHAR(100) NULL,
+    activity_coordinator VARCHAR(100) NULL,
+    coordinator_department VARCHAR(100) NULL,
+    coordinator_phone VARCHAR(30) NULL,
+    coordinator_other_contact VARCHAR(255) NULL,
+    vehicle_entry VARCHAR(10) NULL DEFAULT 'no',
+    setup_flags VARCHAR(10) NULL DEFAULT 'no',
+    flag_count INT NULL DEFAULT 0,
+    purpose VARCHAR(255) NULL,
+    approval_stage VARCHAR(10) NULL DEFAULT 'a',
+    has_alcohol VARCHAR(1) NULL DEFAULT '',
+    has_fire VARCHAR(1) NULL DEFAULT '',
+    has_sales VARCHAR(1) NULL DEFAULT '',
+    alcohol_coordinator VARCHAR(50) NULL,
+    alcohol_president VARCHAR(50) NULL,
+
     PRIMARY KEY (reservation_id)
 ) ENGINE=InnoDB;
 SQL;
@@ -535,6 +608,47 @@ SQL;
             try {
                 $uploadedProposalPath = null;
 
+                // 草稿載入後 input[type=file] 無法自動回填，因此正式送出時要沿用草稿後端已存檔案
+                $draftProposalFileForReservation = null;
+                $draftProposalUploadedAtForReservation = null;
+                
+                // 首先檢查隱藏表單字段中是否有草稿企劃書信息（來自步驟導航時的保留值）
+                $hiddenProposalFile = isset($_POST['draft_proposal_file']) ? trim((string)$_POST['draft_proposal_file']) : '';
+                $hiddenProposalUploadedAt = isset($_POST['draft_proposal_uploaded_at']) ? trim((string)$_POST['draft_proposal_uploaded_at']) : '';
+                
+                if (!empty($hiddenProposalFile)) {
+                    $draftProposalFileForReservation = $hiddenProposalFile;
+                    $draftProposalUploadedAtForReservation = !empty($hiddenProposalUploadedAt) ? $hiddenProposalUploadedAt : date('Y-m-d H:i:s');
+                } else {
+                    // 如果隱藏字段中沒有，則查詢草稿表
+                    $currentDraftIdForProposal = isset($_POST['current_draft_id']) ? (int)$_POST['current_draft_id'] : 0;
+
+                    if ($currentDraftIdForProposal > 0) {
+                        $draftProposalStmt = mysqli_prepare(
+                            $link,
+                            'SELECT proposal_file, proposal_uploaded_at
+                             FROM reservation_drafts
+                             WHERE draft_id = ? AND user_id = ?
+                             LIMIT 1'
+                        );
+
+                        if ($draftProposalStmt) {
+                            mysqli_stmt_bind_param($draftProposalStmt, 'is', $currentDraftIdForProposal, $userId);
+                            mysqli_stmt_execute($draftProposalStmt);
+                            $draftProposalResult = mysqli_stmt_get_result($draftProposalStmt);
+                            $draftProposalRow = $draftProposalResult ? mysqli_fetch_assoc($draftProposalResult) : null;
+                            mysqli_stmt_close($draftProposalStmt);
+
+                            if ($draftProposalRow && !empty($draftProposalRow['proposal_file'])) {
+                                $draftProposalFileForReservation = (string)$draftProposalRow['proposal_file'];
+                                $draftProposalUploadedAtForReservation = !empty($draftProposalRow['proposal_uploaded_at'])
+                                    ? (string)$draftProposalRow['proposal_uploaded_at']
+                                    : date('Y-m-d H:i:s');
+                            }
+                        }
+                    }
+                }
+
                 // Ensure `reservations` has `proposal_file` and `proposal_uploaded_at` columns.
                 $reservationColsRes = mysqli_query($link, 'SHOW COLUMNS FROM reservations LIKE \'proposal_file\'');
                 if (!($reservationColsRes && mysqli_num_rows($reservationColsRes) > 0)) {
@@ -549,6 +663,26 @@ SQL;
                     }
                 }
 
+                // Ensure `reservations` has `has_alcohol`, `has_fire`, `has_sales` columns
+                $hasAlcoholRes = mysqli_query($link, 'SHOW COLUMNS FROM reservations LIKE \'has_alcohol\'');
+                if (!($hasAlcoholRes && mysqli_num_rows($hasAlcoholRes) > 0)) {
+                    if (!mysqli_query($link, "ALTER TABLE reservations ADD COLUMN has_alcohol VARCHAR(1) NULL COMMENT '是否含酒精'")) {
+                        @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " ALTER reservations add has_alcohol failed: " . mysqli_error($link) . "\n", FILE_APPEND | LOCK_EX);
+                    }
+                }
+                $hasFireRes = mysqli_query($link, 'SHOW COLUMNS FROM reservations LIKE \'has_fire\'');
+                if (!($hasFireRes && mysqli_num_rows($hasFireRes) > 0)) {
+                    if (!mysqli_query($link, "ALTER TABLE reservations ADD COLUMN has_fire VARCHAR(1) NULL COMMENT '是否含明火'")) {
+                        @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " ALTER reservations add has_fire failed: " . mysqli_error($link) . "\n", FILE_APPEND | LOCK_EX);
+                    }
+                }
+                $hasSalesRes = mysqli_query($link, 'SHOW COLUMNS FROM reservations LIKE \'has_sales\'');
+                if (!($hasSalesRes && mysqli_num_rows($hasSalesRes) > 0)) {
+                    if (!mysqli_query($link, "ALTER TABLE reservations ADD COLUMN has_sales VARCHAR(1) NULL COMMENT '是否含攤販'")) {
+                        @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " ALTER reservations add has_sales failed: " . mysqli_error($link) . "\n", FILE_APPEND | LOCK_EX);
+                    }
+                }
+
                 if ($formData['phone'] !== '') {
                     $updatePhoneStmt = mysqli_prepare($link, 'UPDATE users SET phone = ? WHERE user_id = ?');
                     if (!$updatePhoneStmt) {
@@ -559,6 +693,51 @@ SQL;
                     mysqli_stmt_close($updatePhoneStmt);
                 }
                 $applicantColumn = $reservationApplicantColumn;
+
+
+                // 自動補齊 reservations 缺少欄位，避免 Unknown column xxx in field list
+                $requiredReservationColumns = [
+                    'organization_name' => "VARCHAR(100) NULL COMMENT '單位名稱/主辦社團'",
+                    'activity_name' => "VARCHAR(100) NULL COMMENT '活動名稱'",
+                    'participant_count' => "VARCHAR(50) NULL COMMENT '活動對象人數'",
+                    'staff_count' => "INT NULL DEFAULT 0 COMMENT '工作人員人數'",
+                    'club_president' => "VARCHAR(100) NULL COMMENT '社/會長'",
+                    'activity_coordinator' => "VARCHAR(100) NULL COMMENT '活動負責人'",
+                    'coordinator_department' => "VARCHAR(100) NULL COMMENT '系級'",
+                    'coordinator_phone' => "VARCHAR(30) NULL COMMENT '聯絡電話'",
+                    'coordinator_other_contact' => "VARCHAR(255) NULL COMMENT '其他聯絡方式'",
+                    'vehicle_entry' => "VARCHAR(10) NULL DEFAULT 'no' COMMENT '是否車輛入校'",
+                    'setup_flags' => "VARCHAR(10) NULL DEFAULT 'no' COMMENT '是否插旗'",
+                    'flag_count' => "INT NULL DEFAULT 0 COMMENT '旗幟數量'",
+                    'purpose' => "VARCHAR(255) NULL COMMENT '用途'",
+                    'submitted_at' => "DATETIME NULL COMMENT '送出時間'",
+                    'approval_stage' => "VARCHAR(10) NULL DEFAULT 'a' COMMENT '審核階段'",
+                    'has_alcohol' => "VARCHAR(1) NULL DEFAULT '' COMMENT '是否含酒精'",
+                    'has_fire' => "VARCHAR(1) NULL DEFAULT '' COMMENT '是否含明火'",
+                    'has_sales' => "VARCHAR(1) NULL DEFAULT '' COMMENT '是否含販售/攤販'",
+                    'alcohol_coordinator' => "VARCHAR(50) NULL COMMENT '酒精活動負責人'",
+                    'alcohol_president' => "VARCHAR(50) NULL COMMENT '酒精活動社長'",
+                    'proposal_file' => "VARCHAR(255) NULL COMMENT '企劃書路徑'",
+                    'proposal_uploaded_at' => "DATETIME NULL COMMENT '企劃書上傳時間'",
+                    'certificate_id' => "BIGINT UNSIGNED NULL COMMENT '證照編號'"
+                ];
+
+                foreach ($requiredReservationColumns as $columnName => $columnDefinition) {
+                    $safeColumnName = mysqli_real_escape_string($link, $columnName);
+                    $columnCheckResult = mysqli_query($link, "SHOW COLUMNS FROM reservations LIKE '{$safeColumnName}'");
+
+                    if (!($columnCheckResult && mysqli_num_rows($columnCheckResult) > 0)) {
+                        $alterSql = "ALTER TABLE reservations ADD COLUMN {$columnName} {$columnDefinition}";
+
+                        if (!mysqli_query($link, $alterSql)) {
+                            @file_put_contents(
+                                __DIR__ . '/borrow_debug.log',
+                                date('c') . " ALTER reservations add {$columnName} failed: " . mysqli_error($link) . "\n",
+                                FILE_APPEND | LOCK_EX
+                            );
+                        }
+                    }
+                }
 
                 // 檢查 reservations 表是否有 purpose 與 certificate_id 欄位，視情況決定 INSERT 欄位
                 $reservationCols = [];
@@ -573,6 +752,9 @@ SQL;
 
                 $hasSubmittedAtCol = in_array('submitted_at', $reservationCols, true);
                 $hasApprovalStageCol = in_array('approval_stage', $reservationCols, true);
+                $hasAlcoholCol = in_array('has_alcohol', $reservationCols, true);
+                $hasFireCol = in_array('has_fire', $reservationCols, true);
+                $hasSalesCol = in_array('has_sales', $reservationCols, true);
 
                 // 自動將使用者的證照編號寫入 reservations.certificate_id
                 $certificateId = null;
@@ -591,33 +773,41 @@ SQL;
                 }
                 
                 $submittedAtVal = date('Y-m-d H:i:s'); // 保證同一批次提交時間一致
-                $insertCols = [$applicantColumn, 'borrow_start_at', 'borrow_end_at', 'organization_name', 'activity_name', 'participant_count', 'staff_count', 'club_president', 'activity_coordinator', 'coordinator_department', 'coordinator_phone', 'coordinator_other_contact', 'vehicle_entry', 'setup_flags', 'flag_count', 'has_alcohol', 'has_fire', 'has_sales'];
-                $bindValuesTemplate = [$userId, $borrowStartAtSql, $borrowEndAtSql, $formData['organization_name'], $formData['activity_name'], $formData['participant_count'], (int)$formData['staff_count'], $formData['club_president'], $formData['activity_coordinator'], $formData['coordinator_department'], $formData['coordinator_phone'], $formData['coordinator_other_contact'], $formData['vehicle_entry'], $formData['setup_flags'], (int)$formData['flag_count'], $formData['has_alcohol'], $formData['has_fire'], $formData['has_sales']];
-                $bindTypesTemplate = 'ssssssisssssssisss';
 
-                if ($hasPurposeCol) {
-                    $insertCols[] = 'purpose';
-                    $bindValuesTemplate[] = $formData['purpose'];
-                    $bindTypesTemplate .= 's';
-                }
-                
-                if ($hasSubmittedAtCol) {
-                    $insertCols[] = 'submitted_at';
-                    $bindValuesTemplate[] = $submittedAtVal;
-                    $bindTypesTemplate .= 's';
-                }
+                $insertCols = [$applicantColumn, 'borrow_start_at', 'borrow_end_at'];
+                $bindValuesTemplate = [$userId, $borrowStartAtSql, $borrowEndAtSql];
+                $bindTypesTemplate = 'sss';
 
-                if ($hasApprovalStageCol) {
-                    // new submissions start at stage 'a'
-                    $insertCols[] = 'approval_stage';
-                    $bindValuesTemplate[] = 'a';
-                    $bindTypesTemplate .= 's';
-                }
+                $optionalReservationValues = [
+                    'organization_name' => ['type' => 's', 'value' => $formData['organization_name']],
+                    'activity_name' => ['type' => 's', 'value' => $formData['activity_name']],
+                    'participant_count' => ['type' => 's', 'value' => $formData['participant_count']],
+                    'staff_count' => ['type' => 'i', 'value' => (int)$formData['staff_count']],
+                    'club_president' => ['type' => 's', 'value' => $formData['club_president']],
+                    'activity_coordinator' => ['type' => 's', 'value' => $formData['activity_coordinator']],
+                    'coordinator_department' => ['type' => 's', 'value' => $formData['coordinator_department']],
+                    'coordinator_phone' => ['type' => 's', 'value' => $formData['coordinator_phone']],
+                    'coordinator_other_contact' => ['type' => 's', 'value' => $formData['coordinator_other_contact']],
+                    'vehicle_entry' => ['type' => 's', 'value' => $formData['vehicle_entry']],
+                    'setup_flags' => ['type' => 's', 'value' => $formData['setup_flags']],
+                    'flag_count' => ['type' => 'i', 'value' => (int)$formData['flag_count']],
+                    'purpose' => ['type' => 's', 'value' => $formData['purpose']],
+                    'submitted_at' => ['type' => 's', 'value' => $submittedAtVal],
+                    'approval_stage' => ['type' => 's', 'value' => 'a'],
+                    'certificate_id' => ['type' => 'i', 'value' => $certificateId],
+                    'has_alcohol' => ['type' => 's', 'value' => $formData['has_alcohol']],
+                    'has_fire' => ['type' => 's', 'value' => $formData['has_fire']],
+                    'has_sales' => ['type' => 's', 'value' => $formData['has_sales']],
+                    'alcohol_coordinator' => ['type' => 's', 'value' => $formData['alcohol_coordinator'] ?? ''],
+                    'alcohol_president' => ['type' => 's', 'value' => $formData['alcohol_president'] ?? '']
+                ];
 
-                if ($hasCertificateIdCol) {
-                    $insertCols[] = 'certificate_id';
-                    $bindValuesTemplate[] = $certificateId;
-                    $bindTypesTemplate .= 'i';
+                foreach ($optionalReservationValues as $columnName => $config) {
+                    if (in_array($columnName, $reservationCols, true)) {
+                        $insertCols[] = $columnName;
+                        $bindValuesTemplate[] = $config['value'];
+                        $bindTypesTemplate .= $config['type'];
+                    }
                 }
 
                 $colsSql = implode(", ", $insertCols) . ", approval_status, created_at";
@@ -635,9 +825,17 @@ SQL;
                 if (!$reservationStmt) {
                     throw new RuntimeException('建立預約主檔失敗：' . mysqli_error($link));
                 }
+                @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " INSERT SQL: " . $insertReservationSql . "\nBind Types: " . $bindTypesTemplate . "\nBind Values: " . json_encode($bindValuesTemplate) . "\n", FILE_APPEND | LOCK_EX);
                 mysqli_stmt_bind_param($reservationStmt, $bindTypesTemplate, ...$bindValuesTemplate);
-                mysqli_stmt_execute($reservationStmt);
+                if (!mysqli_stmt_execute($reservationStmt)) {
+                    @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " Execute failed: " . mysqli_stmt_error($reservationStmt) . "\n", FILE_APPEND | LOCK_EX);
+                    throw new RuntimeException('建立預約主檔失敗：' . mysqli_stmt_error($reservationStmt));
+                }
                 $commonReservationId = (int)mysqli_insert_id($link);
+                @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " Insert ID: " . $commonReservationId . "\n", FILE_APPEND | LOCK_EX);
+                if ($commonReservationId === 0) {
+                    throw new RuntimeException('建立預約主檔失敗：無法取得預約編號');
+                }
                 mysqli_stmt_close($reservationStmt);
 
                 $createdReservationIds = [$commonReservationId];
@@ -733,10 +931,14 @@ SQL;
                         // 將實體器材加入該預約單
                         foreach ($equipmentIds as $equipmentId) {
                             mysqli_stmt_bind_param($reservationItemStmt, 'ii', $itemReservationId, $equipmentId);
-                            mysqli_stmt_execute($reservationItemStmt);
+                            if (!mysqli_stmt_execute($reservationItemStmt)) {
+                                throw new RuntimeException('新增器材預約明細失敗：' . mysqli_stmt_error($reservationItemStmt));
+                            }
                             
                             mysqli_stmt_bind_param($updateEquipmentStatusStmt, 'is', $equipmentId, $borrowStartAtSql);
-                            mysqli_stmt_execute($updateEquipmentStatusStmt);
+                            if (!mysqli_stmt_execute($updateEquipmentStatusStmt)) {
+                                throw new RuntimeException('更新器材狀態失敗：' . mysqli_stmt_error($updateEquipmentStatusStmt));
+                            }
                         }
                     }
 
@@ -810,6 +1012,22 @@ SQL;
                     mysqli_stmt_bind_param($updateProposalStmt, 'ssi', $proposalFileForReservation, $proposalUploadedAtForReservation, $commonReservationId);
                     mysqli_stmt_execute($updateProposalStmt);
                     mysqli_stmt_close($updateProposalStmt);
+                } elseif ($draftProposalFileForReservation !== null) {
+                    $proposalFileForReservation = $draftProposalFileForReservation;
+                    $proposalUploadedAtForReservation = $draftProposalUploadedAtForReservation;
+
+                    $updateProposalStmt = mysqli_prepare(
+                        $link,
+                        'UPDATE reservations SET proposal_file = ?, proposal_uploaded_at = ? WHERE reservation_id = ?'
+                    );
+                    if (!$updateProposalStmt) {
+                        throw new RuntimeException('沿用草稿企劃書失敗：' . mysqli_error($link));
+                    }
+                    mysqli_stmt_bind_param($updateProposalStmt, 'ssi', $proposalFileForReservation, $proposalUploadedAtForReservation, $commonReservationId);
+                    mysqli_stmt_execute($updateProposalStmt);
+                    mysqli_stmt_close($updateProposalStmt);
+                } else {
+                    throw new RuntimeException('請先上傳活動企劃書！');
                 }
 
                 if (!empty($formData['space_id'])) {
@@ -843,7 +1061,9 @@ SQL;
                         throw new RuntimeException('建立空間預約明細失敗：' . mysqli_error($link));
                     }
                     mysqli_stmt_bind_param($spaceItemStmt, 'is', $reservationId, $formData['space_id']);
-                    mysqli_stmt_execute($spaceItemStmt);
+                    if (!mysqli_stmt_execute($spaceItemStmt)) {
+                        throw new RuntimeException('建立空間預約明細失敗：' . mysqli_stmt_error($spaceItemStmt));
+                    }
                     mysqli_stmt_close($spaceItemStmt);
                     // 不再更新 spaces 表的營運狀態，因為我們通過查詢衝突來檢查可用性
                 }
@@ -882,8 +1102,10 @@ SQL;
                                 $mail->Body    = "您好，{$displayName}：<br><br>您的預約申請（單號：{$idsStr}）已經成功送出，目前狀態為<b>「審核中」</b>。<br><br>系統管理員將會儘速處理您的申請，審核結果出爐後會再次以 Email 通知您。<br><br>感謝您的使用！";
                                 $mail->AltBody = "您好，{$displayName}：\n\n您的預約申請（單號：{$idsStr}）已經成功送出，目前狀態為「審核中」。\n\n系統管理員將會儘速處理您的申請，審核結果出爐後會再次以 Email 通知您。\n\n感謝您的使用！";
                                 $mail->send();
+                                @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " 預約成功信件已寄送至: " . $userEmail . "\n", FILE_APPEND | LOCK_EX);
                             } catch (Exception $e) {
-                                error_log("預約成功信件寄送失敗: " . $mail->ErrorInfo);
+                                @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " 預約成功信件寄送失敗 (to: {$userEmail}): " . $e->getMessage() . " | ErrorInfo: " . $mail->ErrorInfo . "\n", FILE_APPEND | LOCK_EX);
+                                error_log("預約成功信件寄送失敗 (to: {$userEmail}): " . $e->getMessage());
                             }
                         }
                     }
@@ -1111,7 +1333,109 @@ SQL;
             color:#64748b;
         }
 
+        /* 草稿保存选择模态窗口 */
+        .draft-choice-modal {
+            display: none;
+            position: fixed;
+            z-index: 10000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            animation: fadeIn 0.3s ease;
+        }
 
+        .draft-choice-modal.show {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .draft-choice-content {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 450px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+            animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            0% { transform: translateY(30px); opacity: 0; }
+            100% { transform: translateY(0); opacity: 1; }
+        }
+
+        .draft-choice-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .draft-choice-draft-id {
+            text-align: center;
+            font-size: 14px;
+            color: #64748b;
+            margin-bottom: 20px;
+            background: #f1f5f9;
+            padding: 10px;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+
+        .draft-choice-description {
+            font-size: 15px;
+            color: #475569;
+            margin-bottom: 25px;
+            line-height: 1.6;
+            text-align: center;
+        }
+
+        .draft-choice-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+
+        .draft-btn-choice {
+            flex: 1;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            min-height: 45px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .draft-btn-update {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .draft-btn-update:hover {
+            background: #2563eb;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+
+        .draft-btn-new {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .draft-btn-new:hover {
+            background: #d97706;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+        }
 
     </style>
     <!-- 引入 Flatpickr -->
@@ -1120,6 +1444,25 @@ SQL;
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh-tw.js"></script>
 </head>
 <body>
+    <!-- 草稿保存选择模态窗口 -->
+    <div id="draftChoiceModal" class="draft-choice-modal">
+        <div class="draft-choice-content">
+            <div class="draft-choice-title">💾 草稿保存方式</div>
+            <div class="draft-choice-draft-id">草稿編號：<span id="draftIdDisplay">-</span></div>
+            <div class="draft-choice-description">
+                您已有一個正在進行中的草稿，請選擇保存方式：
+            </div>
+            <div class="draft-choice-buttons">
+                <button type="button" class="draft-btn-choice draft-btn-update" id="draftBtnUpdate">
+                    ✓ 覆蓋更新
+                </button>
+                <button type="button" class="draft-btn-choice draft-btn-new" id="draftBtnNew">
+                    ✚ 新建草稿
+                </button>
+            </div>
+        </div>
+    </div>
+
     <div class="container">
         <nav class="navbar">
             <div class="navbar-brand">
@@ -1173,7 +1516,10 @@ SQL;
                         <form method="post" enctype="multipart/form-data" class="borrow-form" action="borrow.php" novalidate id="multistep_form">
                             <input type="hidden" name="current_step" id="current_step" value="<?php echo htmlspecialchars($_POST['current_step'] ?? '1', ENT_QUOTES, 'UTF-8'); ?>">
                             <input type="hidden" name="current_draft_id" id="current_draft_id" value="">
-                            <input type="file" id="proposal_file" name="proposal_file" accept=".pdf,application/pdf" style="opacity: 0; position: absolute; z-index: -1; width: 0; height: 0;" onchange="document.getElementById('proposal_file_name_display').innerText = this.files.length > 0 ? this.files[0].name : '';">
+                            <input type="hidden" name="draft_proposal_file" id="draft_proposal_file" value="">
+                            <input type="hidden" name="draft_proposal_original_name" id="draft_proposal_original_name" value="">
+                            <input type="hidden" name="draft_proposal_uploaded_at" id="draft_proposal_uploaded_at" value="">
+                            <input type="file" id="proposal_file" name="proposal_file" accept=".pdf,application/pdf" style="opacity: 0; position: absolute; z-index: -1; width: 0; height: 0;" onchange="if (this.files.length > 0) { document.getElementById('proposal_file_name_display').innerText = '已上傳新企劃書：' + this.files[0].name; const f=document.getElementById('draft_proposal_file'); const n=document.getElementById('draft_proposal_original_name'); const t=document.getElementById('draft_proposal_uploaded_at'); if(f)f.value=''; if(n)n.value=''; if(t)t.value=''; } else { document.getElementById('proposal_file_name_display').innerText = ''; }">
                             <!-- ========== 步驟 1 內容區 ========== -->
                             <div class="step-content active" id="step-content-1">
                                 <h3 class="step-title" style="margin-bottom: 10px;">第一步：活動基本資料</h3>
@@ -2584,6 +2930,19 @@ function startApplication() {
                 }
 
                 const fileDisplay = document.getElementById('proposal_file_name_display');
+                const draftProposalFileInput = document.getElementById('draft_proposal_file');
+                const draftProposalOriginalNameInput = document.getElementById('draft_proposal_original_name');
+                const draftProposalUploadedAtInput = document.getElementById('draft_proposal_uploaded_at');
+
+                if (draft.proposal_file && draftProposalFileInput) {
+                    draftProposalFileInput.value = draft.proposal_file;
+                }
+                if (draft.proposal_original_name && draftProposalOriginalNameInput) {
+                    draftProposalOriginalNameInput.value = draft.proposal_original_name;
+                }
+                if (draft.proposal_uploaded_at && draftProposalUploadedAtInput) {
+                    draftProposalUploadedAtInput.value = draft.proposal_uploaded_at;
+                }
                 if (fileDisplay && draft.proposal_original_name) {
                     fileDisplay.innerText = '已上傳企劃書：' + draft.proposal_original_name;
                 }
@@ -2660,6 +3019,52 @@ function startApplication() {
                     fd.set('draft_id', currentDraftId);
                     fd.set('currentStep', currentStep);
 
+                    // 如果已有草稿ID，詢問用戶是否覆蓋或新建
+                    let saveAction = 'update'; // 默認更新
+                    if (currentDraftId && currentDraftId !== '') {
+                        // 显示模态窗口并等待用户选择
+                        const choice = await new Promise((resolve) => {
+                            const modal = document.getElementById('draftChoiceModal');
+                            const updateBtn = document.getElementById('draftBtnUpdate');
+                            const newBtn = document.getElementById('draftBtnNew');
+                            const draftIdDisplay = document.getElementById('draftIdDisplay');
+
+                            if (!modal || !updateBtn || !newBtn) {
+                                resolve('update'); // 回退到更新
+                                return;
+                            }
+
+                            draftIdDisplay.textContent = currentDraftId;
+                            modal.classList.add('show');
+
+                            const handleUpdate = () => {
+                                modal.classList.remove('show');
+                                updateBtn.removeEventListener('click', handleUpdate);
+                                newBtn.removeEventListener('click', handleNew);
+                                resolve('update');
+                            };
+
+                            const handleNew = () => {
+                                modal.classList.remove('show');
+                                updateBtn.removeEventListener('click', handleUpdate);
+                                newBtn.removeEventListener('click', handleNew);
+                                resolve('new');
+                            };
+
+                            updateBtn.addEventListener('click', handleUpdate);
+                            newBtn.addEventListener('click', handleNew);
+                        });
+
+                        saveAction = choice;
+                        if (choice === 'new') {
+                            // 如果选择新建，清除draft_id來創建新草稿
+                            fd.set('draft_id', '');
+                            fd.set('action', 'new');
+                        } else {
+                            fd.set('action', 'update');
+                        }
+                    }
+
                     const res = await fetch('api/save_draft.php', {
                         method: 'POST',
                         body: fd
@@ -2672,11 +3077,13 @@ function startApplication() {
                         const currentDraftInput = document.getElementById('current_draft_id');
                         if (currentDraftInput) currentDraftInput.value = draftId;
 
+                        const actionText = saveAction === 'new' ? '新增' : '更新';
+                        const successMsg = '✅ 草稿已' + actionText + '，草稿編號：' + draftId;
                         if (msg) {
-                            msg.textContent = '✅ 草稿暫存成功，草稿編號：' + draftId;
+                            msg.textContent = successMsg;
                         }
 
-                        alert('草稿暫存成功！\n\n草稿編號：' + draftId);
+                        alert('草稿已' + actionText + '成功！\n\n草稿編號：' + draftId);
                     } else {
                         if (msg) {
                             msg.textContent = '❌ ' + (data.message || '草稿暫存失敗');
@@ -3337,9 +3744,18 @@ function goToStep(stepNo) {
         return;
     }
 
+    // 在導航到第2、3步時（從第1步）檢查企劃書
     if (stepNo > 1 && currentStep === 1) {
+        // 檢查是否有新上傳的文件 OR 草稿中已有的企劃書
         const proposalFile = document.getElementById('proposal_file');
-        if (!proposalFile || !proposalFile.value) {
+        const draftProposalFile = document.getElementById('draft_proposal_file');
+        const draftProposalName = document.getElementById('draft_proposal_original_name');
+        
+        const hasNewFile = proposalFile && proposalFile.value;
+        const hasDraftFile = (draftProposalFile && draftProposalFile.value) || 
+                            (draftProposalName && draftProposalName.value);
+        
+        if (!hasNewFile && !hasDraftFile) {
             alert("請先上傳活動企劃書！");
             return;
         }
@@ -3897,6 +4313,318 @@ document.addEventListener('DOMContentLoaded', function () {
         bindDateRuleValidation();
     }
 })();
+</script>
+
+
+<script>
+(function () {
+    function hasProposalForSubmit() {
+        const proposalInput = document.getElementById('proposal_file');
+        const draftProposalInput = document.getElementById('draft_proposal_file');
+        const hasNewFile = proposalInput && proposalInput.files && proposalInput.files.length > 0;
+        const hasDraftFile = draftProposalInput && draftProposalInput.value && draftProposalInput.value.trim() !== '';
+        return hasNewFile || hasDraftFile;
+    }
+
+    window.hasProposalForSubmit = hasProposalForSubmit;
+
+    function bindProposalSubmitCheck() {
+        const form = document.getElementById('multistep_form');
+        if (!form) return;
+
+        form.addEventListener('submit', function (e) {
+            if (!hasProposalForSubmit()) {
+                e.preventDefault();
+                e.stopPropagation();
+                alert('請先上傳活動企劃書！');
+                return false;
+            }
+        }, true);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bindProposalSubmitCheck);
+    } else {
+        bindProposalSubmitCheck();
+    }
+})();
+</script>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+
+    if (typeof loadDraftFromDatabase === 'function') {
+
+        const originalLoadDraft = loadDraftFromDatabase;
+
+        loadDraftFromDatabase = async function (...args) {
+
+            const result = await originalLoadDraft.apply(this, args);
+
+            try {
+                if (window.currentDraftData) {
+
+                    const draft = window.currentDraftData;
+
+                    const hiddenInput = document.getElementById('draft_proposal_file');
+                    const originalNameInput = document.getElementById('draft_proposal_original_name');
+                    const uploadedAtInput = document.getElementById('draft_proposal_uploaded_at');
+
+                    if (hiddenInput) {
+                        hiddenInput.value = draft.proposal_file || '';
+                    }
+
+                    if (originalNameInput) {
+                        originalNameInput.value = draft.proposal_original_name || '';
+                    }
+
+                    if (uploadedAtInput) {
+                        uploadedAtInput.value = draft.proposal_uploaded_at || '';
+                    }
+                }
+            } catch (e) {
+                console.log(e);
+            }
+
+            return result;
+        };
+    }
+});
+</script>
+
+
+<script>
+/**
+ * 企劃書焊住機制
+ * input[type=file] 不能被 JS 自動回填，所以必須用：
+ * hidden input + sessionStorage + reservation_drafts.proposal_file
+ * 來保留後端已存的 PDF 路徑。
+ */
+(function () {
+    function isProposalDraftMode() {
+        const params = new URLSearchParams(window.location.search);
+        const urlDraftId = params.get('draft_id') || params.get('id') || '';
+        const hiddenDraftId = document.getElementById('current_draft_id')?.value || '';
+
+        return (
+            (urlDraftId !== '' && urlDraftId !== '0') ||
+            (hiddenDraftId !== '' && hiddenDraftId !== '0')
+        );
+    }
+
+    function clearProposalStateForNewApplication() {
+        sessionStorage.removeItem('draft_proposal_file');
+        sessionStorage.removeItem('draft_proposal_original_name');
+        sessionStorage.removeItem('draft_proposal_uploaded_at');
+
+        const fileInput = document.getElementById('draft_proposal_file');
+        const nameInput = document.getElementById('draft_proposal_original_name');
+        const timeInput = document.getElementById('draft_proposal_uploaded_at');
+        const display = document.getElementById('proposal_file_name_display');
+
+        if (fileInput) fileInput.value = '';
+        if (nameInput) nameInput.value = '';
+        if (timeInput) timeInput.value = '';
+        if (display) display.innerText = '';
+    }
+
+    function setProposalState(file, originalName, uploadedAt) {
+        const fileInput = document.getElementById('draft_proposal_file');
+        const nameInput = document.getElementById('draft_proposal_original_name');
+        const timeInput = document.getElementById('draft_proposal_uploaded_at');
+        const display = document.getElementById('proposal_file_name_display');
+
+        if (fileInput && file) fileInput.value = file;
+        if (nameInput && originalName) nameInput.value = originalName;
+        if (timeInput && uploadedAt) timeInput.value = uploadedAt;
+
+        if (file) sessionStorage.setItem('draft_proposal_file', file);
+        if (originalName) sessionStorage.setItem('draft_proposal_original_name', originalName);
+        if (uploadedAt) sessionStorage.setItem('draft_proposal_uploaded_at', uploadedAt);
+
+        if (display && originalName) {
+            display.innerText = '已上傳企劃書：' + originalName;
+        }
+    }
+
+    function restoreProposalState() {
+        if (!isProposalDraftMode()) {
+            clearProposalStateForNewApplication();
+            return;
+        }
+
+        const file = sessionStorage.getItem('draft_proposal_file') || '';
+        const name = sessionStorage.getItem('draft_proposal_original_name') || '';
+        const time = sessionStorage.getItem('draft_proposal_uploaded_at') || '';
+
+        const fileInput = document.getElementById('draft_proposal_file');
+        const nameInput = document.getElementById('draft_proposal_original_name');
+        const timeInput = document.getElementById('draft_proposal_uploaded_at');
+        const display = document.getElementById('proposal_file_name_display');
+
+        if (fileInput && !fileInput.value && file) fileInput.value = file;
+        if (nameInput && !nameInput.value && name) nameInput.value = name;
+        if (timeInput && !timeInput.value && time) timeInput.value = time;
+
+        if (display && name && !display.innerText.trim()) {
+            display.innerText = '已上傳企劃書：' + name;
+        }
+    }
+
+    function hasProposalForSubmit() {
+        if (isDraftMode) {
+            restoreProposalState();
+        }
+        const currentDraftId =
+            document.getElementById('current_draft_id')?.value || '';
+
+        const isDraftMode =
+            currentDraftId !== '' &&
+            currentDraftId !== '0';
+        const proposalInput = document.getElementById('proposal_file');
+        const draftProposalInput = document.getElementById('draft_proposal_file');
+
+        const hasNewFile =
+            proposalInput &&
+            proposalInput.files &&
+            proposalInput.files.length > 0;
+
+        const hasDraftFile =
+            draftProposalInput &&
+            draftProposalInput.value &&
+            draftProposalInput.value.trim() !== '';
+
+        return hasNewFile || hasDraftFile;
+    }
+
+    window.setProposalState = setProposalState;
+    window.restoreProposalState = restoreProposalState;
+    window.hasProposalForSubmit = hasProposalForSubmit;
+
+    const originalGoToStep = window.goToStep;
+    if (typeof originalGoToStep === 'function' && !window.__proposalGoToStepWrapped) {
+        window.__proposalGoToStepWrapped = true;
+
+        window.goToStep = function () {
+            if (isProposalDraftMode()) restoreProposalState();
+            const result = originalGoToStep.apply(this, arguments);
+            if (isProposalDraftMode()) restoreProposalState();
+            return result;
+        };
+    }
+
+    const originalFetch = window.fetch;
+    if (typeof originalFetch === 'function' && !window.__proposalFetchWrapped) {
+        window.__proposalFetchWrapped = true;
+
+        window.fetch = function (input, init) {
+            try {
+                const url = typeof input === 'string' ? input : (input && input.url ? input.url : '');
+
+                if (url.includes('api/save_draft.php') && init && init.body instanceof FormData) {
+                    if (isProposalDraftMode()) {
+                        restoreProposalState();
+                    }
+
+                    const f = isProposalDraftMode() ? (document.getElementById('draft_proposal_file')?.value || '') : '';
+                    const n = document.getElementById('draft_proposal_original_name')?.value || '';
+                    const t = document.getElementById('draft_proposal_uploaded_at')?.value || '';
+
+                    if (f) init.body.set('draft_proposal_file', f);
+                    if (n) init.body.set('draft_proposal_original_name', n);
+                    if (t) init.body.set('draft_proposal_uploaded_at', t);
+                }
+            } catch (e) {}
+
+            return originalFetch.apply(this, arguments).then(function (response) {
+                try {
+                    response.clone().json().then(function (data) {
+                        if (data && data.proposal_file) {
+                            setProposalState(
+                                data.proposal_file,
+                                data.proposal_original_name || '',
+                                data.proposal_uploaded_at || ''
+                            );
+                        }
+                    }).catch(function () {});
+                } catch (e) {}
+
+                return response;
+            });
+        };
+    }
+
+    function bindProposalWeld() {
+        if (isProposalDraftMode()) {
+            restoreProposalState();
+        } else {
+            clearProposalStateForNewApplication();
+        }
+
+        const form = document.getElementById('multistep_form');
+
+        if (form) {
+            form.addEventListener('submit', function (e) {
+                restoreProposalState();
+
+                if (!hasProposalForSubmit()) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    alert('請先上傳活動企劃書！');
+                    return false;
+                }
+            }, true);
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bindProposalWeld);
+    } else {
+        bindProposalWeld();
+    }
+
+    if (isDraftMode) {
+        if (isProposalDraftMode()) {
+        setInterval(restoreProposalState, 500);
+    } else {
+        clearProposalStateForNewApplication();
+    }
+    }
+})();
+</script>
+
+
+<script>
+/**
+ * 新申請頁面保險清除：
+ * 沒有 draft_id/id 時，企劃書欄位必須是空的。
+ */
+document.addEventListener('DOMContentLoaded', function () {
+    const params = new URLSearchParams(window.location.search);
+    const urlDraftId = params.get('draft_id') || params.get('id') || '';
+    const currentDraftId = document.getElementById('current_draft_id')?.value || '';
+
+    const isDraftMode =
+        (urlDraftId !== '' && urlDraftId !== '0') ||
+        (currentDraftId !== '' && currentDraftId !== '0');
+
+    if (!isDraftMode) {
+        sessionStorage.removeItem('draft_proposal_file');
+        sessionStorage.removeItem('draft_proposal_original_name');
+        sessionStorage.removeItem('draft_proposal_uploaded_at');
+
+        const draftFile = document.getElementById('draft_proposal_file');
+        const draftName = document.getElementById('draft_proposal_original_name');
+        const draftTime = document.getElementById('draft_proposal_uploaded_at');
+        const display = document.getElementById('proposal_file_name_display');
+
+        if (draftFile) draftFile.value = '';
+        if (draftName) draftName.value = '';
+        if (draftTime) draftTime.value = '';
+        if (display) display.innerText = '';
+    }
+});
 </script>
 
 </body>

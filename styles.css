@@ -40,23 +40,43 @@ body {
 .navbar {
     background: linear-gradient(135deg, var(--primary-color) 0%, #34495e 100%);
     color: white;
-    padding: 1rem 2rem;
+    padding: 1rem 1rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     margin-bottom: 2rem;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    
+    /* 🛠️ 修改與新增的關鍵屬性 */
+    width: 100%;
+    box-sizing: border-box; /* 關鍵：確保 padding 不會把 100% 寬度額外撐大 */
+}
+
+/* 🛠️ 在 CSS 檔案的最頂端（全域設定）加入這段 */
+html {
+    scrollbar-gutter: stable; /* 關鍵：鎖定右側滾動條空間，防止內容因滾动條隱現而左右抖動 */
 }
 
 .navbar-brand h1 {
     font-size: 1.8rem;
     font-weight: 600;
+    white-space: nowrap;
 }
 
 .navbar-menu {
     display: flex;
-    gap: 1rem;
-    flex-wrap: wrap;
+    gap: 1rem;          /* 關鍵：按鈕與按鈕之間只維持固定的 1rem (16px) 間距 */
+    
+    /* 修正部分 */
+    flex: 0 1 auto;     /* 改為不主動放大填滿 */
+    justify-content: flex-end; /* 讓所有分頁按鈕自然地往右邊靠攏對齊 */
+    
+    align-items: center;
+    flex-wrap: nowrap;  /* 強制單行排版 */
+    overflow-x: auto;   /* 當項目過多時允許水平滾動 */
 }
 
 .nav-btn {
@@ -69,6 +89,8 @@ body {
     transition: var(--transition);
     font-size: 0.95rem;
     font-weight: 500;
+
+    white-space: nowrap; /* keep button labels on one line */
 }
 
 .nav-btn:hover {
@@ -802,6 +824,30 @@ h3 {
     .borrow-layout {
         grid-template-columns: 1fr;
     }
+}
+
+/* ===== History page simplified styles ===== */
+.history-header { display:flex; flex-direction:column; gap:12px; margin-bottom:16px; }
+.summary-cards-simple { display:flex; gap:12px; flex-wrap:wrap; }
+.summary-card-simple { background:#fff; border:1px solid #e6eef7; border-radius:10px; padding:12px 14px; min-width:160px; box-shadow:none; }
+.summary-card-simple h4 { margin:0 0 6px 0; color:#334e68; font-size:0.95rem; }
+.summary-card-simple .big { font-weight:700; color:#102a43; font-size:1.1rem; }
+.filters-inline { display:flex; gap:8px; align-items:center; margin-top:8px; }
+.filters-inline .tabs { display:flex; gap:8px; }
+.filters-inline .tab { padding:6px 10px; border-radius:8px; background:transparent; border:1px solid transparent; cursor:pointer; color:#254b63; }
+.filters-inline .tab.active { background:#f1f7fb; border-color:#d6e9ff; }
+.filters-inline .search-input { padding:8px 10px; border-radius:8px; border:1px solid #dbeaf6; min-width:240px; }
+.filters-inline .status-select { padding:8px 10px; border-radius:8px; border:1px solid #dbeaf6; }
+.management-table { width:100%; border-collapse:collapse; background:#fff; border:1px solid #e8f0f7; }
+.management-table thead th { background:#0f1724; color:#fff; padding:10px 12px; text-align:left; font-weight:700; }
+.management-table tbody td { padding:10px 12px; border-top:1px solid #f1f6fb; vertical-align:top; }
+.management-table tbody tr:nth-child(odd) { background:#fbfdff; }
+.management-table tbody tr:hover { background:#f4fbff; }
+.filter-hint { color:#6b7b88; font-size:0.95rem; }
+
+@media (max-width:900px) {
+    .summary-cards-simple { justify-content:space-between; }
+    .filters-inline { flex-direction:column; align-items:stretch; gap:10px; }
 }
 
 /* ===== 篩選區域 ===== */
@@ -1775,7 +1821,7 @@ h3 {
     color: #856404;
     border: 1px solid #ffeeba;
 }
-}
+
 
 .stepper-track {
     display: flex;

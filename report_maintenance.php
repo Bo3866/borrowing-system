@@ -260,13 +260,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $mail->isSMTP();
                             $mail->Host       = 'smtp.gmail.com'; 
                             $mail->SMTPAuth   = true;
-                            $mail->Username   = 'right.jing0104@gmail.com'; 
-                            $mail->Password   = 'hwarm0625.0603'; 
+                            $mail->Username   = 'sasa0522522@gmail.com'; 
+                            $mail->Password   = 'jvtc kohj khyb yjbn'; 
                             $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
                             $mail->Port       = 465;
                             $mail->CharSet    = 'UTF-8';
 
-                            $mail->setFrom('right.jing0104@gmail.com', '器材借用系統');
+                            $mail->setFrom('sasa0522522@gmail.com', '器材借用系統');
                             $mail->addAddress($email, $name);
 
                             $mail->isHTML(true);
@@ -367,13 +367,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $mail->isSMTP();
                             $mail->Host       = 'smtp.gmail.com'; 
                             $mail->SMTPAuth   = true;
-                            $mail->Username   = 'right.jing0104@gmail.com'; 
-                            $mail->Password   = 'hwarm0625.0603'; 
+                            $mail->Username   = 'sasa0522522@gmail.com'; 
+                            $mail->Password   = 'jvtc kohj khyb yjbn'; 
                             $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
                             $mail->Port       = 465;
                             $mail->CharSet    = 'UTF-8';
 
-                            $mail->setFrom('right.jing0104@gmail.com', '器材借用系統');
+                            $mail->setFrom('sasa0522522@gmail.com', '器材借用系統');
                             $mail->addAddress($email, $name);
 
                             $mail->isHTML(true);
@@ -777,16 +777,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         });
     </script>
-</head>
+ </head>
 <body>
+    <!-- 導覽列 放到 container 之外以讓背景拉滿整個視窗 -->
+    <nav class="navbar">
+        <div class="navbar-brand"><h1>📚 校園資源租借系統</h1></div>
+        <div class="navbar-menu">
+            <button class="nav-btn" onclick="location.href='index.php'"><i class="fas fa-home"></i> 回首頁</button>
+            <button class="nav-btn" onclick="location.href='logout.php'"><i class="fas fa-sign-out-alt"></i> 登出</button>
+        </div>
+    </nav>
+
     <div class="container">
-        <nav class="navbar">
-            <div class="navbar-brand"><h1>📚 校園資源租借系統</h1></div>
-            <div class="navbar-menu">
-                <button class="nav-btn" onclick="location.href='index.php'"><i class="fas fa-home"></i> 回首頁</button>
-                <button class="nav-btn" onclick="location.href='logout.php'"><i class="fas fa-sign-out-alt"></i> 登出</button>
-            </div>
-        </nav>
 
         <main class="main-content">
             <div class="card maintenance-card">

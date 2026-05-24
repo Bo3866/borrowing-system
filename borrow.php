@@ -278,6 +278,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['purpose'] = trim((string)($_POST['purpose'] ?? ''));
     $formData['phone'] = trim((string)($_POST['phone'] ?? ''));
 
+    // 企劃書後端檔案路徑：必須在前面先抓，後面驗證才不會誤判沒有企劃書
+    $draftProposalFileForReservation = null;
+    $draftProposalUploadedAtForReservation = null;
+
+    $formData['draft_proposal_file'] = trim((string)($_POST['draft_proposal_file'] ?? ''));
+    $formData['draft_proposal_original_name'] = trim((string)($_POST['draft_proposal_original_name'] ?? ''));
+    $formData['draft_proposal_uploaded_at'] = trim((string)($_POST['draft_proposal_uploaded_at'] ?? ''));
+
+    if ($formData['draft_proposal_file'] !== '') {
+        $draftProposalFileForReservation = $formData['draft_proposal_file'];
+        $draftProposalUploadedAtForReservation = $formData['draft_proposal_uploaded_at'] !== ''
+            ? $formData['draft_proposal_uploaded_at']
+            : date('Y-m-d H:i:s');
+    } else {
+        $currentDraftIdForProposalEarly = isset($_POST['current_draft_id']) ? (int)$_POST['current_draft_id'] : 0;
+
+        if ($currentDraftIdForProposalEarly > 0) {
+            $draftProposalStmtEarly = mysqli_prepare(
+                $link,
+                'SELECT proposal_file, proposal_uploaded_at
+                 FROM reservation_drafts
+                 WHERE draft_id = ? AND user_id = ?
+                 LIMIT 1'
+            );
+
+            if ($draftProposalStmtEarly) {
+                mysqli_stmt_bind_param($draftProposalStmtEarly, 'is', $currentDraftIdForProposalEarly, $userId);
+                mysqli_stmt_execute($draftProposalStmtEarly);
+                $draftProposalResultEarly = mysqli_stmt_get_result($draftProposalStmtEarly);
+                $draftProposalRowEarly = $draftProposalResultEarly ? mysqli_fetch_assoc($draftProposalResultEarly) : null;
+                mysqli_stmt_close($draftProposalStmtEarly);
+
+                if ($draftProposalRowEarly && !empty($draftProposalRowEarly['proposal_file'])) {
+                    $draftProposalFileForReservation = (string)$draftProposalRowEarly['proposal_file'];
+                    $draftProposalUploadedAtForReservation = !empty($draftProposalRowEarly['proposal_uploaded_at'])
+                        ? (string)$draftProposalRowEarly['proposal_uploaded_at']
+                        : date('Y-m-d H:i:s');
+
+                    $formData['draft_proposal_file'] = $draftProposalFileForReservation;
+                    $formData['draft_proposal_uploaded_at'] = $draftProposalUploadedAtForReservation;
+                }
+            }
+        }
+    }
+
+    $formData['alcohol_coordinator'] = trim((string)($_POST['alcohol_coordinator'] ?? ''));
+    $formData['alcohol_president'] = trim((string)($_POST['alcohol_president'] ?? ''));
+
+
     $cartEquipments = [];
     $cartSpaceId = null;
 
@@ -312,8 +361,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (strtotime($borrowStartAtSql) < time()) {
                 $borrowError = '借用開始時間不可為過去時間。';
             } elseif (strtotime($borrowEndAtSql) <= strtotime($borrowStartAtSql)) {
-                $borrowError = '結束時間不可早於或等於開始時間。';
+                $borrowError = '活動結束時間必須晚於活動開始時間。';
             } else {
+                $startDateOnly = strtotime($formData['borrow_start_date']);
+                $endDateOnly = strtotime($formData['borrow_end_date']);
+
+                if ($startDateOnly !== false && $endDateOnly !== false) {
+                    $diffDays = (int)ceil(($endDateOnly - $startDateOnly) / 86400);
+
+                    if ($diffDays > 4) {
+                        $borrowError = '活動天數最多不可超過 4 天，請重新選擇。';
+                    }
+                }
             }
         }
 
@@ -429,6 +488,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $borrowError = '請完整填寫借用起訖日期與時間。';
         } elseif ($formData['purpose'] === '') {
             $borrowError = '請填寫用途說明。';
+        } elseif (
+            (!isset($_FILES['proposal_file']) || $_FILES['proposal_file']['error'] === UPLOAD_ERR_NO_FILE) &&
+            empty($draftProposalFileForReservation)
+        ) {
+            $borrowError = '請上傳企劃書。';
         } elseif ($formData['setup_flags'] === 'yes' && $formData['flag_count'] > 20) {
             $borrowError = '宣傳旗幟最多只能選 20 支。';
         } elseif ($formData['setup_flags'] === 'yes' && $formData['flag_count'] < 1) {
@@ -444,13 +508,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $formData['has_fire'] === '1' || 
                 $formData['has_sales'] === '1' || 
                 $formData['participant_count'] === '100~200人' || 
-                $formData['participant_count'] === '200人以上'
+                $formData['participant_count'] === '200人以上' ||
+                (isset($formData['staff_count']) && (int)$formData['staff_count'] >= 100)
             ) {
                 $requires30Days = true;
             }
 
-            if ($requires30Days && $formData['borrow_start_date'] !== '' && strtotime($formData['borrow_start_date']) < strtotime('+30 days', strtotime(date('Y-m-d')))) {
-                $borrowError = '包含特殊性質（酒精、明火、攤販或超過100人）的活動，必須在 30 天之前申請。';
+            $min30Timestamp = strtotime('+30 days', strtotime(date('Y-m-d')));
+
+            if ($requires30Days && $formData['borrow_start_date'] !== '' && strtotime($formData['borrow_start_date']) < $min30Timestamp) {
+                $borrowError = '包含特殊性質（酒精、明火、攤販或超過100人）的活動，開始日期必須在 30 天之後。';
+            } elseif ($requires30Days && $formData['borrow_end_date'] !== '' && strtotime($formData['borrow_end_date']) < $min30Timestamp) {
+                $borrowError = '包含特殊性質（酒精、明火、攤販或超過100人）的活動，結束日期也必須在 30 天之後。';
             } elseif ($formData['setup_flags'] === 'yes' && $formData['borrow_start_date'] !== '' && strtotime($formData['borrow_start_date']) < strtotime('+7 weekdays', strtotime(date('Y-m-d')))) {
                 $borrowError = '插立旗幟使用日期只能選 7 個工作天之後的日期。';
             } else {
@@ -475,7 +544,26 @@ CREATE TABLE IF NOT EXISTS reservations (
     certificate_id BIGINT UNSIGNED NULL,
     returned_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,    organization_name VARCHAR(100) NULL,
+    activity_name VARCHAR(100) NULL,
+    participant_count VARCHAR(50) NULL,
+    staff_count INT NULL DEFAULT 0,
+    club_president VARCHAR(100) NULL,
+    activity_coordinator VARCHAR(100) NULL,
+    coordinator_department VARCHAR(100) NULL,
+    coordinator_phone VARCHAR(30) NULL,
+    coordinator_other_contact VARCHAR(255) NULL,
+    vehicle_entry VARCHAR(10) NULL DEFAULT 'no',
+    setup_flags VARCHAR(10) NULL DEFAULT 'no',
+    flag_count INT NULL DEFAULT 0,
+    purpose VARCHAR(255) NULL,
+    approval_stage VARCHAR(10) NULL DEFAULT 'a',
+    has_alcohol VARCHAR(1) NULL DEFAULT '',
+    has_fire VARCHAR(1) NULL DEFAULT '',
+    has_sales VARCHAR(1) NULL DEFAULT '',
+    alcohol_coordinator VARCHAR(50) NULL,
+    alcohol_president VARCHAR(50) NULL,
+
     PRIMARY KEY (reservation_id)
 ) ENGINE=InnoDB;
 SQL;
@@ -520,6 +608,47 @@ SQL;
             try {
                 $uploadedProposalPath = null;
 
+                // 草稿載入後 input[type=file] 無法自動回填，因此正式送出時要沿用草稿後端已存檔案
+                $draftProposalFileForReservation = null;
+                $draftProposalUploadedAtForReservation = null;
+                
+                // 首先檢查隱藏表單字段中是否有草稿企劃書信息（來自步驟導航時的保留值）
+                $hiddenProposalFile = isset($_POST['draft_proposal_file']) ? trim((string)$_POST['draft_proposal_file']) : '';
+                $hiddenProposalUploadedAt = isset($_POST['draft_proposal_uploaded_at']) ? trim((string)$_POST['draft_proposal_uploaded_at']) : '';
+                
+                if (!empty($hiddenProposalFile)) {
+                    $draftProposalFileForReservation = $hiddenProposalFile;
+                    $draftProposalUploadedAtForReservation = !empty($hiddenProposalUploadedAt) ? $hiddenProposalUploadedAt : date('Y-m-d H:i:s');
+                } else {
+                    // 如果隱藏字段中沒有，則查詢草稿表
+                    $currentDraftIdForProposal = isset($_POST['current_draft_id']) ? (int)$_POST['current_draft_id'] : 0;
+
+                    if ($currentDraftIdForProposal > 0) {
+                        $draftProposalStmt = mysqli_prepare(
+                            $link,
+                            'SELECT proposal_file, proposal_uploaded_at
+                             FROM reservation_drafts
+                             WHERE draft_id = ? AND user_id = ?
+                             LIMIT 1'
+                        );
+
+                        if ($draftProposalStmt) {
+                            mysqli_stmt_bind_param($draftProposalStmt, 'is', $currentDraftIdForProposal, $userId);
+                            mysqli_stmt_execute($draftProposalStmt);
+                            $draftProposalResult = mysqli_stmt_get_result($draftProposalStmt);
+                            $draftProposalRow = $draftProposalResult ? mysqli_fetch_assoc($draftProposalResult) : null;
+                            mysqli_stmt_close($draftProposalStmt);
+
+                            if ($draftProposalRow && !empty($draftProposalRow['proposal_file'])) {
+                                $draftProposalFileForReservation = (string)$draftProposalRow['proposal_file'];
+                                $draftProposalUploadedAtForReservation = !empty($draftProposalRow['proposal_uploaded_at'])
+                                    ? (string)$draftProposalRow['proposal_uploaded_at']
+                                    : date('Y-m-d H:i:s');
+                            }
+                        }
+                    }
+                }
+
                 // Ensure `reservations` has `proposal_file` and `proposal_uploaded_at` columns.
                 $reservationColsRes = mysqli_query($link, 'SHOW COLUMNS FROM reservations LIKE \'proposal_file\'');
                 if (!($reservationColsRes && mysqli_num_rows($reservationColsRes) > 0)) {
@@ -534,6 +663,26 @@ SQL;
                     }
                 }
 
+                // Ensure `reservations` has `has_alcohol`, `has_fire`, `has_sales` columns
+                $hasAlcoholRes = mysqli_query($link, 'SHOW COLUMNS FROM reservations LIKE \'has_alcohol\'');
+                if (!($hasAlcoholRes && mysqli_num_rows($hasAlcoholRes) > 0)) {
+                    if (!mysqli_query($link, "ALTER TABLE reservations ADD COLUMN has_alcohol VARCHAR(1) NULL COMMENT '是否含酒精'")) {
+                        @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " ALTER reservations add has_alcohol failed: " . mysqli_error($link) . "\n", FILE_APPEND | LOCK_EX);
+                    }
+                }
+                $hasFireRes = mysqli_query($link, 'SHOW COLUMNS FROM reservations LIKE \'has_fire\'');
+                if (!($hasFireRes && mysqli_num_rows($hasFireRes) > 0)) {
+                    if (!mysqli_query($link, "ALTER TABLE reservations ADD COLUMN has_fire VARCHAR(1) NULL COMMENT '是否含明火'")) {
+                        @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " ALTER reservations add has_fire failed: " . mysqli_error($link) . "\n", FILE_APPEND | LOCK_EX);
+                    }
+                }
+                $hasSalesRes = mysqli_query($link, 'SHOW COLUMNS FROM reservations LIKE \'has_sales\'');
+                if (!($hasSalesRes && mysqli_num_rows($hasSalesRes) > 0)) {
+                    if (!mysqli_query($link, "ALTER TABLE reservations ADD COLUMN has_sales VARCHAR(1) NULL COMMENT '是否含攤販'")) {
+                        @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " ALTER reservations add has_sales failed: " . mysqli_error($link) . "\n", FILE_APPEND | LOCK_EX);
+                    }
+                }
+
                 if ($formData['phone'] !== '') {
                     $updatePhoneStmt = mysqli_prepare($link, 'UPDATE users SET phone = ? WHERE user_id = ?');
                     if (!$updatePhoneStmt) {
@@ -544,6 +693,51 @@ SQL;
                     mysqli_stmt_close($updatePhoneStmt);
                 }
                 $applicantColumn = $reservationApplicantColumn;
+
+
+                // 自動補齊 reservations 缺少欄位，避免 Unknown column xxx in field list
+                $requiredReservationColumns = [
+                    'organization_name' => "VARCHAR(100) NULL COMMENT '單位名稱/主辦社團'",
+                    'activity_name' => "VARCHAR(100) NULL COMMENT '活動名稱'",
+                    'participant_count' => "VARCHAR(50) NULL COMMENT '活動對象人數'",
+                    'staff_count' => "INT NULL DEFAULT 0 COMMENT '工作人員人數'",
+                    'club_president' => "VARCHAR(100) NULL COMMENT '社/會長'",
+                    'activity_coordinator' => "VARCHAR(100) NULL COMMENT '活動負責人'",
+                    'coordinator_department' => "VARCHAR(100) NULL COMMENT '系級'",
+                    'coordinator_phone' => "VARCHAR(30) NULL COMMENT '聯絡電話'",
+                    'coordinator_other_contact' => "VARCHAR(255) NULL COMMENT '其他聯絡方式'",
+                    'vehicle_entry' => "VARCHAR(10) NULL DEFAULT 'no' COMMENT '是否車輛入校'",
+                    'setup_flags' => "VARCHAR(10) NULL DEFAULT 'no' COMMENT '是否插旗'",
+                    'flag_count' => "INT NULL DEFAULT 0 COMMENT '旗幟數量'",
+                    'purpose' => "VARCHAR(255) NULL COMMENT '用途'",
+                    'submitted_at' => "DATETIME NULL COMMENT '送出時間'",
+                    'approval_stage' => "VARCHAR(10) NULL DEFAULT 'a' COMMENT '審核階段'",
+                    'has_alcohol' => "VARCHAR(1) NULL DEFAULT '' COMMENT '是否含酒精'",
+                    'has_fire' => "VARCHAR(1) NULL DEFAULT '' COMMENT '是否含明火'",
+                    'has_sales' => "VARCHAR(1) NULL DEFAULT '' COMMENT '是否含販售/攤販'",
+                    'alcohol_coordinator' => "VARCHAR(50) NULL COMMENT '酒精活動負責人'",
+                    'alcohol_president' => "VARCHAR(50) NULL COMMENT '酒精活動社長'",
+                    'proposal_file' => "VARCHAR(255) NULL COMMENT '企劃書路徑'",
+                    'proposal_uploaded_at' => "DATETIME NULL COMMENT '企劃書上傳時間'",
+                    'certificate_id' => "BIGINT UNSIGNED NULL COMMENT '證照編號'"
+                ];
+
+                foreach ($requiredReservationColumns as $columnName => $columnDefinition) {
+                    $safeColumnName = mysqli_real_escape_string($link, $columnName);
+                    $columnCheckResult = mysqli_query($link, "SHOW COLUMNS FROM reservations LIKE '{$safeColumnName}'");
+
+                    if (!($columnCheckResult && mysqli_num_rows($columnCheckResult) > 0)) {
+                        $alterSql = "ALTER TABLE reservations ADD COLUMN {$columnName} {$columnDefinition}";
+
+                        if (!mysqli_query($link, $alterSql)) {
+                            @file_put_contents(
+                                __DIR__ . '/borrow_debug.log',
+                                date('c') . " ALTER reservations add {$columnName} failed: " . mysqli_error($link) . "\n",
+                                FILE_APPEND | LOCK_EX
+                            );
+                        }
+                    }
+                }
 
                 // 檢查 reservations 表是否有 purpose 與 certificate_id 欄位，視情況決定 INSERT 欄位
                 $reservationCols = [];
@@ -558,6 +752,9 @@ SQL;
 
                 $hasSubmittedAtCol = in_array('submitted_at', $reservationCols, true);
                 $hasApprovalStageCol = in_array('approval_stage', $reservationCols, true);
+                $hasAlcoholCol = in_array('has_alcohol', $reservationCols, true);
+                $hasFireCol = in_array('has_fire', $reservationCols, true);
+                $hasSalesCol = in_array('has_sales', $reservationCols, true);
 
                 // 自動將使用者的證照編號寫入 reservations.certificate_id
                 $certificateId = null;
@@ -576,33 +773,41 @@ SQL;
                 }
                 
                 $submittedAtVal = date('Y-m-d H:i:s'); // 保證同一批次提交時間一致
-                $insertCols = [$applicantColumn, 'borrow_start_at', 'borrow_end_at', 'organization_name', 'activity_name', 'participant_count', 'staff_count', 'club_president', 'activity_coordinator', 'coordinator_department', 'coordinator_phone', 'coordinator_other_contact', 'vehicle_entry', 'setup_flags', 'flag_count', 'has_alcohol', 'has_fire', 'has_sales'];
-                $bindValuesTemplate = [$userId, $borrowStartAtSql, $borrowEndAtSql, $formData['organization_name'], $formData['activity_name'], $formData['participant_count'], (int)$formData['staff_count'], $formData['club_president'], $formData['activity_coordinator'], $formData['coordinator_department'], $formData['coordinator_phone'], $formData['coordinator_other_contact'], $formData['vehicle_entry'], $formData['setup_flags'], (int)$formData['flag_count'], $formData['has_alcohol'], $formData['has_fire'], $formData['has_sales']];
-                $bindTypesTemplate = 'ssssssisssssssisss';
 
-                if ($hasPurposeCol) {
-                    $insertCols[] = 'purpose';
-                    $bindValuesTemplate[] = $formData['purpose'];
-                    $bindTypesTemplate .= 's';
-                }
-                
-                if ($hasSubmittedAtCol) {
-                    $insertCols[] = 'submitted_at';
-                    $bindValuesTemplate[] = $submittedAtVal;
-                    $bindTypesTemplate .= 's';
-                }
+                $insertCols = [$applicantColumn, 'borrow_start_at', 'borrow_end_at'];
+                $bindValuesTemplate = [$userId, $borrowStartAtSql, $borrowEndAtSql];
+                $bindTypesTemplate = 'sss';
 
-                if ($hasApprovalStageCol) {
-                    // new submissions start at stage 'a'
-                    $insertCols[] = 'approval_stage';
-                    $bindValuesTemplate[] = 'a';
-                    $bindTypesTemplate .= 's';
-                }
+                $optionalReservationValues = [
+                    'organization_name' => ['type' => 's', 'value' => $formData['organization_name']],
+                    'activity_name' => ['type' => 's', 'value' => $formData['activity_name']],
+                    'participant_count' => ['type' => 's', 'value' => $formData['participant_count']],
+                    'staff_count' => ['type' => 'i', 'value' => (int)$formData['staff_count']],
+                    'club_president' => ['type' => 's', 'value' => $formData['club_president']],
+                    'activity_coordinator' => ['type' => 's', 'value' => $formData['activity_coordinator']],
+                    'coordinator_department' => ['type' => 's', 'value' => $formData['coordinator_department']],
+                    'coordinator_phone' => ['type' => 's', 'value' => $formData['coordinator_phone']],
+                    'coordinator_other_contact' => ['type' => 's', 'value' => $formData['coordinator_other_contact']],
+                    'vehicle_entry' => ['type' => 's', 'value' => $formData['vehicle_entry']],
+                    'setup_flags' => ['type' => 's', 'value' => $formData['setup_flags']],
+                    'flag_count' => ['type' => 'i', 'value' => (int)$formData['flag_count']],
+                    'purpose' => ['type' => 's', 'value' => $formData['purpose']],
+                    'submitted_at' => ['type' => 's', 'value' => $submittedAtVal],
+                    'approval_stage' => ['type' => 's', 'value' => 'a'],
+                    'certificate_id' => ['type' => 'i', 'value' => $certificateId],
+                    'has_alcohol' => ['type' => 's', 'value' => $formData['has_alcohol']],
+                    'has_fire' => ['type' => 's', 'value' => $formData['has_fire']],
+                    'has_sales' => ['type' => 's', 'value' => $formData['has_sales']],
+                    'alcohol_coordinator' => ['type' => 's', 'value' => $formData['alcohol_coordinator'] ?? ''],
+                    'alcohol_president' => ['type' => 's', 'value' => $formData['alcohol_president'] ?? '']
+                ];
 
-                if ($hasCertificateIdCol) {
-                    $insertCols[] = 'certificate_id';
-                    $bindValuesTemplate[] = $certificateId;
-                    $bindTypesTemplate .= 'i';
+                foreach ($optionalReservationValues as $columnName => $config) {
+                    if (in_array($columnName, $reservationCols, true)) {
+                        $insertCols[] = $columnName;
+                        $bindValuesTemplate[] = $config['value'];
+                        $bindTypesTemplate .= $config['type'];
+                    }
                 }
 
                 $colsSql = implode(", ", $insertCols) . ", approval_status, created_at";
@@ -620,9 +825,17 @@ SQL;
                 if (!$reservationStmt) {
                     throw new RuntimeException('建立預約主檔失敗：' . mysqli_error($link));
                 }
+                @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " INSERT SQL: " . $insertReservationSql . "\nBind Types: " . $bindTypesTemplate . "\nBind Values: " . json_encode($bindValuesTemplate) . "\n", FILE_APPEND | LOCK_EX);
                 mysqli_stmt_bind_param($reservationStmt, $bindTypesTemplate, ...$bindValuesTemplate);
-                mysqli_stmt_execute($reservationStmt);
+                if (!mysqli_stmt_execute($reservationStmt)) {
+                    @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " Execute failed: " . mysqli_stmt_error($reservationStmt) . "\n", FILE_APPEND | LOCK_EX);
+                    throw new RuntimeException('建立預約主檔失敗：' . mysqli_stmt_error($reservationStmt));
+                }
                 $commonReservationId = (int)mysqli_insert_id($link);
+                @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " Insert ID: " . $commonReservationId . "\n", FILE_APPEND | LOCK_EX);
+                if ($commonReservationId === 0) {
+                    throw new RuntimeException('建立預約主檔失敗：無法取得預約編號');
+                }
                 mysqli_stmt_close($reservationStmt);
 
                 $createdReservationIds = [$commonReservationId];
@@ -718,10 +931,14 @@ SQL;
                         // 將實體器材加入該預約單
                         foreach ($equipmentIds as $equipmentId) {
                             mysqli_stmt_bind_param($reservationItemStmt, 'ii', $itemReservationId, $equipmentId);
-                            mysqli_stmt_execute($reservationItemStmt);
+                            if (!mysqli_stmt_execute($reservationItemStmt)) {
+                                throw new RuntimeException('新增器材預約明細失敗：' . mysqli_stmt_error($reservationItemStmt));
+                            }
                             
                             mysqli_stmt_bind_param($updateEquipmentStatusStmt, 'is', $equipmentId, $borrowStartAtSql);
-                            mysqli_stmt_execute($updateEquipmentStatusStmt);
+                            if (!mysqli_stmt_execute($updateEquipmentStatusStmt)) {
+                                throw new RuntimeException('更新器材狀態失敗：' . mysqli_stmt_error($updateEquipmentStatusStmt));
+                            }
                         }
                     }
 
@@ -795,6 +1012,22 @@ SQL;
                     mysqli_stmt_bind_param($updateProposalStmt, 'ssi', $proposalFileForReservation, $proposalUploadedAtForReservation, $commonReservationId);
                     mysqli_stmt_execute($updateProposalStmt);
                     mysqli_stmt_close($updateProposalStmt);
+                } elseif ($draftProposalFileForReservation !== null) {
+                    $proposalFileForReservation = $draftProposalFileForReservation;
+                    $proposalUploadedAtForReservation = $draftProposalUploadedAtForReservation;
+
+                    $updateProposalStmt = mysqli_prepare(
+                        $link,
+                        'UPDATE reservations SET proposal_file = ?, proposal_uploaded_at = ? WHERE reservation_id = ?'
+                    );
+                    if (!$updateProposalStmt) {
+                        throw new RuntimeException('沿用草稿企劃書失敗：' . mysqli_error($link));
+                    }
+                    mysqli_stmt_bind_param($updateProposalStmt, 'ssi', $proposalFileForReservation, $proposalUploadedAtForReservation, $commonReservationId);
+                    mysqli_stmt_execute($updateProposalStmt);
+                    mysqli_stmt_close($updateProposalStmt);
+                } else {
+                    throw new RuntimeException('請先上傳活動企劃書！');
                 }
 
                 if (!empty($formData['space_id'])) {
@@ -828,7 +1061,9 @@ SQL;
                         throw new RuntimeException('建立空間預約明細失敗：' . mysqli_error($link));
                     }
                     mysqli_stmt_bind_param($spaceItemStmt, 'is', $reservationId, $formData['space_id']);
-                    mysqli_stmt_execute($spaceItemStmt);
+                    if (!mysqli_stmt_execute($spaceItemStmt)) {
+                        throw new RuntimeException('建立空間預約明細失敗：' . mysqli_stmt_error($spaceItemStmt));
+                    }
                     mysqli_stmt_close($spaceItemStmt);
                     // 不再更新 spaces 表的營運狀態，因為我們通過查詢衝突來檢查可用性
                 }
@@ -867,8 +1102,10 @@ SQL;
                                 $mail->Body    = "您好，{$displayName}：<br><br>您的預約申請（單號：{$idsStr}）已經成功送出，目前狀態為<b>「審核中」</b>。<br><br>系統管理員將會儘速處理您的申請，審核結果出爐後會再次以 Email 通知您。<br><br>感謝您的使用！";
                                 $mail->AltBody = "您好，{$displayName}：\n\n您的預約申請（單號：{$idsStr}）已經成功送出，目前狀態為「審核中」。\n\n系統管理員將會儘速處理您的申請，審核結果出爐後會再次以 Email 通知您。\n\n感謝您的使用！";
                                 $mail->send();
+                                @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " 預約成功信件已寄送至: " . $userEmail . "\n", FILE_APPEND | LOCK_EX);
                             } catch (Exception $e) {
-                                error_log("預約成功信件寄送失敗: " . $mail->ErrorInfo);
+                                @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " 預約成功信件寄送失敗 (to: {$userEmail}): " . $e->getMessage() . " | ErrorInfo: " . $mail->ErrorInfo . "\n", FILE_APPEND | LOCK_EX);
+                                error_log("預約成功信件寄送失敗 (to: {$userEmail}): " . $e->getMessage());
                             }
                         }
                     }
@@ -1096,7 +1333,109 @@ SQL;
             color:#64748b;
         }
 
+        /* 草稿保存选择模态窗口 */
+        .draft-choice-modal {
+            display: none;
+            position: fixed;
+            z-index: 10000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            animation: fadeIn 0.3s ease;
+        }
 
+        .draft-choice-modal.show {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .draft-choice-content {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 450px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+            animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            0% { transform: translateY(30px); opacity: 0; }
+            100% { transform: translateY(0); opacity: 1; }
+        }
+
+        .draft-choice-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .draft-choice-draft-id {
+            text-align: center;
+            font-size: 14px;
+            color: #64748b;
+            margin-bottom: 20px;
+            background: #f1f5f9;
+            padding: 10px;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+
+        .draft-choice-description {
+            font-size: 15px;
+            color: #475569;
+            margin-bottom: 25px;
+            line-height: 1.6;
+            text-align: center;
+        }
+
+        .draft-choice-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+
+        .draft-btn-choice {
+            flex: 1;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            min-height: 45px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .draft-btn-update {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .draft-btn-update:hover {
+            background: #2563eb;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+
+        .draft-btn-new {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .draft-btn-new:hover {
+            background: #d97706;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+        }
 
     </style>
     <!-- 引入 Flatpickr -->
@@ -1105,6 +1444,25 @@ SQL;
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh-tw.js"></script>
 </head>
 <body>
+    <!-- 草稿保存选择模态窗口 -->
+    <div id="draftChoiceModal" class="draft-choice-modal">
+        <div class="draft-choice-content">
+            <div class="draft-choice-title">💾 草稿保存方式</div>
+            <div class="draft-choice-draft-id">草稿編號：<span id="draftIdDisplay">-</span></div>
+            <div class="draft-choice-description">
+                您已有一個正在進行中的草稿，請選擇保存方式：
+            </div>
+            <div class="draft-choice-buttons">
+                <button type="button" class="draft-btn-choice draft-btn-update" id="draftBtnUpdate">
+                    ✓ 覆蓋更新
+                </button>
+                <button type="button" class="draft-btn-choice draft-btn-new" id="draftBtnNew">
+                    ✚ 新建草稿
+                </button>
+            </div>
+        </div>
+    </div>
+
     <div class="container">
         <nav class="navbar">
             <div class="navbar-brand">
@@ -1158,7 +1516,10 @@ SQL;
                         <form method="post" enctype="multipart/form-data" class="borrow-form" action="borrow.php" novalidate id="multistep_form">
                             <input type="hidden" name="current_step" id="current_step" value="<?php echo htmlspecialchars($_POST['current_step'] ?? '1', ENT_QUOTES, 'UTF-8'); ?>">
                             <input type="hidden" name="current_draft_id" id="current_draft_id" value="">
-                            <input type="file" id="proposal_file" name="proposal_file" accept=".pdf,application/pdf" style="opacity: 0; position: absolute; z-index: -1; width: 0; height: 0;" onchange="document.getElementById('proposal_file_name_display').innerText = this.files.length > 0 ? this.files[0].name : '';">
+                            <input type="hidden" name="draft_proposal_file" id="draft_proposal_file" value="">
+                            <input type="hidden" name="draft_proposal_original_name" id="draft_proposal_original_name" value="">
+                            <input type="hidden" name="draft_proposal_uploaded_at" id="draft_proposal_uploaded_at" value="">
+                            <input type="file" id="proposal_file" name="proposal_file" accept=".pdf,application/pdf" style="opacity: 0; position: absolute; z-index: -1; width: 0; height: 0;" onchange="if (this.files.length > 0) { document.getElementById('proposal_file_name_display').innerText = '已上傳新企劃書：' + this.files[0].name; const f=document.getElementById('draft_proposal_file'); const n=document.getElementById('draft_proposal_original_name'); const t=document.getElementById('draft_proposal_uploaded_at'); if(f)f.value=''; if(n)n.value=''; if(t)t.value=''; } else { document.getElementById('proposal_file_name_display').innerText = ''; }">
                             <!-- ========== 步驟 1 內容區 ========== -->
                             <div class="step-content active" id="step-content-1">
                                 <h3 class="step-title" style="margin-bottom: 10px;">第一步：活動基本資料</h3>
@@ -1197,16 +1558,7 @@ SQL;
                                         <input type="number" id="staff_count" name="staff_count" class="form-control" placeholder="請輸入人數" min="1" required>
                                     </div>
                                 </div>
-                                <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
-                                    <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
-                                        <label for="club_president">社 / 會長 <span style="color:red">*</span></label>
-                                        <input type="text" id="club_president" name="club_president" class="" placeholder="請輸入姓名" value="<?php echo htmlspecialchars($formData['club_president'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
-                                    </div>
-                                    <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
-                                        <label for="activity_coordinator">活動負責人<span style="color:red">*</span></label>
-                                        <input type="text" id="activity_coordinator" name="activity_coordinator" class="form-control" placeholder="請輸入活動負責人姓名" value="<?php echo htmlspecialchars($formData['activity_coordinator'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
-                                </div>
+                             
                                 <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
                                     <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                                         <label for="coordinator_department">系級<span style="color:red">*</span></label>
@@ -1222,20 +1574,20 @@ SQL;
                                     <input type="text" id="coordinator_other_contact" name="coordinator_other_contact" class="form-control" placeholder="請輸入其他聯絡方式（如 Email）" value="<?php echo htmlspecialchars($formData['coordinator_other_contact'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                 </div>
 
-                                <div class="form-group" style="margin-top: 12px;">
-                                    <label>特殊項目（請勾選適用項目）</label>
-                                    <div style="display:flex; gap:20px; margin-top:8px; align-items:center;">
-                                        <label style="display:flex; align-items:center; gap:8px; margin:0;">
-                                            <input type="checkbox" name="has_fire" value="1" <?php echo ($formData['has_fire'] === '1') ? 'checked' : ''; ?>>
-                                            <span>明火</span>
-                                        </label>
-                                        <label style="display:flex; align-items:center; gap:8px; margin:0;">
+                                <div class="form-group" style="margin-top: 10px;">
+                                    <label>活動特殊性質（可複選）- 勾選則下一頁將出現表單</label>
+                                    <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-top: 8px;">
+                                        <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; white-space: nowrap;">
                                             <input type="checkbox" name="has_alcohol" value="1" <?php echo ($formData['has_alcohol'] === '1') ? 'checked' : ''; ?>>
-                                            <span>含酒精</span>
+                                            <span>有酒精</span>
                                         </label>
-                                        <label style="display:flex; align-items:center; gap:8px; margin:0;">
+                                        <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; white-space: nowrap;">
+                                            <input type="checkbox" name="has_fire" value="1" <?php echo ($formData['has_fire'] === '1') ? 'checked' : ''; ?>>
+                                            <span>有明火</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; white-space: nowrap;">
                                             <input type="checkbox" name="has_sales" value="1" <?php echo ($formData['has_sales'] === '1') ? 'checked' : ''; ?>>
-                                            <span>販售活動</span>
+                                            <span>需擺攤販售</span>
                                         </label>
                                     </div>
                                 </div>
@@ -1256,7 +1608,7 @@ SQL;
                                         ?>
                                         <select name="borrow_start_time_h" class="form-control" required style="padding: 8px; width: 80px;">
                                             <option value="">選擇</option>
-                                            <?php for($h=0; $h<=23; $h++) { 
+                                            <?php for($h=7; $h<=22; $h++) { 
                                                 $selected = ($curBsh !== '' && $curBsh === $h) ? 'selected' : '';
                                             ?>
                                                 <option value="<?php echo $h; ?>" <?php echo $selected; ?>><?php echo $h; ?></option>
@@ -1266,8 +1618,12 @@ SQL;
                                         
                                         <select name="borrow_start_time_m" class="form-control" required style="padding: 8px; width: 80px;">
                                             <option value="">選擇</option>
-                                            <option value="00" <?php echo ($curBsm !== '' && $curBsm === 00) ? 'selected' : ''; ?>>00</option>
+                                            <option value="00" <?php echo ($curBsm !== '' && $curBsm === 0) ? 'selected' : ''; ?>>00</option>
+                                            <option value="10" <?php echo ($curBsm !== '' && $curBsm === 10) ? 'selected' : ''; ?>>10</option>
+                                            <option value="20" <?php echo ($curBsm !== '' && $curBsm === 20) ? 'selected' : ''; ?>>20</option>
                                             <option value="30" <?php echo ($curBsm !== '' && $curBsm === 30) ? 'selected' : ''; ?>>30</option>
+                                            <option value="40" <?php echo ($curBsm !== '' && $curBsm === 40) ? 'selected' : ''; ?>>40</option>
+                                            <option value="50" <?php echo ($curBsm !== '' && $curBsm === 50) ? 'selected' : ''; ?>>50</option>
                                         </select>
                                         <span>分</span>
                                     </div>
@@ -1287,7 +1643,7 @@ SQL;
                                         ?>
                                         <select name="borrow_end_time_h" class="form-control" required style="padding: 8px; width: 80px;">
                                             <option value="">選擇</option>
-                                            <?php for($h=0; $h<=23; $h++) { 
+                                            <?php for($h=7; $h<=22; $h++) { 
                                                 $selected = ($curBeh !== '' && $curBeh === $h) ? 'selected' : '';
                                             ?>
                                                 <option value="<?php echo $h; ?>" <?php echo $selected; ?>><?php echo $h; ?></option>
@@ -1297,8 +1653,12 @@ SQL;
                                         
                                         <select name="borrow_end_time_m" class="form-control" required style="padding: 8px; width: 80px;">
                                             <option value="">選擇</option>
-                                            <option value="00" <?php echo ($curBem !== '' && $curBem === 00) ? 'selected' : ''; ?>>00</option>
+                                            <option value="00" <?php echo ($curBem !== '' && $curBem === 0) ? 'selected' : ''; ?>>00</option>
+                                            <option value="10" <?php echo ($curBem !== '' && $curBem === 10) ? 'selected' : ''; ?>>10</option>
+                                            <option value="20" <?php echo ($curBem !== '' && $curBem === 20) ? 'selected' : ''; ?>>20</option>
                                             <option value="30" <?php echo ($curBem !== '' && $curBem === 30) ? 'selected' : ''; ?>>30</option>
+                                            <option value="40" <?php echo ($curBem !== '' && $curBem === 40) ? 'selected' : ''; ?>>40</option>
+                                            <option value="50" <?php echo ($curBem !== '' && $curBem === 50) ? 'selected' : ''; ?>>50</option>
                                         </select>
                                         <span>分</span>
                                     </div>
@@ -1322,7 +1682,7 @@ SQL;
 
                             </div>
                             
-                            <!-- ========== 步驟 2 內容區 ========== -->
+<!-- ========== 步驟 2 內容區 ========== -->
                             <div class="step-content" id="step-content-2">
                                 <h3 class="step-title" style="margin-bottom: 10px;">第二步：場地需求</h3>
                                 
@@ -1337,7 +1697,7 @@ SQL;
                                         </label>
                                     </div>
                                 </div>
-                                <!-- 特殊項目已移至第一步：不在此處顯示 -->
+                                
                                 <div class="form-group" style="margin-top: 20px;">
                                     <label>插立旗幟(選擇"是"將填寫旗幟插立表單) <span style="color:red">*</span></label>
                                     <div style="margin-top: 8px; display: flex; align-items: center; gap: 20px;">
@@ -1350,77 +1710,182 @@ SQL;
                                     </div>
                                 </div>
                                 
-<div id="flagDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:8px;">
-                                <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
-                                    旗幟插立申請表
-                                </div>
+                                <div id="flagDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:8px;">
+                                    <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
+                                        旗幟插立申請表
+                                    </div>
 
-                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start; margin-bottom:12px;">
-                                    <div>
-                                        <label>申請單位 <span style="color:red">*</span></label>
-                                        <input type="text" id="flag_organization_name" name="flag_organization_name" class="form-control" value="<?php echo htmlspecialchars($formData['flag_organization_name'] ?? $formData['organization_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
-                                    <div>
-                                        <label>活動名稱 <span style="color:red">*</span></label>
-                                        <input type="text" id="flag_activity_name" name="flag_activity_name" class="form-control" value="<?php echo htmlspecialchars($formData['flag_activity_name'] ?? $formData['activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
-                                    <div>
-                                        <label>負責人 <span style="color:red">*</span></label>
-                                        <input type="text" id="flag_responsible_person" name="flag_responsible_person" class="form-control" value="<?php echo htmlspecialchars($formData['flag_responsible_person'] ?? $formData['activity_coordinator'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
-                                    <div>
-                                        <label>連絡電話 <span style="color:red">*</span></label>
-                                        <input type="text" id="flag_contact_phone" name="flag_contact_phone" class="form-control" value="<?php echo htmlspecialchars($formData['flag_contact_phone'] ?? $formData['coordinator_phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
-                                </div>
-
-                                <div style="display:flex; gap:15px; align-items:center; margin-bottom:15px;">
-                                    <div>
-                                        <label>使用日期 <span style="color:red">*</span></label>
-                                        <div style="display:flex; gap:8px; align-items:center;">
-                                            <input type="date" id="flag_use_start" name="flag_use_start" class="form-control" readonly style="background:#fff;" value="<?php echo htmlspecialchars($formData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                            <span>至</span>
-                                            <input type="date" id="flag_use_end" name="flag_use_end" class="form-control" readonly style="background:#fff;" value="<?php echo htmlspecialchars($formData['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start; margin-bottom:12px; padding: 20px 20px 0 20px;">
+                                        <div>
+                                            <label>申請單位 <span style="color:red">*</span></label>
+                                            <input type="text" id="flag_organization_name" name="flag_organization_name" class="form-control" value="<?php echo htmlspecialchars($formData['flag_organization_name'] ?? $formData['organization_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                         </div>
-                                        <div style="font-size:12px;color:#64748b;margin-top:6px;">說明：使用日期已自動帶入活動起訖時間，無法修改。</div>
-                                    </div>
-                                </div>
-
-                                <div style="display:flex; gap:15px; align-items:center; margin-bottom:15px;">
-                                    <div style="flex:1;">
-                                        <label>宣傳旗幟 <span style="color:red">*</span></label>
-                                        <div style="display:flex; align-items:center; gap:8px;">
-                                            <span>共</span>
-                                            <input type="number"
-                                                name="flag_count"
-                                                id="flag_count"
-                                                class="form-control"
-                                                min="1"
-                                                max="20"
-                                                step="1"
-                                                style="width:100px;height:38px;"
-                                                placeholder="最多20"
-                                                value="<?php echo htmlspecialchars((string)($formData['flag_count'] ?? '1'), ENT_QUOTES, 'UTF-8'); ?>">
-                                            <span>支</span>
+                                        <div>
+                                            <label>活動名稱 <span style="color:red">*</span></label>
+                                            <input type="text" id="flag_activity_name" name="flag_activity_name" class="form-control" value="<?php echo htmlspecialchars($formData['flag_activity_name'] ?? $formData['activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                        </div>
+                                        <div>
+                                            <label>負責人 <span style="color:red">*</span></label>
+                                            <input type="text" id="flag_responsible_person" name="flag_responsible_person" class="form-control" value="<?php echo htmlspecialchars($formData['flag_responsible_person'] ?? $formData['activity_coordinator'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                        </div>
+                                        <div>
+                                            <label>連絡電話 <span style="color:red">*</span></label>
+                                            <input type="text" id="flag_contact_phone" name="flag_contact_phone" class="form-control" value="<?php echo htmlspecialchars($formData['flag_contact_phone'] ?? $formData['coordinator_phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                         </div>
                                     </div>
 
-                                    <div style="flex:1;">
-                                        <label>懸掛位置</label>
-                                        <div style="padding:8px 10px; background:#fff; border:1px solid #e2e8f0; border-radius:4px;">中央走道</div>
-                                        <input type="hidden" id="flag_location" name="flag_location" value="中央走道">
+                                    <div style="display:flex; gap:15px; align-items:center; margin-bottom:15px; padding: 0 20px;">
+                                        <div>
+                                            <label>使用日期 <span style="color:red">*</span></label>
+                                            <div style="display:flex; gap:8px; align-items:center;">
+                                                <input type="date" id="flag_use_start" name="flag_use_start" class="form-control" readonly style="background:#fff;" value="<?php echo htmlspecialchars($formData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                                <span>至</span>
+                                                <input type="date" id="flag_use_end" name="flag_use_end" class="form-control" readonly style="background:#fff;" value="<?php echo htmlspecialchars($formData['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                            </div>
+                                            <div style="font-size:12px;color:#64748b;margin-top:6px;">說明：使用日期已自動帶入活動起訖時間，無法修改。</div>
+                                        </div>
                                     </div>
+
+                                    <div style="display:flex; gap:15px; align-items:center; margin-bottom:15px; padding: 0 20px 20px 20px;">
+                                        <div style="flex:1;">
+                                            <label>宣傳旗幟 <span style="color:red">*</span></label>
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <span>共</span>
+                                                <input type="number" name="flag_count" id="flag_count" class="form-control" min="1" max="20" step="1" style="width:100px;height:38px;" placeholder="最多20" value="<?php echo htmlspecialchars((string)($formData['flag_count'] ?? '1'), ENT_QUOTES, 'UTF-8'); ?>">
+                                                <span>支</span>
+                                            </div>
+                                        </div>
+                                        <div style="flex:1;">
+                                            <label>懸掛位置</label>
+                                            <div style="padding:8px 10px; background:#fff; border:1px solid #e2e8f0; border-radius:4px;">中央走道</div>
+                                            <input type="hidden" id="flag_location" name="flag_location" value="中央走道">
+                                        </div>
+                                    </div>
+
+                                    <label style="display: flex; align-items: flex-start; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; background: #eff6ff; padding: 15px 20px; border-top: 1px solid #cbd5e1; border-radius: 0 0 8px 8px;">
+                                        <input type="checkbox" name="flag_agreement" id="flag_agreement" value="1" <?php echo (isset($formData['flag_agreement']) && $formData['flag_agreement'] == '1') ? 'checked' : ''; ?> style="margin-top: 2px;" required>
+                                        <span style="color: #1e3a8a; line-height: 1.5; font-size: 14px;">本人為旗幟插立總負責人，已詳細閱讀並遵守以下各項注意事項，為維護校園安全與景觀，願無條件承擔所插旗幟所致之一切賠償責任，特此聲明。 <span style="color:red">*</span></span>
+                                    </label>
                                 </div>
 
-                                <!-- 單一同意勾選保留於下方（id=flag_agreement） -->
-                                
-                                <label style="display: flex; align-items: flex-start; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; background: #eff6ff; padding: 15px 20px; border-top: 1px solid #cbd5e1; border-radius: 0 0 8px 8px;">
-                                    <input type="checkbox" name="flag_agreement" id="flag_agreement" value="1" <?php echo (isset($formData['flag_agreement']) && $formData['flag_agreement'] == '1') ? 'checked' : ''; ?> style="margin-top: 2px;" required>
-                                    <span style="color: #1e3a8a; line-height: 1.5; font-size: 14px;">本人為旗幟插立總負責人，已詳細閱讀並遵守以下各項注意事項，為維護校園安全與景觀，願無條件承擔所插旗幟所致之一切賠償責任，特此聲明。 <span style="color:red">*</span></span>
-                                </label>
-                            </div>
+                                <!-- 👇 這裡幫你把遺失的【酒精申請表 HTML】補回來了 👇 -->
+                                <div id="alcoholDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:8px;">
+                                    <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
+                                        輔仁大學學生自治組織暨社團辦理提供酒精飲品活動須知
+                                    </div>
+                                    <div style="padding: 20px;">
+                                        <p style="color: #1e293b; font-size: 15px; margin-bottom: 15px; line-height: 1.6; font-weight: bold;">
+                                            關於本校學生社團活動具酒精飲品活動，為避免參與人員酒後行為脫序、危及自身或他人安全，或造成飲用人健康上之負擔，請確認以下事項皆已納入活動規劃，並遵守相關規範︰
+                                        </p>
+                                        
+                                        <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 25px;">
+                                            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; margin-left: -20px; font-weight: bold; color: #3b82f6;">
+                                                <input type="checkbox" id="alcohol_agree_all" onchange="toggleAllAlcoholAgreements(this)" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
+                                                <span style="font-size: 15px; line-height: 1.6;">同意全部</span>
+                                            </label>
+                                            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                                                <input type="checkbox" name="alcohol_agree_1" value="yes" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
+                                                <span style="font-size: 15px; line-height: 1.6;">辦理活動供應酒精性飲品者，需於活動申請時，於企劃書中敘明酒精飲品種類、準備數量、活動形式，連同活動申請表及本須知於活動前一個月送至課外活動指導組。</span>
+                                            </label>
+                                            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                                                <input type="checkbox" name="alcohol_agree_2" value="yes" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
+                                                <span style="font-size: 15px; line-height: 1.6;">為避免同學酒後行為脫序、危及自身或他人安全，或造成飲用人健康上之負擔，請於企劃書敘明失序行為因應措施。</span>
+                                            </label>
+                                            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                                                <input type="checkbox" name="alcohol_agree_3" value="yes" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
+                                                <span style="font-size: 15px; line-height: 1.6;">於活動期間主辦單位務必於活動現場明顯處所加註「未滿十八歲請勿購買/領取酒精性飲品」及「飲酒過量有害身體健康」與「禁止酒駕」之警語，提醒活動參與者避免飲酒過量。</span>
+                                            </label>
+                                            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                                                <input type="checkbox" name="alcohol_agree_4" value="yes" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
+                                                <span style="font-size: 15px; line-height: 1.6;">依「兒童及少年福利與權益保障法」規定，販賣、交付或供應酒或檳榔予兒童及少年者，處新臺幣一萬元以上十萬元以下罰鍰。主辦單位應要求活動中發送或販賣酒精飲料之人員核對領取/購買人身分證明文件，並禁止對未滿十八歲之人發送或販賣。</span>
+                                            </label>
+                                            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                                                <input type="checkbox" name="alcohol_agree_5" value="yes" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
+                                                <span style="font-size: 15px; line-height: 1.6;">主辦單位應提供《辦理提供酒精飲品活動理性飲酒同意書》 供有飲酒意願之參加人員簽署，並提醒參加人員有關警語所示事項(包含未滿十八歲請勿飲酒，於活動中飲用酒精飲料者不得駕駛汽車、機車、腳踏車等)。於活動結束翌日(遇例假日順延)將該同意書送至課外活動指導組備查</span>
+                                            </label>
+                                        </div>
+
+                                        <div style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 20px; align-items: center; background: #f8fafc; padding: 20px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                                            <div style="display: flex; align-items: center; gap: 8px;">
+                                                <label for="alcohol_coordinator" style="margin: 0; font-size: 15px; font-weight: bold; white-space: nowrap;">活動負責人</label>
+                                                <input type="text" id="alcohol_coordinator" name="alcohol_coordinator" placeholder="姓名" value="<?php echo htmlspecialchars($formData['alcohol_coordinator'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" style="width: 150px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
+                                            </div>
+                                            <div style="display: flex; align-items: center; gap: 8px;">
+                                                <label for="alcohol_president" style="margin: 0; font-size: 15px; font-weight: bold; white-space: nowrap;">社長</label>
+                                                <input type="text" id="alcohol_president" name="alcohol_president" placeholder="姓名" value="<?php echo htmlspecialchars($formData['alcohol_president'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" style="width: 150px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
+                                            </div>
+                                            <span style="font-size: 15px; color: #1e293b; font-weight: bold;">已知悉以上事項，願負一切責任。</span>
+                                        </div>
+                                        
+                                        <p style="color: #000; font-size: 15px; font-weight: bold; margin-bottom: 0; text-align: center;">
+                                            活動時所有接觸酒精飲品與會者請親自簽署《酒精飲品活動理性飲酒同意書》，請於活動結束翌日(遇例假日順延)送課指組備查。
+                                        </p>
+                                    </div>
+                                </div>
+                                <!-- 👆 酒精申請表 HTML 結束 👆 -->
 
                                 <script>
+                                // 👇 這裡幫你把遺失的【酒精驗證 Javascript】補回來了 👇
+                                function toggleAllAlcoholAgreements(source) {
+                                    const checkboxes = document.querySelectorAll('input[name^="alcohol_agree_"]');
+                                    checkboxes.forEach(function(cb) {
+                                        if(cb !== source) {
+                                            cb.checked = source.checked;
+                                        }
+                                    });
+                                }
+
+                                function isAlcoholEnabled() {
+                                    const checkedAlc = document.querySelector('input[name="has_alcohol"]');
+                                    return checkedAlc && checkedAlc.checked;
+                                }
+
+                                function toggleAlcoholDetails() {
+                                    const alcSection = document.getElementById('alcoholDetailsSection');
+                                    if (!alcSection) return;
+                                    const show = isAlcoholEnabled();
+                                    alcSection.style.display = show ? 'block' : 'none';
+                                    
+                                    alcSection.querySelectorAll('input').forEach(function(el) {
+                                        if (show) {
+                                            el.removeAttribute('disabled');
+                                        } else {
+                                            el.setAttribute('disabled', 'disabled');
+                                        }
+                                    });
+                                }
+
+                                function validateAlcoholForm() {
+                                    if (!isAlcoholEnabled()) return true;
+                                    
+                                    const checkboxes = document.querySelectorAll('#alcoholDetailsSection input[type="checkbox"]');
+                                    let allChecked = true;
+                                    checkboxes.forEach(function(cb) {
+                                        if (!cb.checked) allChecked = false;
+                                    });
+                                    
+                                    const coordinator = document.getElementById('alcohol_coordinator').value.trim();
+                                    const president = document.getElementById('alcohol_president').value.trim();
+                                    
+                                    if (!allChecked) {
+                                        alert('請先勾選並確認遵守「酒精飲品活動須知」的所有規範事項。');
+                                        return false;
+                                    }
+                                    
+                                    if (!coordinator) {
+                                        alert('請填寫「酒精飲品活動須知」的活動負責人。');
+                                        return false;
+                                    }
+                                    
+                                    if (!president) {
+                                        alert('請填寫「酒精飲品活動須知」的社長。');
+                                        return false;
+                                    }
+                                    
+                                    return true;
+                                }
+                                // 👆 酒精驗證 Javascript 結束 👆
+
                                 function isFlagEnabled() {
                                     const checkedFlag = document.querySelector('input[name="setup_flags"]:checked');
                                     return checkedFlag && checkedFlag.value === 'yes';
@@ -1437,7 +1902,6 @@ SQL;
                                             count++;
                                         }
                                     }
-
                                     return date;
                                 }
 
@@ -1459,7 +1923,6 @@ SQL;
                                     const show = isFlagEnabled();
                                     detailsSection.style.display = show ? 'block' : 'none';
 
-                                    // Enable or disable all controls in the flag section when showing/hiding.
                                     detailsSection.querySelectorAll('input, select, textarea').forEach(function (el) {
                                         if (show) {
                                             el.removeAttribute('disabled');
@@ -1533,12 +1996,11 @@ SQL;
                                         flagCount.value = 20;
                                     }
 
-                                    // Sync usage dates from main activity dates and lock them
                                     const bs = document.getElementById('borrow_start_date');
                                     const be = document.getElementById('borrow_end_date');
                                     const fus = document.getElementById('flag_use_start');
                                     const fue = document.getElementById('flag_use_end');
-                                    // Sync basic text fields from step1 into flag fields as well
+                                    
                                     const mapping = [
                                         ['organization_name', 'flag_organization_name'],
                                         ['activity_name', 'flag_activity_name'],
@@ -1555,19 +2017,16 @@ SQL;
                                     if (fus && fue && bs && be) {
                                         fus.value = bs.value || '';
                                         fue.value = be.value || '';
-                                        // set min for visual cue (even though fields are read-only)
                                         try {
                                             const min = getMinFlagDate();
                                             fus.setAttribute('min', min);
                                             fue.setAttribute('min', min);
                                         } catch (e) {}
 
-                                        // If the activity start is earlier than allowed minimum, warn user
                                         if (bs.value) {
                                             const minDate = new Date(getMinFlagDate());
                                             const startDate = new Date(bs.value);
                                             if (startDate < minDate) {
-                                                // show gentle alert and focus the activity start date for correction
                                                 alert('插立旗幟使用日期必須為 7 個工作天之後，請將活動開始日期調整至 ' + getMinFlagDate() + '（或更晚）。');
                                                 bs.focus();
                                             }
@@ -1601,7 +2060,24 @@ SQL;
                                         }
                                     });
 
-                                    // Auto-sync specific step-1 fields into the flag application fields
+                                    // 👇 綁定切換按鈕，勾選酒精時會跳出申請表 👇
+                                    ['has_alcohol', 'has_fire', 'has_sales'].forEach(function(name) {
+                                        const el = document.querySelector('input[name="' + name + '"]');
+                                        if (el) {
+                                            el.addEventListener('change', function() {
+                                                if (name === 'has_alcohol' && typeof toggleAlcoholDetails === 'function') {
+                                                    toggleAlcoholDetails();
+                                                }
+                                            });
+                                        }
+                                    });
+                                    
+                                    // 確保重整網頁時如果有勾選，也能正確顯示
+                                    if (typeof toggleAlcoholDetails === 'function') {
+                                        toggleAlcoholDetails();
+                                    }
+                                    // 👆 綁定結束 👆
+
                                     (function(){
                                         const pairs = [
                                             ['organization_name', 'flag_organization_name'],
@@ -1613,9 +2089,7 @@ SQL;
                                             const src = document.getElementById(pair[0]);
                                             const dst = document.getElementById(pair[1]);
                                             if (!src || !dst) return;
-                                            // initial copy
                                             dst.value = src.value || dst.value || '';
-                                            // update on input/change
                                             src.addEventListener('input', function(){ dst.value = src.value; });
                                             src.addEventListener('change', function(){ dst.value = src.value; });
                                         });
@@ -1627,7 +2101,6 @@ SQL;
                                                 this.value = 20;
                                                 alert('宣傳旗幟最多只能選 20 支');
                                             }
-
                                             if (this.value !== '' && Number(this.value) < 1) {
                                                 this.value = 1;
                                             }
@@ -1637,18 +2110,10 @@ SQL;
                                     toggleFlagDetails();
                                     syncFlagForm();
 
-                                    // 註解掉避免重複綁定 saveDraft
-                                    // const saveBtns = document.querySelectorAll('.saveDraftBtn');
-                                    // saveBtns.forEach(function (btn) {
-                                    //    ...
-                                    // });
-
-                                    // 草稿箱
                                     const draftBtns = document.querySelectorAll('.openDraftBoxBtn');
-
                                     draftBtns.forEach(function (btn) {
                                         btn.addEventListener('click', function () {
-                                            window.location.href = 'draft_box.php';
+                                            window.location.href = 'drafts.php';
                                         });
                                     });
                                 });
@@ -1656,7 +2121,8 @@ SQL;
 
                                 <div class="step-actions">
                                     <button type="button" class="btn btn-secondary" onclick="goToStep(1)"> ⬅ 回上一步</button>
-                                    <button type="button" class="btn btn-primary btn-next" onclick="goToStep(3)">下一步 ➔ 挑選器材與場地</button>
+                                    <!-- 👇 這裡也幫你把進入第三步前的檢查條件加回來了 👇 -->
+                                    <button type="button" class="btn btn-primary btn-next" onclick="if(validateAlcoholForm()) { goToStep(3); }">下一步 ➔ 挑選器材與場地</button>
                                 </div>
 
                                 <div class="draft-action-row">
@@ -1668,8 +2134,7 @@ SQL;
                                     </button>
                                 </div>
                                 <div id="submitDebugMsg" class="draft-message"></div>
-                            </div>
-                            <!-- ========== 步驟 3 內容區 ========== -->
+                            </div>                            <!-- ========== 步驟 3 內容區 ========== -->
                             <div class="step-content" id="step-content-3">
                                 <h3 class="step-title" style="margin-bottom: 10px;">第三步：器材與場地</h3>
                                 
@@ -1860,12 +2325,6 @@ SQL;
         </main>
     </div>
 
-    <!-- 草稿管理 JavaScript 模組 - 必須在 borrow.php 邏輯之前加載 -->
-    <script src="DraftManager.js?v=<?php echo time(); ?>"></script>
-    <script>
-        window.draftManager = new DraftManager();
-    </script>
-
     <script>
         // ===== 草稿第三步「已選取項目」同步橋接 =====
         // 用途：暫存前把右側已選項目寫進 cart_items；草稿載入後再把 cart_items 畫回右側清單。
@@ -2016,173 +2475,7 @@ SQL;
         };
     </script>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            const form = document.getElementById('multistep_form');
-            const saveBtn = document.getElementById('saveDraftBtn');
-            const draftBoxBtn = document.getElementById('openDraftBoxBtn');
-            const msg = document.getElementById('submitDebugMsg');
-
-            const STORAGE_KEY = 'borrow_drafts';
-
-            function getDrafts() {
-                return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-            }
-
-            function saveDrafts(drafts) {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(drafts));
-            }
-
-            function collectFormData() {
-                const data = {};
-
-                form.querySelectorAll('input, select, textarea').forEach(el => {
-                    if (!el.name) return;
-
-                    if (el.type === 'file') return;
-
-                    if (el.type === 'checkbox') {
-                        data[el.name] = el.checked ? '1' : '';
-                    } else if (el.type === 'radio') {
-                        if (el.checked) data[el.name] = el.value;
-                    } else {
-                        data[el.name] = el.value;
-                    }
-                });
-
-                return data;
-            }
-
-            function clearFormAfterSave() {
-                // Intentionally left minimal to avoid unexpected navigation/reset during save.
-                console.log('clearFormAfterSave called — no-op to preserve form state after draft save');
-            }
-
-            if (saveBtn) {
-                saveBtn.addEventListener('click', function () {
-                    const drafts = getDrafts();
-
-                    if (window.borrowCartDraftBridge) {
-                        window.borrowCartDraftBridge.syncHiddenBeforeSave();
-                    }
-
-                    const formData = collectFormData();
-
-                    const draft = {
-                        draftId: 'draft_' + Date.now(),
-                        timestamp: new Date().toLocaleString('zh-TW'),
-                        activityName: formData.activity_name || '未填寫活動名稱',
-                        purpose: formData.purpose || '',
-                        currentStep: document.getElementById('current_step')?.value || '1',
-                        formData: formData
-                    };
-
-                    drafts.unshift(draft);
-                    saveDrafts(drafts);
-
-                    if (msg) msg.textContent = '✅ 草稿已暫存，表單內容已保留';
-
-                    // 保留表單與目前步驟，使用者可繼續編輯
-                });
-            }
-
-            if (draftBoxBtn) {
-                draftBoxBtn.addEventListener('click', function () {
-                    window.location.href = 'draft_box.php';
-                });
-            }
-
-            // 從草稿箱載入草稿
-            const params = new URLSearchParams(window.location.search);
-            const loadId = params.get('draft_id');
-
-            if (loadId) {
-                // 使用 DraftManager 取得草稿（若 DraftManager 尚未啟動，退回到 localStorage）
-                let draft = null;
-                if (window.draftManager && typeof window.draftManager.getDraftById === 'function') {
-                    draft = window.draftManager.getDraftById(loadId);
-                }
-
-                if (!draft) {
-                    const drafts = JSON.parse(localStorage.getItem('borrow_drafts') || '[]');
-                    draft = drafts.find(d => d.draftId === loadId);
-                }
-
-                if (draft) {
-                    if (window.draftManager && typeof window.draftManager.loadDraftToForm === 'function') {
-                        window.draftManager.loadDraftToForm(draft);
-                    } else if (draft.formData) {
-                        // Fallback for very old drafts that still have formData
-                        Object.keys(draft.formData).forEach(function (name) {
-                            const els = document.querySelectorAll(`[name="${name}"]`);
-
-                            els.forEach(function (el) {
-                                if (el.type === 'checkbox') {
-                                    el.checked = draft.formData[name] === '1';
-                                } else if (el.type === 'radio') {
-                                    el.checked = el.value === draft.formData[name];
-                                } else if (el.type !== 'file') {
-                                    el.value = draft.formData[name];
-                                }
-                            });
-                        });
-                    }
-
-                    // 將目前編輯的草稿 id 寫入 hidden input，供暫存時覆寫判斷
-                    const currentDraftIdEl = document.getElementById('current_draft_id');
-                    if (currentDraftIdEl) currentDraftIdEl.value = draft.draftId || '';
-
-                    // 草稿如果有第三步已選取項目，先填回 hidden input，並同步畫回右側「已選取項目」。
-                    if (window.borrowCartDraftBridge) {
-                        window.borrowCartDraftBridge.restoreRightPanel(draft);
-                        setTimeout(function () {
-                            window.borrowCartDraftBridge.restoreRightPanel(draft);
-                        }, 200);
-                    }
-
-                    // 草稿資料填回表單後，重新判斷「插立旗幟」是否為是。
-                    // 若 setup_flags = yes，會自動顯示旗幟插立申請表。
-                    if (typeof toggleFlagDetails === 'function') {
-                        toggleFlagDetails();
-                    }
-
-                    // 重新同步旗幟申請表資料與活動日期。
-                    if (typeof syncFlagForm === 'function') {
-                        syncFlagForm();
-                    }
-
-                    const step = draft.currentStep || '1';
-
-                    if (typeof showStep === 'function') {
-                        showStep(step);
-                    } else {
-
-                        document.querySelectorAll('.step-content')
-                            .forEach(el => el.classList.remove('active'));
-
-                        document.querySelectorAll('.stepper-item')
-                            .forEach(el => el.classList.remove('active'));
-
-                        document.getElementById('step-content-' + step)
-                            ?.classList.add('active');
-
-                        document.getElementById('stepper-' + step)
-                            ?.classList.add('active');
-
-                        const currentStepInput =
-                            document.getElementById('current_step');
-
-                        if (currentStepInput) {
-                            currentStepInput.value = step;
-                        }
-                    }
-                }
-            }
-        });
-    </script>
-
-
-    <script>
+        <script>
         // 確保在 DOM 完全加載後執行
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', startApplication);
@@ -2709,347 +3002,242 @@ function startApplication() {
             })();
         }
 
-        // ================== 草稿管理 (Draft Management) ==================
-        function initializeDraftManagement() {
-            (function() {
-            // DOM 元素參考
-            const saveDraftBtn = document.getElementById('saveDraftBtn');
-            const manageDraftBtn = document.getElementById('manageDraftBtn');
-            const draftModalOverlay = document.getElementById('draftModalOverlay');
-            const draftModalCloseBtn = document.getElementById('draftModalCloseBtn');
-            const draftBtnClose = document.getElementById('draftBtnClose');
-            const draftBtnNew = document.getElementById('draftBtnNew');
-            const draftTableContainer = document.getElementById('draftTableContainer');
-            const draftMessage = document.getElementById('draftMessage');
+        async function loadDraftFromDatabase() {
+            const params = new URLSearchParams(window.location.search);
+            const draftId = params.get('draft_id');
 
-            /**
-             * 顯示暫時訊息
-             */
-            function showMessage(text, type = 'success', duration = 3000) {
-                draftMessage.textContent = text;
-                draftMessage.className = `draft-message show ${type}`;
-                
-                if (duration > 0) {
-                    setTimeout(() => {
-                        draftMessage.classList.remove('show');
-                    }, duration);
-                }
-            }
+            if (!draftId) return;
 
-            /**
-             * 渲染草稿列表表格
-             */
-            function renderDraftTable() {
-                const stats = window.draftManager.getDraftStats();
-                
-                if (stats.totalCount === 0) {
-                    draftTableContainer.innerHTML = `
-                        <p class="draft-empty-message">
-                            <div class="draft-empty-icon">📭</div>
-                            暫無已儲存的草稿
-                        </p>
-                    `;
+            try {
+                const res = await fetch(
+                    'api/load_draft.php?draft_id=' + encodeURIComponent(draftId)
+                );
+
+                const data = await res.json();
+
+                if (!data.success) {
+                    alert(data.message || '草稿載入失敗');
                     return;
                 }
 
-                let tableHtml = `
-                    <table class="draft-table">
-                        <thead>
-                            <tr>
-                                <th>暫存時間</th>
-                                <th>用途摘要</th>
-                                <th>操作</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                `;
+                const draft = data.draft || {};
+                const formData = draft.formData || {};
 
-                stats.drafts.forEach(draft => {
-                    const timestamp = draft.timestamp || '未知';
-                    const purposeSummary = window.draftManager.generatePurposeSummary(draft.purpose);
-                    const draftId = draft.draftId;
-                    
-                    tableHtml += `
-                        <tr>
-                            <td>${timestamp}</td>
-                            <td>${purposeSummary}</td>
-                            <td>
-                                <div class="draft-actions">
-                                    <button type="button" class="draft-btn-load" onclick="loadDraft('${draftId}')">載入</button>
-                                    <button type="button" class="draft-btn-delete" onclick="deleteDraft('${draftId}')">刪除</button>
-                                </div>
-                            </td>
-                        </tr>
-                    `;
+                Object.keys(formData).forEach(function (name) {
+                    const els = document.querySelectorAll(`[name="${name}"]`);
+
+                    els.forEach(function (el) {
+                        if (el.type === 'checkbox') {
+                            el.checked = formData[name] === '1' || formData[name] === 1 || formData[name] === true;
+                        } else if (el.type === 'radio') {
+                            el.checked = el.value === String(formData[name]);
+                        } else if (el.type !== 'file') {
+                            el.value = formData[name];
+                        }
+                    });
                 });
 
-                tableHtml += `
-                        </tbody>
-                    </table>
-                `;
+                const currentDraftIdInput = document.getElementById('current_draft_id');
+                if (currentDraftIdInput) {
+                    currentDraftIdInput.value = draft.draft_id || draft.draftId || draftId;
+                }
 
-                draftTableContainer.innerHTML = tableHtml;
+                const fileDisplay = document.getElementById('proposal_file_name_display');
+                const draftProposalFileInput = document.getElementById('draft_proposal_file');
+                const draftProposalOriginalNameInput = document.getElementById('draft_proposal_original_name');
+                const draftProposalUploadedAtInput = document.getElementById('draft_proposal_uploaded_at');
+
+                if (draft.proposal_file && draftProposalFileInput) {
+                    draftProposalFileInput.value = draft.proposal_file;
+                }
+                if (draft.proposal_original_name && draftProposalOriginalNameInput) {
+                    draftProposalOriginalNameInput.value = draft.proposal_original_name;
+                }
+                if (draft.proposal_uploaded_at && draftProposalUploadedAtInput) {
+                    draftProposalUploadedAtInput.value = draft.proposal_uploaded_at;
+                }
+                if (fileDisplay && draft.proposal_original_name) {
+                    fileDisplay.innerText = '已上傳企劃書：' + draft.proposal_original_name;
+                }
+
+                if (window.borrowCartDraftBridge) {
+                    const bridgeDraft = {
+                        formData: formData,
+                        cart_items: formData.cart_items || formData.cartItems || []
+                    };
+
+                    window.borrowCartDraftBridge.restoreRightPanel(bridgeDraft);
+
+                    setTimeout(function () {
+                        window.borrowCartDraftBridge.restoreRightPanel(bridgeDraft);
+                    }, 200);
+                }
+
+                if (typeof toggleFlagDetails === 'function') {
+                    toggleFlagDetails();
+                }
+
+                if (typeof syncFlagForm === 'function') {
+                    syncFlagForm();
+                }
+
+                const step = draft.current_step || draft.currentStep || formData.current_step || '1';
+
+                const currentStepInput = document.getElementById('current_step');
+                if (currentStepInput) {
+                    currentStepInput.value = step;
+                }
+
+                if (typeof showStep === 'function') {
+                    showStep(step);
+                } else if (typeof goToStep === 'function') {
+                    goToStep(Number(step));
+                }
+            } catch (error) {
+                console.error(error);
+                alert('草稿載入失敗：' + error.message);
             }
+        }
 
-            /**
-             * 全域函數：載入草稿
-             */
-            window.loadDraft = function(draftId) {
-                const draft = window.draftManager.getDraftById(draftId);
-                if (!draft) {
-                    showMessage('找不到此草稿', 'error');
-                    return;
+        function initializeDraftManagement() {
+            const saveDraftBtn = document.getElementById('saveDraftBtn');
+            const openDraftBoxBtn = document.getElementById('openDraftBoxBtn');
+            const msg = document.getElementById('submitDebugMsg');
+
+            async function saveDraft(e) {
+                if (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
                 }
 
-                const success = window.draftManager.loadDraftToForm(draft);
-                if (success) {
-                    // 標記目前正在編輯的草稿 id，供儲存時判斷覆寫或另存
-                    const currentDraftIdEl = document.getElementById('current_draft_id');
-                    if (currentDraftIdEl) currentDraftIdEl.value = draft.draftId || '';
-
-                    closeDraftModal();
-                    showMessage(`✓ 已載入草稿 (${draft.timestamp})`, 'success', 3000);
-                } else {
-                    showMessage('載入草稿失敗，請重新嘗試', 'error');
-                }
-            };
-
-            /**
-             * 全域函數：刪除草稿
-             */
-            window.deleteDraft = function(draftId) {
-                if (!confirm('確定要刪除此草稿嗎？')) {
-                    return;
-                }
-
-                const deleted = window.draftManager.deleteDraft(draftId);
-                if (deleted) {
-                    renderDraftTable();
-                    showMessage('✓ 草稿已刪除', 'success', 2000);
-                } else {
-                    showMessage('刪除草稿失敗', 'error');
-                }
-            };
-
-            /**
-             * 開啟草稿管理中心模態框
-             */
-            function openDraftModal() {
-                renderDraftTable();
-                draftModalOverlay.classList.add('active');
-            }
-
-            /**
-             * 關閉草稿管理中心模態框
-             */
-            function closeDraftModal() {
-                draftModalOverlay.classList.remove('active');
-            }
-
-            window.closeDraftModal = closeDraftModal;
-
-            /**
-             * 保存草稿
-             */
-            /**
-             * 顯示覆寫/另存 modal，回傳使用者選擇：'overwrite'|'save_new'|'cancel'
-             * @returns {Promise<string>}
-             */
-            function showOverwriteModal() {
-                return new Promise(function (resolve) {
-                    let modal = document.getElementById('overwriteModal');
-                    if (!modal) {
-                        modal = document.createElement('div');
-                        modal.id = 'overwriteModal';
-                        modal.innerHTML = `
-                            <div class="overlay"></div>
-                            <div class="overwrite-modal-content">
-                                <div class="modal-body">偵測到您正在編輯已載入的草稿。請選擇要覆寫原有草稿，或另存為新草稿。</div>
-                                <div class="modal-actions">
-                                    <button type="button" class="btn btn-secondary" data-action="cancel">取消</button>
-                                    <button type="button" class="btn btn-primary" data-action="save_new">另存為新草稿</button>
-                                    <button type="button" class="btn btn-danger" data-action="overwrite">覆寫草稿</button>
-                                </div>
-                            </div>
-                        `;
-                        document.body.appendChild(modal);
-
-                        const style = document.createElement('style');
-                        style.textContent = `
-                            #overwriteModal { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 9999; }
-                            #overwriteModal .overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.4); }
-                            #overwriteModal .overwrite-modal-content { position: relative; background: #fff; padding: 18px; border-radius: 8px; width: 420px; max-width: 90%; box-shadow: 0 8px 24px rgba(0,0,0,0.15); z-index: 10000; }
-                            #overwriteModal .modal-body { margin-bottom: 12px; color: #0f172a; }
-                            #overwriteModal .modal-actions { display:flex; gap:8px; justify-content: flex-end; }
-                            #overwriteModal .btn { padding:6px 10px; border-radius:6px; border:1px solid #cbd5e1; cursor:pointer; }
-                            #overwriteModal .btn-primary { background:#3b82f6; color:#fff; border-color:#3b82f6; }
-                            #overwriteModal .btn-danger { background:#ef4444; color:#fff; border-color:#ef4444; }
-                            #overwriteModal .btn-secondary { background:#f1f5f9; color:#0f172a; }
-                        `;
-                        document.head.appendChild(style);
-
-                        modal.addEventListener('click', function (e) {
-                            const action = e.target.getAttribute('data-action');
-                            if (action) {
-                                modal.style.display = 'none';
-                                resolve(action);
-                            }
-                        });
+                try {
+                    if (window.borrowCartDraftBridge) {
+                        window.borrowCartDraftBridge.syncHiddenBeforeSave();
                     }
 
-                    modal.style.display = 'flex';
-                });
-            }
-            async function saveDraft(e) {
-    if (e) {
-        e.preventDefault();
-        e.stopPropagation();
-    }
-    console.log('[Draft] button clicked!');
-    try {
-        if (window.borrowCartDraftBridge) {
-            window.borrowCartDraftBridge.syncHiddenBeforeSave();
-        }
+                    const form = document.getElementById('multistep_form');
+                    if (!form) {
+                        alert('找不到表單，無法暫存。');
+                        return;
+                    }
 
-        const currentDraftIdEl = document.getElementById('current_draft_id');
-        let currentDraftId = currentDraftIdEl ? currentDraftIdEl.value : '';
+                    const fd = new FormData(form);
 
-        console.log('[Draft] start, currentDraftId =', currentDraftId);
+                    const currentDraftId =
+                        document.getElementById('current_draft_id')?.value || '';
 
-        // 取得表單資料
-        const draftData = window.draftManager?.extractFormData?.();
-        if (!draftData) throw new Error('無法提取表單資料');
+                    const currentStep =
+                        document.getElementById('current_step')?.value || '1';
 
-        // ⭐ 記錄「送出前」是否已有 draftId（這才是關鍵）
-        const hadDraftBeforeSave = !!currentDraftId;
+                    fd.set('draft_id', currentDraftId);
+                    fd.set('currentStep', currentStep);
 
-        // ⭐ 如果已有 draft → 先問要怎麼處理
-        if (hadDraftBeforeSave) {
+                    // 如果已有草稿ID，詢問用戶是否覆蓋或新建
+                    let saveAction = 'update'; // 默認更新
+                    if (currentDraftId && currentDraftId !== '') {
+                        // 显示模态窗口并等待用户选择
+                        const choice = await new Promise((resolve) => {
+                            const modal = document.getElementById('draftChoiceModal');
+                            const updateBtn = document.getElementById('draftBtnUpdate');
+                            const newBtn = document.getElementById('draftBtnNew');
+                            const draftIdDisplay = document.getElementById('draftIdDisplay');
 
-            const userChoice = await showOverwriteModal();
-            console.log('[Draft] userChoice =', userChoice);
+                            if (!modal || !updateBtn || !newBtn) {
+                                resolve('update'); // 回退到更新
+                                return;
+                            }
 
-            if (userChoice === 'overwrite') {
+                            draftIdDisplay.textContent = currentDraftId;
+                            modal.classList.add('show');
 
-                // 覆寫
-                draftData.draftId = currentDraftId;
+                            const handleUpdate = () => {
+                                modal.classList.remove('show');
+                                updateBtn.removeEventListener('click', handleUpdate);
+                                newBtn.removeEventListener('click', handleNew);
+                                resolve('update');
+                            };
 
-            } else if (userChoice === 'save_new') {
+                            const handleNew = () => {
+                                modal.classList.remove('show');
+                                updateBtn.removeEventListener('click', handleUpdate);
+                                newBtn.removeEventListener('click', handleNew);
+                                resolve('new');
+                            };
 
-                // ⭐ 強制新草稿（關鍵修正）
-                draftData.draftId = null;
-                draftData.forceNew = true;
+                            updateBtn.addEventListener('click', handleUpdate);
+                            newBtn.addEventListener('click', handleNew);
+                        });
 
-                currentDraftId = '';
+                        saveAction = choice;
+                        if (choice === 'new') {
+                            // 如果选择新建，清除draft_id來創建新草稿
+                            fd.set('draft_id', '');
+                            fd.set('action', 'new');
+                        } else {
+                            fd.set('action', 'update');
+                        }
+                    }
 
-                if (currentDraftIdEl) {
-                    currentDraftIdEl.value = '';
+                    const res = await fetch('api/save_draft.php', {
+                        method: 'POST',
+                        body: fd
+                    });
+
+                    const data = await res.json();
+
+                    if (data.success) {
+                        const draftId = data.draft_id || data.draftId || data.reservation_id || '';
+                        const currentDraftInput = document.getElementById('current_draft_id');
+                        if (currentDraftInput) currentDraftInput.value = draftId;
+
+                        const actionText = saveAction === 'new' ? '新增' : '更新';
+                        const successMsg = '✅ 草稿已' + actionText + '，草稿編號：' + draftId;
+                        if (msg) {
+                            msg.textContent = successMsg;
+                        }
+
+                        alert('草稿已' + actionText + '成功！\n\n草稿編號：' + draftId);
+                    } else {
+                        if (msg) {
+                            msg.textContent = '❌ ' + (data.message || '草稿暫存失敗');
+                        }
+                        alert(data.message || '草稿暫存失敗');
+                    }
+                } catch (error) {
+                    console.error(error);
+                    if (msg) {
+                        msg.textContent = '❌ 暫存失敗：' + error.message;
+                    }
+                    alert('暫存失敗：' + error.message);
                 }
-
-            } else {
-                showMessage('已取消暫存', 'error', 2000);
-                return;
-            }
-        }
-
-        // ⭐ save
-        const saved = await window.draftManager.saveDraft(draftData);
-
-        console.log('[Draft] saved =', saved);
-
-        if (!saved || !saved.draftId) {
-            throw new Error('草稿儲存失敗：沒有 draftId');
-        }
-
-        // ⭐ 更新 UI state
-        const isNew = !hadDraftBeforeSave || draftData.forceNew === true;
-
-        if (currentDraftIdEl) {
-            currentDraftIdEl.value = saved.draftId;
-        }
-
-        // ⭐ 新增與覆寫都跳出明確的 alert 提示
-        if (isNew) {
-            alert(
-                '新增草稿成功！\n\n草稿代碼：' +
-                saved.draftId +
-                '\n\n您可以在草稿箱中查看。'
-            );
-        } else {
-            alert(
-                '覆寫草稿成功！\n\n草稿代碼：' +
-                saved.draftId +
-                '\n\n原本的草稿內容已更新。'
-            );
-        }
-
-        showMessage(
-            `✓ 草稿已暫存 (${saved.draftId.substring(0, 20)}...)`,
-            'success',
-            3000
-        );
-
-    } catch (error) {
-        console.error('[Draft Error]', error);
-
-        showMessage(
-            `✗ 暫存失敗：${error.message}`,
-            'error',
-            3000
-        );
-    }
-}
-
-            /**
-             * 新增申請（清空表單）
-             */
-            function createNewApplication() {
-                if (!confirm('確定要清空當前表單並建立新申請嗎？\n（已暫存的資料不會遺失）')) {
-                    return;
-                }
-                window.draftManager.clearForm();
-                closeDraftModal();
-                showMessage('✓ 表單已清空，可開始新申請', 'success', 2000);
             }
 
-            // 事件綁定
-            document.querySelectorAll('.saveDraftBtn, #saveDraftBtn').forEach(btn => {
+            if (saveDraftBtn) {
+                saveDraftBtn.addEventListener('click', saveDraft);
+            }
+
+            document.querySelectorAll('.saveDraftBtn').forEach(function (btn) {
                 btn.addEventListener('click', saveDraft);
             });
 
-            if (manageDraftBtn) {
-                manageDraftBtn.addEventListener('click', openDraftModal);
-            }
-
-            if (draftModalCloseBtn) {
-                draftModalCloseBtn.addEventListener('click', closeDraftModal);
-            }
-
-            if (draftBtnClose) {
-                draftBtnClose.addEventListener('click', closeDraftModal);
-            }
-
-            if (draftBtnNew) {
-                draftBtnNew.addEventListener('click', createNewApplication);
-            }
-
-            // 點擊模態框背景關閉
-            if (draftModalOverlay) {
-                draftModalOverlay.addEventListener('click', function(e) {
-                    if (e.target === this) {
-                        closeDraftModal();
-                    }
+            if (openDraftBoxBtn) {
+                openDraftBoxBtn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    window.location.href = 'drafts.php';
                 });
             }
 
-            // 按 Escape 鍵也可關閉
-            document.addEventListener('keydown', function(e) {
-                if (e.key === 'Escape' && draftModalOverlay.classList.contains('active')) {
-                    closeDraftModal();
-                }
+            document.querySelectorAll('.openDraftBoxBtn').forEach(function (btn) {
+                btn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    window.location.href = 'drafts.php';
+                });
             });
-            })();
+
+            loadDraftFromDatabase();
         }
+
+        
         
     </script>
 
@@ -3612,10 +3800,8 @@ function getMinDateByParticipantCount(countValue) {
         d.setDate(d.getDate() + 30);
         return d;
     } else {
-        // 一般情況：7 天後 (日曆天)
-        let d = new Date();
-        d.setDate(d.getDate() + 7);
-        return d;
+        // 一般情況：7 個工作天後
+        return getWorkingDaysFromToday(7);
     }
 }
 
@@ -3669,9 +3855,18 @@ function goToStep(stepNo) {
         return;
     }
 
+    // 在導航到第2、3步時（從第1步）檢查企劃書
     if (stepNo > 1 && currentStep === 1) {
+        // 檢查是否有新上傳的文件 OR 草稿中已有的企劃書
         const proposalFile = document.getElementById('proposal_file');
-        if (!proposalFile || !proposalFile.value) {
+        const draftProposalFile = document.getElementById('draft_proposal_file');
+        const draftProposalName = document.getElementById('draft_proposal_original_name');
+        
+        const hasNewFile = proposalFile && proposalFile.value;
+        const hasDraftFile = (draftProposalFile && draftProposalFile.value) || 
+                            (draftProposalName && draftProposalName.value);
+        
+        if (!hasNewFile && !hasDraftFile) {
             alert("請先上傳活動企劃書！");
             return;
         }
@@ -3823,7 +4018,9 @@ document.addEventListener('DOMContentLoaded', function () {
         if (typeof window.toggleFlagDetails === 'function') {
             window.toggleFlagDetails();
         }
-
+if (typeof window.toggleAlcoholDetails === 'function') {
+            window.toggleAlcoholDetails();
+        }
         if (typeof window.syncFlagForm === 'function') {
             window.syncFlagForm();
         }
@@ -3940,6 +4137,616 @@ document.addEventListener('DOMContentLoaded', function () {
         }, 100);
     });
 })();
+</script>
+
+
+
+
+<script>
+/**
+ * 活動日期與特殊條件驗證最終版
+ *
+ * 規則：
+ * 1. 開始日期、結束日期都不可早於今天
+ * 2. 結束時間必須晚於開始時間
+ * 3. 活動天數 diffDays > 4 才擋下
+ * 4. 活動對象人數 100 人以上、工作人員人數 100 人以上、酒精、明火、販售活動，都必須提前 30 天
+ * 5. 不管先選日期、先勾特殊項目、後改人數、或送出前，都會重新檢查
+ */
+(function () {
+    function getDateOnly(value) {
+        if (!value) return null;
+
+        const date = new Date(value + 'T00:00:00');
+
+        if (isNaN(date.getTime())) return null;
+
+        date.setHours(0, 0, 0, 0);
+
+        return date;
+    }
+
+    function getTimePart(name) {
+        const el = document.querySelector('[name="' + name + '"]');
+
+        if (!el || el.value === '') return null;
+
+        return String(el.value).padStart(2, '0');
+    }
+
+    function getDateTime(dateValue, hourName, minuteName) {
+        const h = getTimePart(hourName);
+        const m = getTimePart(minuteName);
+
+        if (!dateValue || h === null || m === null) return null;
+
+        const date = new Date(dateValue + 'T' + h + ':' + m + ':00');
+
+        return isNaN(date.getTime()) ? null : date;
+    }
+
+    function formatDate(date) {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+
+        return y + '-' + m + '-' + d;
+    }
+
+    function isCheckedByName(name) {
+        const el = document.querySelector('input[name="' + name + '"]');
+
+        return !!(el && el.checked);
+    }
+
+    function getParticipantCountValue() {
+        const el =
+            document.getElementById('participant_count') ||
+            document.querySelector('[name="participant_count"]');
+
+        return el ? (el.value || '') : '';
+    }
+
+    function getStaffCountValue() {
+        const el =
+            document.getElementById('staff_count') ||
+            document.querySelector('[name="staff_count"]');
+
+        const value = el ? parseInt(el.value || '0', 10) : 0;
+
+        return isNaN(value) ? 0 : value;
+    }
+
+    window.is30DaysRequired = function () {
+        const participantCount = getParticipantCountValue();
+        const staffCount = getStaffCountValue();
+
+        return (
+            isCheckedByName('has_alcohol') ||
+            isCheckedByName('has_fire') ||
+            isCheckedByName('has_sales') ||
+            participantCount === '100~200人' ||
+            participantCount === '200人以上' ||
+            staffCount >= 100
+        );
+    };
+
+    window.validateActivityDateRange = function (shouldClearInvalidDates = true) {
+        const startDateInput = document.getElementById('borrow_start_date');
+        const endDateInput = document.getElementById('borrow_end_date');
+
+        if (!startDateInput || !endDateInput) return true;
+
+        const startDateValue = startDateInput.value;
+        const endDateValue = endDateInput.value;
+
+        const startDate = getDateOnly(startDateValue);
+        const endDate = getDateOnly(endDateValue);
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        if (startDate && startDate < today) {
+            alert('活動開始日期不可早於今天，請重新選擇！');
+
+            if (shouldClearInvalidDates) {
+                startDateInput.value = '';
+                endDateInput.value = '';
+            }
+
+            return false;
+        }
+
+        if (endDate && endDate < today) {
+            alert('活動結束日期不可早於今天，請重新選擇！');
+
+            if (shouldClearInvalidDates) {
+                endDateInput.value = '';
+            }
+
+            return false;
+        }
+
+        if (!startDate || !endDate) return true;
+
+        if (startDate > endDate) {
+            alert('活動開始日期不能晚於活動結束日期！');
+
+            if (shouldClearInvalidDates) {
+                endDateInput.value = '';
+            }
+
+            return false;
+        }
+
+        const startDateTime = getDateTime(
+            startDateValue,
+            'borrow_start_time_h',
+            'borrow_start_time_m'
+        );
+
+        const endDateTime = getDateTime(
+            endDateValue,
+            'borrow_end_time_h',
+            'borrow_end_time_m'
+        );
+
+        if (startDateTime && endDateTime && endDateTime <= startDateTime) {
+            alert('活動結束時間必須晚於活動開始時間！');
+
+            if (shouldClearInvalidDates) {
+                const endHour = document.querySelector('[name="borrow_end_time_h"]');
+                const endMin = document.querySelector('[name="borrow_end_time_m"]');
+
+                if (endHour) endHour.value = '';
+                if (endMin) endMin.value = '';
+            }
+
+            return false;
+        }
+
+        const diffDays = Math.ceil(
+            (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+        );
+
+        if (diffDays > 4) {
+            alert('活動天數最多不可超過 4 天，請重新選擇！');
+
+            if (shouldClearInvalidDates) {
+                endDateInput.value = '';
+            }
+
+            return false;
+        }
+
+        if (window.is30DaysRequired()) {
+            const minAllowedDate = new Date(today);
+
+            minAllowedDate.setDate(minAllowedDate.getDate() + 30);
+
+            if (startDate < minAllowedDate || endDate < minAllowedDate) {
+                alert(
+                    '注意：由於您的活動包含特殊性質（酒精、明火、攤販、活動對象100人以上或工作人員100人以上），必須在 30 天之前申請！\n' +
+                    '系統已清空不合規的日期，請重新選擇至少為 ' + formatDate(minAllowedDate) + ' 的日期。'
+                );
+
+                if (shouldClearInvalidDates) {
+                    startDateInput.value = '';
+                    endDateInput.value = '';
+                }
+
+                return false;
+            }
+        }
+
+        return true;
+    };
+
+    window.validateStartDate = function () {
+        return window.validateActivityDateRange(true);
+    };
+
+    function bindDateRuleValidation() {
+        const dateAndTimeSelectors = [
+            '#borrow_start_date',
+            '#borrow_end_date',
+            '[name="borrow_start_time_h"]',
+            '[name="borrow_start_time_m"]',
+            '[name="borrow_end_time_h"]',
+            '[name="borrow_end_time_m"]'
+        ];
+
+        document.querySelectorAll(dateAndTimeSelectors.join(',')).forEach(function (el) {
+            el.addEventListener('change', function () {
+                window.validateActivityDateRange(true);
+            });
+
+            el.addEventListener('blur', function () {
+                window.validateActivityDateRange(true);
+            });
+        });
+
+        document.querySelectorAll('#participant_count, [name="participant_count"], #staff_count, [name="staff_count"]').forEach(function (el) {
+            el.addEventListener('change', function () {
+                window.validateActivityDateRange(true);
+            });
+
+            el.addEventListener('input', function () {
+                window.validateActivityDateRange(true);
+            });
+        });
+
+['has_alcohol', 'has_fire', 'has_sales'].forEach(function (key) {
+            document.querySelectorAll('#' + key + ', input[name="' + key + '"]').forEach(function (el) {
+                el.addEventListener('change', function () {
+                    window.validateActivityDateRange(true);
+                    // 補回觸發酒精表單的靈魂！
+                    if (key === 'has_alcohol' && typeof toggleAlcoholDetails === 'function') {
+                        toggleAlcoholDetails();
+                    }
+                });
+
+                el.addEventListener('click', function () {
+                    setTimeout(function () {
+                        window.validateActivityDateRange(true);
+                    }, 0);
+                });
+            });
+        });
+
+        // 確保網頁重整、載入草稿或切換上一步時，如果酒精已勾選，能正確把表單開起來
+        if (typeof toggleAlcoholDetails === 'function') {
+            toggleAlcoholDetails();
+        }
+
+        const originalGoToStep = window.goToStep;
+
+        window.goToStep = function (stepNo) {
+            const currentStepInput = document.getElementById('current_step');
+            const currentStep = parseInt(currentStepInput ? currentStepInput.value : '1', 10);
+
+            if (stepNo > 1 && currentStep === 1) {
+                if (!window.validateActivityDateRange(true)) {
+                    return;
+                }
+            }
+
+            if (typeof originalGoToStep === 'function') {
+                return originalGoToStep(stepNo);
+            }
+        };
+
+        const form = document.getElementById('multistep_form');
+
+        if (form) {
+            form.addEventListener('submit', function (e) {
+                if (!window.validateActivityDateRange(true)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return false;
+                }
+            }, true);
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bindDateRuleValidation);
+    } else {
+        bindDateRuleValidation();
+    }
+})();
+</script>
+
+
+<script>
+(function () {
+    function hasProposalForSubmit() {
+        const proposalInput = document.getElementById('proposal_file');
+        const draftProposalInput = document.getElementById('draft_proposal_file');
+        const hasNewFile = proposalInput && proposalInput.files && proposalInput.files.length > 0;
+        const hasDraftFile = draftProposalInput && draftProposalInput.value && draftProposalInput.value.trim() !== '';
+        return hasNewFile || hasDraftFile;
+    }
+
+    window.hasProposalForSubmit = hasProposalForSubmit;
+
+    function bindProposalSubmitCheck() {
+        const form = document.getElementById('multistep_form');
+        if (!form) return;
+
+        form.addEventListener('submit', function (e) {
+            if (!hasProposalForSubmit()) {
+                e.preventDefault();
+                e.stopPropagation();
+                alert('請先上傳活動企劃書！');
+                return false;
+            }
+        }, true);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bindProposalSubmitCheck);
+    } else {
+        bindProposalSubmitCheck();
+    }
+})();
+</script>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+
+    if (typeof loadDraftFromDatabase === 'function') {
+
+        const originalLoadDraft = loadDraftFromDatabase;
+
+        loadDraftFromDatabase = async function (...args) {
+
+            const result = await originalLoadDraft.apply(this, args);
+
+            try {
+                if (window.currentDraftData) {
+
+                    const draft = window.currentDraftData;
+
+                    const hiddenInput = document.getElementById('draft_proposal_file');
+                    const originalNameInput = document.getElementById('draft_proposal_original_name');
+                    const uploadedAtInput = document.getElementById('draft_proposal_uploaded_at');
+
+                    if (hiddenInput) {
+                        hiddenInput.value = draft.proposal_file || '';
+                    }
+
+                    if (originalNameInput) {
+                        originalNameInput.value = draft.proposal_original_name || '';
+                    }
+
+                    if (uploadedAtInput) {
+                        uploadedAtInput.value = draft.proposal_uploaded_at || '';
+                    }
+                }
+            } catch (e) {
+                console.log(e);
+            }
+
+            return result;
+        };
+    }
+});
+</script>
+
+
+<script>
+/**
+ * 企劃書焊住機制
+ * input[type=file] 不能被 JS 自動回填，所以必須用：
+ * hidden input + sessionStorage + reservation_drafts.proposal_file
+ * 來保留後端已存的 PDF 路徑。
+ */
+(function () {
+    function isProposalDraftMode() {
+        const params = new URLSearchParams(window.location.search);
+        const urlDraftId = params.get('draft_id') || params.get('id') || '';
+        const hiddenDraftId = document.getElementById('current_draft_id')?.value || '';
+
+        return (
+            (urlDraftId !== '' && urlDraftId !== '0') ||
+            (hiddenDraftId !== '' && hiddenDraftId !== '0')
+        );
+    }
+
+    function clearProposalStateForNewApplication() {
+        sessionStorage.removeItem('draft_proposal_file');
+        sessionStorage.removeItem('draft_proposal_original_name');
+        sessionStorage.removeItem('draft_proposal_uploaded_at');
+
+        const fileInput = document.getElementById('draft_proposal_file');
+        const nameInput = document.getElementById('draft_proposal_original_name');
+        const timeInput = document.getElementById('draft_proposal_uploaded_at');
+        const display = document.getElementById('proposal_file_name_display');
+
+        if (fileInput) fileInput.value = '';
+        if (nameInput) nameInput.value = '';
+        if (timeInput) timeInput.value = '';
+        if (display) display.innerText = '';
+    }
+
+    function setProposalState(file, originalName, uploadedAt) {
+        const fileInput = document.getElementById('draft_proposal_file');
+        const nameInput = document.getElementById('draft_proposal_original_name');
+        const timeInput = document.getElementById('draft_proposal_uploaded_at');
+        const display = document.getElementById('proposal_file_name_display');
+
+        if (fileInput && file) fileInput.value = file;
+        if (nameInput && originalName) nameInput.value = originalName;
+        if (timeInput && uploadedAt) timeInput.value = uploadedAt;
+
+        if (file) sessionStorage.setItem('draft_proposal_file', file);
+        if (originalName) sessionStorage.setItem('draft_proposal_original_name', originalName);
+        if (uploadedAt) sessionStorage.setItem('draft_proposal_uploaded_at', uploadedAt);
+
+        if (display && originalName) {
+            display.innerText = '已上傳企劃書：' + originalName;
+        }
+    }
+
+    function restoreProposalState() {
+        if (!isProposalDraftMode()) {
+            clearProposalStateForNewApplication();
+            return;
+        }
+
+        const file = sessionStorage.getItem('draft_proposal_file') || '';
+        const name = sessionStorage.getItem('draft_proposal_original_name') || '';
+        const time = sessionStorage.getItem('draft_proposal_uploaded_at') || '';
+
+        const fileInput = document.getElementById('draft_proposal_file');
+        const nameInput = document.getElementById('draft_proposal_original_name');
+        const timeInput = document.getElementById('draft_proposal_uploaded_at');
+        const display = document.getElementById('proposal_file_name_display');
+
+        if (fileInput && !fileInput.value && file) fileInput.value = file;
+        if (nameInput && !nameInput.value && name) nameInput.value = name;
+        if (timeInput && !timeInput.value && time) timeInput.value = time;
+
+        if (display && name && !display.innerText.trim()) {
+            display.innerText = '已上傳企劃書：' + name;
+        }
+    }
+
+    function hasProposalForSubmit() {
+        if (isDraftMode) {
+            restoreProposalState();
+        }
+        const currentDraftId =
+            document.getElementById('current_draft_id')?.value || '';
+
+        const isDraftMode =
+            currentDraftId !== '' &&
+            currentDraftId !== '0';
+        const proposalInput = document.getElementById('proposal_file');
+        const draftProposalInput = document.getElementById('draft_proposal_file');
+
+        const hasNewFile =
+            proposalInput &&
+            proposalInput.files &&
+            proposalInput.files.length > 0;
+
+        const hasDraftFile =
+            draftProposalInput &&
+            draftProposalInput.value &&
+            draftProposalInput.value.trim() !== '';
+
+        return hasNewFile || hasDraftFile;
+    }
+
+    window.setProposalState = setProposalState;
+    window.restoreProposalState = restoreProposalState;
+    window.hasProposalForSubmit = hasProposalForSubmit;
+
+    const originalGoToStep = window.goToStep;
+    if (typeof originalGoToStep === 'function' && !window.__proposalGoToStepWrapped) {
+        window.__proposalGoToStepWrapped = true;
+
+        window.goToStep = function () {
+            if (isProposalDraftMode()) restoreProposalState();
+            const result = originalGoToStep.apply(this, arguments);
+            if (isProposalDraftMode()) restoreProposalState();
+            return result;
+        };
+    }
+
+    const originalFetch = window.fetch;
+    if (typeof originalFetch === 'function' && !window.__proposalFetchWrapped) {
+        window.__proposalFetchWrapped = true;
+
+        window.fetch = function (input, init) {
+            try {
+                const url = typeof input === 'string' ? input : (input && input.url ? input.url : '');
+
+                if (url.includes('api/save_draft.php') && init && init.body instanceof FormData) {
+                    if (isProposalDraftMode()) {
+                        restoreProposalState();
+                    }
+
+                    const f = isProposalDraftMode() ? (document.getElementById('draft_proposal_file')?.value || '') : '';
+                    const n = document.getElementById('draft_proposal_original_name')?.value || '';
+                    const t = document.getElementById('draft_proposal_uploaded_at')?.value || '';
+
+                    if (f) init.body.set('draft_proposal_file', f);
+                    if (n) init.body.set('draft_proposal_original_name', n);
+                    if (t) init.body.set('draft_proposal_uploaded_at', t);
+                }
+            } catch (e) {}
+
+            return originalFetch.apply(this, arguments).then(function (response) {
+                try {
+                    response.clone().json().then(function (data) {
+                        if (data && data.proposal_file) {
+                            setProposalState(
+                                data.proposal_file,
+                                data.proposal_original_name || '',
+                                data.proposal_uploaded_at || ''
+                            );
+                        }
+                    }).catch(function () {});
+                } catch (e) {}
+
+                return response;
+            });
+        };
+    }
+
+    function bindProposalWeld() {
+        if (isProposalDraftMode()) {
+            restoreProposalState();
+        } else {
+            clearProposalStateForNewApplication();
+        }
+
+        const form = document.getElementById('multistep_form');
+
+        if (form) {
+            form.addEventListener('submit', function (e) {
+                restoreProposalState();
+
+                if (!hasProposalForSubmit()) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    alert('請先上傳活動企劃書！');
+                    return false;
+                }
+            }, true);
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bindProposalWeld);
+    } else {
+        bindProposalWeld();
+    }
+
+    if (isDraftMode) {
+        if (isProposalDraftMode()) {
+        setInterval(restoreProposalState, 500);
+    } else {
+        clearProposalStateForNewApplication();
+    }
+    }
+})();
+</script>
+
+
+<script>
+/**
+ * 新申請頁面保險清除：
+ * 沒有 draft_id/id 時，企劃書欄位必須是空的。
+ */
+document.addEventListener('DOMContentLoaded', function () {
+    const params = new URLSearchParams(window.location.search);
+    const urlDraftId = params.get('draft_id') || params.get('id') || '';
+    const currentDraftId = document.getElementById('current_draft_id')?.value || '';
+
+    const isDraftMode =
+        (urlDraftId !== '' && urlDraftId !== '0') ||
+        (currentDraftId !== '' && currentDraftId !== '0');
+
+    if (!isDraftMode) {
+        sessionStorage.removeItem('draft_proposal_file');
+        sessionStorage.removeItem('draft_proposal_original_name');
+        sessionStorage.removeItem('draft_proposal_uploaded_at');
+
+        const draftFile = document.getElementById('draft_proposal_file');
+        const draftName = document.getElementById('draft_proposal_original_name');
+        const draftTime = document.getElementById('draft_proposal_uploaded_at');
+        const display = document.getElementById('proposal_file_name_display');
+
+        if (draftFile) draftFile.value = '';
+        if (draftName) draftName.value = '';
+        if (draftTime) draftTime.value = '';
+        if (display) display.innerText = '';
+    }
+});
 </script>
 
 </body>

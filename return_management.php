@@ -70,6 +70,19 @@ if ($dbError === '') {
         }
     }
 
+    // 自動遷移：確保 checked_in_at 欄位存在（報到時間）
+    if ($dbError === '') {
+        try {
+            if (!in_array('checked_in_at', $reservationColumns, true)) {
+                $migrationSql = 'ALTER TABLE reservations ADD COLUMN checked_in_at DATETIME NULL COMMENT "報到時間"';
+                mysqli_query($link, $migrationSql);
+                $reservationColumns[] = 'checked_in_at';
+            }
+        } catch (Throwable $e) {
+            // 忽略列已存在錯誤
+        }
+    }
+
     // 自動遷移：確保 rejection_reason 欄位存在
     if ($dbError === '') {
         try {
@@ -222,13 +235,13 @@ if ($dbError === '') {
                                     $mail->isSMTP();
                                     $mail->Host       = 'smtp.gmail.com';
                                     $mail->SMTPAuth   = true;
-                                    $mail->Username   = 'right.jing0104@gmail.com';
-                                    $mail->Password   = 'hwarm0625.0603';
+                                    $mail->Username   = 'sasa0522522@gmail.com';
+                                    $mail->Password   = 'jvtc kohj khyb yjbn';
                                     $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
                                     $mail->Port       = 465;
                                     $mail->CharSet    = 'UTF-8';
 
-                                    $mail->setFrom('right.jing0104@gmail.com', '器材借用系統');
+                                    $mail->setFrom('sasa0522522@gmail.com', '器材借用系統');
                                     $mail->addAddress($userRow['email'], $userRow['full_name']);
 
                                     $mail->isHTML(true);
@@ -282,6 +295,8 @@ if ($dbError === '') {
                 r.updated_at,
                 (r.returned_at IS NOT NULL) AS return_confirmed,
                 r.returned_at AS return_confirmed_at,
+                r.checked_in_at AS checked_in_at,
+                (r.checked_in_at IS NOT NULL) AS checked_in,
                 (
                     SELECT GROUP_CONCAT(DISTINCT ec.equipment_code ORDER BY ec.equipment_code SEPARATOR ', ')
                     FROM equipment_reservation_items eri
@@ -362,18 +377,20 @@ if ($dbError === '' && count($rows) > 0) {
         .stepper-text { white-space: nowrap; }
         .stepper-subtext { white-space: nowrap; }
     </style>
-</head>
+ </head>
 <body>
+    <!-- 導覽列 放到 container 之外以讓背景拉滿整個視窗 -->
+    <nav class="navbar">
+        <div class="navbar-brand"><h1>📚 校園資源租借系統</h1></div>
+        <div class="navbar-menu">
+            <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
+            <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
+            <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['user_id'], ENT_QUOTES, 'UTF-8'); ?></button>
+            <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
+        </div>
+    </nav>
+
     <div class="container">
-        <nav class="navbar">
-            <div class="navbar-brand"><h1>📚 校園資源租借系統</h1></div>
-            <div class="navbar-menu">
-                <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
-                <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
-                <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['user_id'], ENT_QUOTES, 'UTF-8'); ?></button>
-                <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
-            </div>
-        </nav>
 
         <main class="main-content">
             <section class="card">
@@ -395,12 +412,13 @@ if ($dbError === '' && count($rows) > 0) {
                                     <th>借用時段</th>
                                     <th>借用項目</th>
                                     <th>狀態</th>
+                                    <th>修改</th>
                                     <th>歸還</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if (count($rows) === 0) { ?>
-                                    <tr><td colspan="6">目前沒有可顯示的申請資料。</td></tr>
+                                    <tr><td colspan="7">目前沒有可顯示的申請資料。</td></tr>
                                 <?php } else { ?>
                                     <?php foreach ($rows as $row) { ?>
                                         <?php
@@ -415,6 +433,7 @@ if ($dbError === '' && count($rows) > 0) {
 
                                             $isReturned = (int)$row['return_confirmed'] === 1;
                                             $approvalStatus = (string)$row['approval_status'];
+                                            $isCheckedIn = isset($row['checked_in']) && (int)$row['checked_in'] === 1;
                                             $approvalStage = (string)($row['approval_stage'] ?? 'a');
 
                                             // Map approval stages to step indices (for the stepper)
@@ -466,16 +485,25 @@ if ($dbError === '' && count($rows) > 0) {
                                                     }
                                                 ?>
                                             </td>
+                                            <td style="text-align: center;">
+                                                <?php if ($approvalStatus === 'pending') { ?>
+                                                    <a href="edit_application.php?reservation_id=<?php echo (int)$row['reservation_id']; ?>" class="btn-primary" style="display:inline-block; padding:6px 12px; text-decoration:none; font-size:12px; border-radius:6px;" onclick="event.stopPropagation();">修改申請</a>
+                                                <?php } else { ?>
+                                                    -
+                                                <?php } ?>
+                                            </td>
                                             <td>
                                                 <?php if ($isReturned) { ?>
                                                     <span class="return-status return-status-ok">已離場</span>
                                                     <br><small>時間: <?php echo htmlspecialchars((string)$row['return_confirmed_at'], ENT_QUOTES, 'UTF-8'); ?></small>
-                                                <?php } elseif ($approvalStatus === 'approved') { ?>
+                                                <?php } elseif ($approvalStatus === 'approved' && $isCheckedIn) { ?>
                                                     <form method="post" style="margin-top: 8px;" onclick="event.stopPropagation();">
                                                         <input type="hidden" name="action" value="confirm_return">
                                                         <input type="hidden" name="reservation_id" value="<?php echo (int)$row['reservation_id']; ?>">
                                                         <button type="submit" class="btn-secondary" style="font-size: 12px; padding: 4px 12px;" onclick="return confirm('確認此申請已歸還或離場？')">確認歸還／離場</button>
                                                     </form>
+                                                <?php } elseif ($approvalStatus === 'approved' && ! $isCheckedIn) { ?>
+                                                    <span class="return-status return-status-pending">已核准，尚未報到</span>
                                                 <?php } else { ?>
                                                     <span class="return-status return-status-pending">不可離場</span>
                                                 <?php } ?>
@@ -483,7 +511,7 @@ if ($dbError === '' && count($rows) > 0) {
                                         </tr>
                                         <!-- 展開式進度條 -->
                                         <tr class="accordion-content" id="accordion-<?php echo (int)$row['reservation_id']; ?>" style="display: none;">
-                                            <td colspan="6">
+                                            <td colspan="7">
                                                 <?php
                                                     // Prepare approved/rejected stage lists and timestamps for this row
                                                     $approvedStages = [];

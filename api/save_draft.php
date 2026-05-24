@@ -1,309 +1,199 @@
 <?php
-/**
- * API: 保存申請草稿
- * 請求方式：POST /api/save_draft.php
- * 參數：
- *   - reservation_id (可選，用於編輯現有草稿)
- *   - space_id (可選)
- *   - resource_type (可選)
- *   - selected_equipment (可選)
- *   - selected_spaces (可選)
- *   - borrow_date (可選)
- *   - start_period_code (可選)
- *   - end_period_code (可選)
- *   - phone (可選)
- *   - purpose (可選)
- */
-
 session_start();
-
 header('Content-Type: application/json; charset=utf-8');
 
-if (!isset($_SESSION['user_id'])) {
-    http_response_code(401);
-    echo json_encode(['success' => false, 'message' => '未登入']);
-    exit;
-}
-
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
-    echo json_encode(['success' => false, 'message' => '只接受 POST 請求']);
-    exit;
-}
-
 require_once dirname(__DIR__) . '/config/database.php';
+
+if (!isset($_SESSION['user_id'])) {
+    echo json_encode(['success' => false, 'message' => '請先登入'], JSON_UNESCAPED_UNICODE);
+    exit;
+}
 
 $userId = (string)$_SESSION['user_id'];
 $dbError = '';
 $link = getMysqliConnection($dbError);
 
 if ($dbError !== '') {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'message' => '數據庫連接失敗']);
+    echo json_encode(['success' => false, 'message' => $dbError], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-try {
-    $reservationId = isset($_POST['reservation_id']) ? (int)$_POST['reservation_id'] : 0;
-    $spaceId = isset($_POST['space_id']) ? trim((string)$_POST['space_id']) : null;
-    $resourceType = isset($_POST['resource_type']) ? trim((string)$_POST['resource_type']) : null;
-    $selectedEquipment = isset($_POST['selected_equipment']) ? trim((string)$_POST['selected_equipment']) : null;
-    $selectedSpaces = isset($_POST['selected_spaces']) ? trim((string)$_POST['selected_spaces']) : null;
-    $borrowDate = isset($_POST['borrow_date']) ? trim((string)$_POST['borrow_date']) : null;
-    $startPeriodCode = isset($_POST['start_period_code']) ? trim((string)$_POST['start_period_code']) : null;
-    $endPeriodCode = isset($_POST['end_period_code']) ? trim((string)$_POST['end_period_code']) : null;
-    $purpose = isset($_POST['purpose']) ? trim((string)$_POST['purpose']) : null;
-    $flagCount = isset($_POST['flag_count']) ? (int)$_POST['flag_count'] : null;
+$draftId = isset($_POST['draft_id']) && $_POST['draft_id'] !== '' ? (int)$_POST['draft_id'] : 0;
+$currentStep = (string)($_POST['currentStep'] ?? $_POST['current_step'] ?? '1');
+$formData = $_POST;
+unset($formData['draft_id'], $formData['currentStep']);
 
-    // 如果是編輯現有草稿
-    if ($reservationId > 0) {
-        // 檢查所有權
-        $checkStmt = mysqli_prepare($link, 'SELECT reservation_id FROM reservations WHERE reservation_id = ? AND user_id = ? AND status = 0 LIMIT 1');
-        if (!$checkStmt) {
-            throw new Exception('準備查詢失敗：' . mysqli_error($link));
+$activityName = trim((string)($_POST['activity_name'] ?? '未填寫活動名稱'));
+$purpose = trim((string)($_POST['purpose'] ?? ''));
+
+$proposalFile = null;
+$proposalOriginalName = null;
+$proposalUploadedAt = null;
+
+$postedDraftProposalFile = trim((string)($_POST['draft_proposal_file'] ?? ''));
+$postedDraftProposalOriginalName = trim((string)($_POST['draft_proposal_original_name'] ?? ''));
+$postedDraftProposalUploadedAt = trim((string)($_POST['draft_proposal_uploaded_at'] ?? ''));
+
+// 如果是更新草稿，但本次沒有重新選 PDF，必須保留原本資料庫中的企劃書
+if ($draftId > 0 && $postedDraftProposalFile === '') {
+    $oldProposalStmt = mysqli_prepare(
+        $link,
+        'SELECT proposal_file, proposal_original_name, proposal_uploaded_at
+         FROM reservation_drafts
+         WHERE draft_id = ? AND user_id = ?
+         LIMIT 1'
+    );
+
+    if ($oldProposalStmt) {
+        mysqli_stmt_bind_param($oldProposalStmt, 'is', $draftId, $userId);
+        mysqli_stmt_execute($oldProposalStmt);
+        $oldProposalResult = mysqli_stmt_get_result($oldProposalStmt);
+        $oldProposalRow = $oldProposalResult ? mysqli_fetch_assoc($oldProposalResult) : null;
+        mysqli_stmt_close($oldProposalStmt);
+
+        if ($oldProposalRow && !empty($oldProposalRow['proposal_file'])) {
+            $postedDraftProposalFile = (string)$oldProposalRow['proposal_file'];
+            $postedDraftProposalOriginalName = (string)($oldProposalRow['proposal_original_name'] ?? '');
+            $postedDraftProposalUploadedAt = (string)($oldProposalRow['proposal_uploaded_at'] ?? '');
         }
-        mysqli_stmt_bind_param($checkStmt, 'is', $reservationId, $userId);
-        mysqli_stmt_execute($checkStmt);
-        $checkResult = mysqli_stmt_get_result($checkStmt);
-        
-        if (!$checkResult || mysqli_num_rows($checkResult) === 0) {
-            http_response_code(403);
-            echo json_encode(['success' => false, 'message' => '無權限編輯此草稿']);
-            mysqli_stmt_close($checkStmt);
-            mysqli_close($link);
+    }
+}
+
+
+if (isset($_FILES['proposal_file']) && $_FILES['proposal_file']['error'] !== UPLOAD_ERR_NO_FILE) {
+    $file = $_FILES['proposal_file'];
+
+    if ($file['error'] !== UPLOAD_ERR_OK) {
+        echo json_encode(['success' => false, 'message' => '企劃書上傳失敗'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    if ($file['size'] > 5 * 1024 * 1024) {
+        echo json_encode(['success' => false, 'message' => '企劃書不可超過 5MB'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $ext = strtolower(pathinfo((string)$file['name'], PATHINFO_EXTENSION));
+
+    if (class_exists('finfo')) {
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        $mime = (string)$finfo->file($file['tmp_name']);
+    } elseif (function_exists('mime_content_type')) {
+        $mime = (string)mime_content_type($file['tmp_name']);
+    } else {
+        $mime = '';
+    }
+
+    if ($mime !== 'application/pdf' && $ext !== 'pdf') {
+        echo json_encode(['success' => false, 'message' => '企劃書只能上傳 PDF'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $uploadDir = dirname(__DIR__) . '/uploads/draft_proposals';
+    if (!is_dir($uploadDir)) {
+        if (!mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+            echo json_encode(['success' => false, 'message' => '建立企劃書資料夾失敗'], JSON_UNESCAPED_UNICODE);
             exit;
         }
-        mysqli_stmt_close($checkStmt);
-        
-        // 構建UPDATE語句
-        $updateParts = ['updated_at = NOW()'];
-        $params = [];
-        $paramTypes = '';
-        
-        if ($spaceId !== null) {
-            $updateParts[] = 'space_id = ?';
-            $params[] = $spaceId;
-            $paramTypes .= 's';
-        }
-        if ($resourceType !== null) {
-            $updateParts[] = 'resource_type = ?';
-            $params[] = $resourceType;
-            $paramTypes .= 's';
-        }
-        if ($selectedEquipment !== null) {
-            $updateParts[] = 'selected_equipment = ?';
-            $params[] = $selectedEquipment;
-            $paramTypes .= 's';
-        }
-        if ($selectedSpaces !== null) {
-            $updateParts[] = 'selected_spaces = ?';
-            $params[] = $selectedSpaces;
-            $paramTypes .= 's';
-        }
-        if ($borrowDate !== null && $startPeriodCode !== null && $endPeriodCode !== null) {
-            // 假設 periodSlots 配置已定義
-            $periodSlots = [
-                'D0' => ['label' => '日間第0節', 'start' => '07:10:00', 'end' => '08:00:00'],
-                'D1' => ['label' => '日間第1節', 'start' => '08:10:00', 'end' => '09:00:00'],
-                'D2' => ['label' => '日間第2節', 'start' => '09:10:00', 'end' => '10:00:00'],
-                'D3' => ['label' => '日間第3節', 'start' => '10:10:00', 'end' => '11:00:00'],
-                'D4' => ['label' => '日間第4節', 'start' => '11:10:00', 'end' => '12:00:00'],
-                'DN' => ['label' => '日間第5節', 'start' => '12:40:00', 'end' => '13:30:00'],
-                'D5' => ['label' => '日間第6節', 'start' => '13:40:00', 'end' => '14:30:00'],
-                'D6' => ['label' => '日間第7節', 'start' => '14:40:00', 'end' => '15:30:00'],
-                'D7' => ['label' => '日間第8節', 'start' => '15:40:00', 'end' => '16:30:00'],
-                'D8' => ['label' => '夜間第1節', 'start' => '16:40:00', 'end' => '17:30:00'],
-                'E0' => ['label' => '夜間第2節', 'start' => '17:40:00', 'end' => '18:30:00'],
-                'E1' => ['label' => '夜間第3節', 'start' => '18:40:00', 'end' => '19:30:00'],
-                'E2' => ['label' => '夜間第4節', 'start' => '19:35:00', 'end' => '20:20:00'],
-                'E3' => ['label' => '夜間第5節', 'start' => '20:30:00', 'end' => '21:20:00'],
-                'E4' => ['label' => '夜間第6節', 'start' => '21:25:00', 'end' => '22:10:00'],
-            ];
-            
-            if (isset($periodSlots[$startPeriodCode]) && isset($periodSlots[$endPeriodCode])) {
-                $startDateTime = $borrowDate . ' ' . $periodSlots[$startPeriodCode]['start'];
-                $endDateTime = $borrowDate . ' ' . $periodSlots[$endPeriodCode]['end'];
-                
-                $updateParts[] = 'borrow_start_at = ?';
-                $updateParts[] = 'borrow_end_at = ?';
-                $params[] = $startDateTime;
-                $params[] = $endDateTime;
-                $paramTypes .= 'ss';
-            }
-        }
-        if ($purpose !== null) {
-            $updateParts[] = 'purpose = ?';
-            $params[] = $purpose;
-            $paramTypes .= 's';
-        }
-        if ($flagCount !== null) {
-            $updateParts[] = 'flag_count = ?';
-            $params[] = $flagCount;
-            $paramTypes .= 'i';
-        }
-        
-        // 檢查 reservations 表是否有 purpose 與 certificate_id 欄位
-        $reservationCols = [];
-        $colRes = mysqli_query($link, 'SHOW COLUMNS FROM reservations');
-        if ($colRes) {
-            while ($crow = mysqli_fetch_assoc($colRes)) {
-                $reservationCols[] = (string)$crow['Field'];
-            }
-        }
-        $hasPurposeCol = in_array('purpose', $reservationCols, true);
-        $hasCertificateIdCol = in_array('certificate_id', $reservationCols, true);
-
-        // 查詢當前使用者的有效證照編號
-        $certificateId = null;
-        if ($hasCertificateIdCol) {
-            $certSelectStmt = mysqli_prepare(
-                $link,
-                'SELECT certificate_id FROM equipment_certificates WHERE holder_id = ? AND validity_status = "valid" ORDER BY issue_date DESC LIMIT 1'
-            );
-            if ($certSelectStmt) {
-                mysqli_stmt_bind_param($certSelectStmt, 's', $userId);
-                mysqli_stmt_execute($certSelectStmt);
-                $certRes = mysqli_stmt_get_result($certSelectStmt);
-                if ($certRes && $certRow = mysqli_fetch_assoc($certRes)) {
-                    $certificateId = (int)$certRow['certificate_id'];
-                }
-                mysqli_stmt_close($certSelectStmt);
-            }
-        }
-
-        if ($hasCertificateIdCol && $certificateId !== null) {
-            $updateParts[] = 'certificate_id = ?';
-            $params[] = $certificateId;
-            $paramTypes .= 'i';
-        }
-        
-        // 最後添加 WHERE 條件
-        $params[] = $reservationId;
-        $paramTypes .= 'i';
-        
-        $updateSql = 'UPDATE reservations SET ' . implode(', ', $updateParts) . ' WHERE reservation_id = ?';
-        
-        $updateStmt = mysqli_prepare($link, $updateSql);
-        if (!$updateStmt) {
-            throw new Exception('準備 UPDATE 語句失敗：' . mysqli_error($link));
-        }
-        
-        if (!empty($paramTypes)) {
-            mysqli_stmt_bind_param($updateStmt, $paramTypes, ...$params);
-        }
-        
-        if (!mysqli_stmt_execute($updateStmt)) {
-            throw new Exception('更新草稿失敗：' . mysqli_error($link));
-        }
-        
-        mysqli_stmt_close($updateStmt);
-        
-        http_response_code(200);
-        echo json_encode(['success' => true, 'message' => '草稿已保存', 'reservation_id' => $reservationId]);
-        
-    } else {
-        // 新建草稿
-        // 驗證：至少需要有 user_id
-        $insertCols = ['user_id', 'status', 'approval_status', 'submitted_at'];
-        $bindParams = [$userId, 0, 'pending', date('Y-m-d H:i:s')];
-        $paramTypes = 'siss';
-        
-        // 預設借用時間（如果提供）
-        if ($borrowDate !== null && $startPeriodCode !== null && $endPeriodCode !== null) {
-            $periodSlots = [
-                'D0' => ['label' => '日間第0節', 'start' => '07:10:00', 'end' => '08:00:00'],
-                'D1' => ['label' => '日間第1節', 'start' => '08:10:00', 'end' => '09:00:00'],
-                'D2' => ['label' => '日間第2節', 'start' => '09:10:00', 'end' => '10:00:00'],
-                'D3' => ['label' => '日間第3節', 'start' => '10:10:00', 'end' => '11:00:00'],
-                'D4' => ['label' => '日間第4節', 'start' => '11:10:00', 'end' => '12:00:00'],
-                'DN' => ['label' => '日間第5節', 'start' => '12:40:00', 'end' => '13:30:00'],
-                'D5' => ['label' => '日間第6節', 'start' => '13:40:00', 'end' => '14:30:00'],
-                'D6' => ['label' => '日間第7節', 'start' => '14:40:00', 'end' => '15:30:00'],
-                'D7' => ['label' => '日間第8節', 'start' => '15:40:00', 'end' => '16:30:00'],
-                'D8' => ['label' => '夜間第1節', 'start' => '16:40:00', 'end' => '17:30:00'],
-                'E0' => ['label' => '夜間第2節', 'start' => '17:40:00', 'end' => '18:30:00'],
-                'E1' => ['label' => '夜間第3節', 'start' => '18:40:00', 'end' => '19:30:00'],
-                'E2' => ['label' => '夜間第4節', 'start' => '19:35:00', 'end' => '20:20:00'],
-                'E3' => ['label' => '夜間第5節', 'start' => '20:30:00', 'end' => '21:20:00'],
-                'E4' => ['label' => '夜間第6節', 'start' => '21:25:00', 'end' => '22:10:00'],
-            ];
-            
-            if (isset($periodSlots[$startPeriodCode]) && isset($periodSlots[$endPeriodCode])) {
-                $startDateTime = $borrowDate . ' ' . $periodSlots[$startPeriodCode]['start'];
-                $endDateTime = $borrowDate . ' ' . $periodSlots[$endPeriodCode]['end'];
-                
-                $insertCols[] = 'borrow_start_at';
-                $insertCols[] = 'borrow_end_at';
-                $bindParams[] = $startDateTime;
-                $bindParams[] = $endDateTime;
-                $paramTypes .= 'ss';
-            }
-        }
-        
-        // 添加其他可選欄位
-        if ($spaceId !== null) {
-            $insertCols[] = 'space_id';
-            $bindParams[] = $spaceId;
-            $paramTypes .= 's';
-        }
-        if ($resourceType !== null) {
-            $insertCols[] = 'resource_type';
-            $bindParams[] = $resourceType;
-            $paramTypes .= 's';
-        }
-        if ($selectedEquipment !== null) {
-            $insertCols[] = 'selected_equipment';
-            $bindParams[] = $selectedEquipment;
-            $paramTypes .= 's';
-        }
-        if ($selectedSpaces !== null) {
-            $insertCols[] = 'selected_spaces';
-            $bindParams[] = $selectedSpaces;
-            $paramTypes .= 's';
-        }
-        if ($purpose !== null) {
-            $insertCols[] = 'purpose';
-            $bindParams[] = $purpose;
-            $paramTypes .= 's';
-        }
-        
-        if ($flagCount !== null) {
-            $insertCols[] = 'flag_count';
-            $bindParams[] = $flagCount;
-            $paramTypes .= 'i';
-        }
-        
-        if ($hasCertificateIdCol && $certificateId !== null) {
-            $insertCols[] = 'certificate_id';
-            $bindParams[] = $certificateId;
-            $paramTypes .= 'i';
-        }
-        
-        $placeholders = array_fill(0, count($insertCols), '?');
-        $insertSql = 'INSERT INTO reservations (' . implode(', ', $insertCols) . ') VALUES (' . implode(', ', $placeholders) . ')';
-        
-        $insertStmt = mysqli_prepare($link, $insertSql);
-        if (!$insertStmt) {
-            throw new Exception('準備 INSERT 語句失敗：' . mysqli_error($link));
-        }
-        
-        mysqli_stmt_bind_param($insertStmt, $paramTypes, ...$bindParams);
-        
-        if (!mysqli_stmt_execute($insertStmt)) {
-            throw new Exception('保存草稿失敗：' . mysqli_error($link));
-        }
-        
-        $newReservationId = mysqli_insert_id($link);
-        mysqli_stmt_close($insertStmt);
-        
-        http_response_code(201);
-        echo json_encode(['success' => true, 'message' => '草稿已保存', 'reservation_id' => $newReservationId]);
     }
-    
-} catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'message' => htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8')]);
-} finally {
-    mysqli_close($link);
+
+    $originalName = basename((string)$file['name']);
+    $safeName = date('Ymd_His') . '_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $userId) . '_' . bin2hex(random_bytes(6)) . '.pdf';
+    $targetPath = $uploadDir . '/' . $safeName;
+
+    if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
+        echo json_encode(['success' => false, 'message' => '企劃書檔案儲存失敗'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $proposalFile = 'uploads/draft_proposals/' . $safeName;
+    $proposalOriginalName = $originalName;
+    $proposalUploadedAt = date('Y-m-d H:i:s');
 }
+
+$draftJson = json_encode([
+    'formData' => $formData,
+    'currentStep' => $currentStep
+], JSON_UNESCAPED_UNICODE);
+
+if ($draftJson === false) {
+    echo json_encode(['success' => false, 'message' => '草稿資料轉換失敗'], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+if ($draftId > 0) {
+    if ($proposalFile !== null) {
+        $sql = "UPDATE reservation_drafts
+                SET activity_name = ?, purpose = ?, proposal_file = ?, proposal_original_name = ?,
+                    proposal_uploaded_at = ?, current_step = ?, draft_data = ?
+                WHERE draft_id = ? AND user_id = ?";
+        $stmt = mysqli_prepare($link, $sql);
+        mysqli_stmt_bind_param($stmt, 'sssssssis', $activityName, $purpose, $proposalFile, $proposalOriginalName, $proposalUploadedAt, $currentStep, $draftJson, $draftId, $userId);
+    } else {
+        if ($postedDraftProposalFile !== '') {
+            $proposalUploadedAtValue = $postedDraftProposalUploadedAt !== '' ? $postedDraftProposalUploadedAt : date('Y-m-d H:i:s');
+
+            $sql = "UPDATE reservation_drafts
+                    SET activity_name = ?, purpose = ?,
+                        proposal_file = ?, proposal_original_name = ?, proposal_uploaded_at = ?,
+                        current_step = ?, draft_data = ?
+                    WHERE draft_id = ? AND user_id = ?";
+            $stmt = mysqli_prepare($link, $sql);
+            mysqli_stmt_bind_param(
+                $stmt,
+                'sssssssis',
+                $activityName,
+                $purpose,
+                $postedDraftProposalFile,
+                $postedDraftProposalOriginalName,
+                $proposalUploadedAtValue,
+                $currentStep,
+                $draftJson,
+                $draftId,
+                $userId
+            );
+        } else {
+            $sql = "UPDATE reservation_drafts
+                    SET activity_name = ?, purpose = ?, current_step = ?, draft_data = ?
+                    WHERE draft_id = ? AND user_id = ?";
+            $stmt = mysqli_prepare($link, $sql);
+            mysqli_stmt_bind_param($stmt, 'ssssis', $activityName, $purpose, $currentStep, $draftJson, $draftId, $userId);
+        }
+    }
+
+    if (!$stmt || !mysqli_stmt_execute($stmt)) {
+        echo json_encode(['success' => false, 'message' => '草稿更新失敗：' . mysqli_error($link)], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    echo json_encode([
+        'success' => true,
+        'message' => '草稿已更新',
+        'draft_id' => $draftId,
+        'proposal_file' => $proposalFile ?? $postedDraftProposalFile,
+        'proposal_original_name' => $proposalOriginalName ?? $postedDraftProposalOriginalName,
+        'proposal_uploaded_at' => $proposalUploadedAt ?? $postedDraftProposalUploadedAt
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+$sql = "INSERT INTO reservation_drafts
+        (user_id, activity_name, purpose, proposal_file, proposal_original_name, proposal_uploaded_at, current_step, draft_data)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+$stmt = mysqli_prepare($link, $sql);
+mysqli_stmt_bind_param($stmt, 'ssssssss', $userId, $activityName, $purpose, $proposalFile, $proposalOriginalName, $proposalUploadedAt, $currentStep, $draftJson);
+
+if (!$stmt || !mysqli_stmt_execute($stmt)) {
+    echo json_encode(['success' => false, 'message' => '草稿新增失敗：' . mysqli_error($link)], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+echo json_encode([
+    'success' => true,
+    'message' => '草稿已暫存',
+    'draft_id' => (int)mysqli_insert_id($link),
+    'proposal_file' => $proposalFile,
+    'proposal_original_name' => $proposalOriginalName,
+    'proposal_uploaded_at' => $proposalUploadedAt
+], JSON_UNESCAPED_UNICODE);
 ?>

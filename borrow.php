@@ -326,6 +326,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['alcohol_coordinator'] = trim((string)($_POST['alcohol_coordinator'] ?? ''));
     $formData['alcohol_president'] = trim((string)($_POST['alcohol_president'] ?? ''));
 
+    // 明火表單 JSON 解析
+    $formData['fire_activity_name'] = trim((string)($_POST['fire_activity_name'] ?? ''));
+    $formData['fire_date'] = trim((string)($_POST['fire_date'] ?? ''));
+    $formData['fire_time_start'] = trim((string)($_POST['fire_time_start'] ?? ''));
+    $formData['fire_time_end'] = trim((string)($_POST['fire_time_end'] ?? ''));
+    $formData['fire_location'] = trim((string)($_POST['fire_location'] ?? ''));
+    
+    foreach (['fire_performers', 'fire_oilers', 'fire_extinguishers', 'fire_security', 'fire_emergency', 'fire_medical'] as $key) {
+        if (isset($_POST[$key]) && is_array($_POST[$key])) {
+            $vals = array_filter(array_map('trim', $_POST[$key]), function($v) { return $v !== ''; });
+            $formData[$key] = json_encode(array_values($vals), JSON_UNESCAPED_UNICODE);
+        } else {
+            $formData[$key] = '[]';
+        }
+    }
 
     $cartEquipments = [];
     $cartSpaceId = null;
@@ -719,7 +734,18 @@ SQL;
                     'alcohol_president' => "VARCHAR(50) NULL COMMENT '酒精活動社長'",
                     'proposal_file' => "VARCHAR(255) NULL COMMENT '企劃書路徑'",
                     'proposal_uploaded_at' => "DATETIME NULL COMMENT '企劃書上傳時間'",
-                    'certificate_id' => "BIGINT UNSIGNED NULL COMMENT '證照編號'"
+                    'certificate_id' => "BIGINT UNSIGNED NULL COMMENT '證照編號'",
+                    'fire_activity_name' => "VARCHAR(255) NULL COMMENT '明火活動名稱'",
+                    'fire_date' => "DATE NULL COMMENT '明火日期'",
+                    'fire_time_start' => "VARCHAR(10) NULL COMMENT '明火開始時間'",
+                    'fire_time_end' => "VARCHAR(10) NULL COMMENT '明火結束時間'",
+                    'fire_location' => "VARCHAR(255) NULL COMMENT '明火地點'",
+                    'fire_performers' => "LONGTEXT NULL COMMENT '明火表演人員'",
+                    'fire_oilers' => "LONGTEXT NULL COMMENT '明火上油人員(>=1)'",
+                    'fire_extinguishers' => "LONGTEXT NULL COMMENT '明火滅火人員(>=1)'",
+                    'fire_security' => "LONGTEXT NULL COMMENT '明火維安人員(>=3)'",
+                    'fire_emergency' => "LONGTEXT NULL COMMENT '明火緊急狀況處理人員(>=1)'",
+                    'fire_medical' => "LONGTEXT NULL COMMENT '明火醫療人員(>=1)'"
                 ];
 
                 foreach ($requiredReservationColumns as $columnName => $columnDefinition) {
@@ -799,7 +825,18 @@ SQL;
                     'has_fire' => ['type' => 's', 'value' => $formData['has_fire']],
                     'has_sales' => ['type' => 's', 'value' => $formData['has_sales']],
                     'alcohol_coordinator' => ['type' => 's', 'value' => $formData['alcohol_coordinator'] ?? ''],
-                    'alcohol_president' => ['type' => 's', 'value' => $formData['alcohol_president'] ?? '']
+                    'alcohol_president' => ['type' => 's', 'value' => $formData['alcohol_president'] ?? ''],
+                    'fire_activity_name' => ['type' => 's', 'value' => $formData['fire_activity_name'] ?? ''],
+                    'fire_date' => ['type' => 's', 'value' => $formData['fire_date'] ?? ''],
+                    'fire_time_start' => ['type' => 's', 'value' => $formData['fire_time_start'] ?? ''],
+                    'fire_time_end' => ['type' => 's', 'value' => $formData['fire_time_end'] ?? ''],
+                    'fire_location' => ['type' => 's', 'value' => $formData['fire_location'] ?? ''],
+                    'fire_performers' => ['type' => 's', 'value' => $formData['fire_performers'] ?? '[]'],
+                    'fire_oilers' => ['type' => 's', 'value' => $formData['fire_oilers'] ?? '[]'],
+                    'fire_extinguishers' => ['type' => 's', 'value' => $formData['fire_extinguishers'] ?? '[]'],
+                    'fire_security' => ['type' => 's', 'value' => $formData['fire_security'] ?? '[]'],
+                    'fire_emergency' => ['type' => 's', 'value' => $formData['fire_emergency'] ?? '[]'],
+                    'fire_medical' => ['type' => 's', 'value' => $formData['fire_medical'] ?? '[]']
                 ];
 
                 foreach ($optionalReservationValues as $columnName => $config) {
@@ -1824,6 +1861,20 @@ SQL;
                                 </div>
                                 <!-- 👆 酒精申請表 HTML 結束 👆 -->
 
+                                <!-- 👇 明火申請表 HTML 開始 👇 -->
+                                <div id="fireDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:8px;">
+                                    <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
+                                        輔仁大學學生活動上火確認表(火舞)
+                                    </div>
+                                    <div style="padding: 20px;">
+                                        <!-- 這裡先預留填寫區塊，等待後續需求加上具體內容 -->
+                                        <p style="color: #64748b; font-size: 15px; margin-bottom: 0;">
+                                            (內部表單欄位待後續確認建置)
+                                        </p>
+                                    </div>
+                                </div>
+                                <!-- 👆 明火申請表 HTML 結束 👆 -->
+
                                 <script>
                                 // 👇 這裡幫你把遺失的【酒精驗證 Javascript】補回來了 👇
                                 function toggleAllAlcoholAgreements(source) {
@@ -1885,6 +1936,34 @@ SQL;
                                     return true;
                                 }
                                 // 👆 酒精驗證 Javascript 結束 👆
+
+                                // 👇 明火驗證 Javascript 開始 👇
+                                function isFireEnabled() {
+                                    const checkedFire = document.querySelector('input[name="has_fire"]');
+                                    return checkedFire && checkedFire.checked;
+                                }
+
+                                function toggleFireDetails() {
+                                    const fireSection = document.getElementById('fireDetailsSection');
+                                    if (!fireSection) return;
+                                    const show = isFireEnabled();
+                                    fireSection.style.display = show ? 'block' : 'none';
+                                    
+                                    fireSection.querySelectorAll('input').forEach(function(el) {
+                                        if (show) {
+                                            el.removeAttribute('disabled');
+                                        } else {
+                                            el.setAttribute('disabled', 'disabled');
+                                        }
+                                    });
+                                }
+
+                                function validateFireForm() {
+                                    if (!isFireEnabled()) return true;
+                                    // 之後如果有明火表單內容的必填欄位，可在此撰寫驗證邏輯
+                                    return true;
+                                }
+                                // 👆 明火驗證 Javascript 結束 👆
 
                                 function isFlagEnabled() {
                                     const checkedFlag = document.querySelector('input[name="setup_flags"]:checked');
@@ -2068,6 +2147,9 @@ SQL;
                                                 if (name === 'has_alcohol' && typeof toggleAlcoholDetails === 'function') {
                                                     toggleAlcoholDetails();
                                                 }
+                                                if (name === 'has_fire' && typeof toggleFireDetails === 'function') {
+                                                    toggleFireDetails();
+                                                }
                                             });
                                         }
                                     });
@@ -2075,6 +2157,9 @@ SQL;
                                     // 確保重整網頁時如果有勾選，也能正確顯示
                                     if (typeof toggleAlcoholDetails === 'function') {
                                         toggleAlcoholDetails();
+                                    }
+                                    if (typeof toggleFireDetails === 'function') {
+                                        toggleFireDetails();
                                     }
                                     // 👆 綁定結束 👆
 
@@ -2122,7 +2207,7 @@ SQL;
                                 <div class="step-actions">
                                     <button type="button" class="btn btn-secondary" onclick="goToStep(1)"> ⬅ 回上一步</button>
                                     <!-- 👇 這裡也幫你把進入第三步前的檢查條件加回來了 👇 -->
-                                    <button type="button" class="btn btn-primary btn-next" onclick="if(validateAlcoholForm()) { goToStep(3); }">下一步 ➔ 挑選器材與場地</button>
+                                    <button type="button" class="btn btn-primary btn-next" onclick="if(validateAlcoholForm() && validateFireForm()) { goToStep(3); }">下一步 ➔ 挑選器材與場地</button>
                                 </div>
 
                                 <div class="draft-action-row">
@@ -4021,6 +4106,9 @@ document.addEventListener('DOMContentLoaded', function () {
 if (typeof window.toggleAlcoholDetails === 'function') {
             window.toggleAlcoholDetails();
         }
+        if (typeof window.toggleFireDetails === 'function') {
+            window.toggleFireDetails();
+        }
         if (typeof window.syncFlagForm === 'function') {
             window.syncFlagForm();
         }
@@ -4384,6 +4472,9 @@ if (typeof window.toggleAlcoholDetails === 'function') {
                     if (key === 'has_alcohol' && typeof toggleAlcoholDetails === 'function') {
                         toggleAlcoholDetails();
                     }
+                    if (key === 'has_fire' && typeof toggleFireDetails === 'function') {
+                        toggleFireDetails();
+                    }
                 });
 
                 el.addEventListener('click', function () {
@@ -4397,6 +4488,9 @@ if (typeof window.toggleAlcoholDetails === 'function') {
         // 確保網頁重整、載入草稿或切換上一步時，如果酒精已勾選，能正確把表單開起來
         if (typeof toggleAlcoholDetails === 'function') {
             toggleAlcoholDetails();
+        }
+        if (typeof toggleFireDetails === 'function') {
+            toggleFireDetails();
         }
 
         const originalGoToStep = window.goToStep;

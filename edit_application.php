@@ -434,10 +434,7 @@ if ($dbError === '') {
                             </div>
                         </div>
 
-                        <div class="form-group">
-                            <label for="club_president">社 / 會長</label>
-                            <input type="text" id="club_president" name="club_president" value="<?php echo htmlspecialchars((string)($reservationRow['club_president'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
-                        </div>
+
 
                         <div class="form-group">
                             <label for="activity_coordinator">活動負責人</label>

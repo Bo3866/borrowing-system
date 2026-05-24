@@ -68,26 +68,24 @@ html {
 
 .navbar-menu {
     display: flex;
-    gap: 1rem;          /* 關鍵：按鈕與按鈕之間只維持固定的 1rem (16px) 間距 */
-    
-    /* 修正部分 */
+    gap: 0.75rem;          /* 按鈕間距略小，提高容納量 */
     flex: 0 1 auto;     /* 改為不主動放大填滿 */
     justify-content: flex-end; /* 讓所有分頁按鈕自然地往右邊靠攏對齊 */
-    
     align-items: center;
-    flex-wrap: nowrap;  /* 強制單行排版 */
-    overflow-x: auto;   /* 當項目過多時允許水平滾動 */
+    flex-wrap: wrap;    /* 允許多行換行，避免單行過長造成排版異常 */
+    overflow-x: visible; /* 改為可見，使用換行代替水平滾動 */
+    max-width: calc(100% - 260px); /* 留出品牌區空間，避免壓到標題 */
 }
 
 .nav-btn {
     background: rgba(255, 255, 255, 0.2);
     color: white;
     border: none;
-    padding: 0.6rem 1.2rem;
+    padding: 0.48rem 0.9rem; /* 稍微減小按鈕內邊距以節省空間 */
     border-radius: var(--border-radius);
     cursor: pointer;
     transition: var(--transition);
-    font-size: 0.95rem;
+    font-size: 0.92rem;
     font-weight: 500;
 
     white-space: nowrap; /* keep button labels on one line */

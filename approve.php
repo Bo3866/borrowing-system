@@ -310,11 +310,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
                     }
                     mysqli_stmt_bind_param($updateStmt, 'ssi', $action, $revisionDataJson, $reservationId);
                 } else {
-                    $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET approval_status = ?, updated_at = NOW() WHERE reservation_id = ? AND approval_status = "pending"');
-                    if (!$updateStmt) {
-                        throw new RuntimeException('更新預約狀態準備失敗：' . mysqli_error($link));
+                    if ($action === 'rejected') {
+                        $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET approval_status = ?, updated_at = NOW(), rejection_reason = ? WHERE reservation_id = ? AND approval_status = "pending"');
+                        if (!$updateStmt) {
+                            throw new RuntimeException('更新預約狀態準備失敗：' . mysqli_error($link));
+                        }
+                        mysqli_stmt_bind_param($updateStmt, 'ssi', $action, $comment, $reservationId);
+                    } else {
+                        $updateStmt = mysqli_prepare($link, 'UPDATE reservations SET approval_status = ?, updated_at = NOW() WHERE reservation_id = ? AND approval_status = "pending"');
+                        if (!$updateStmt) {
+                            throw new RuntimeException('更新預約狀態準備失敗：' . mysqli_error($link));
+                        }
+                        mysqli_stmt_bind_param($updateStmt, 'si', $action, $reservationId);
                     }
-                    mysqli_stmt_bind_param($updateStmt, 'si', $action, $reservationId);
                 }
 
                 mysqli_stmt_execute($updateStmt);
@@ -468,6 +476,8 @@ if (isset($dbError) && $dbError !== '') {
             $reservationColumns[] = (string)$columnRow['Field'];
         }
     }
+    // DEBUG: dump reservation columns for troubleshooting
+    @file_put_contents(__DIR__ . '/approve_debug.log', date('c') . " reservationColumns: " . json_encode($reservationColumns, JSON_UNESCAPED_UNICODE) . PHP_EOL, FILE_APPEND | LOCK_EX);
 
     // 使用現行資料表欄位 `user_id`
     $applicantColumn = 'user_id';
@@ -527,7 +537,8 @@ if (isset($dbError) && $dbError !== '') {
                         'borrow_start_at' => $row['borrow_start_at'],
                         'borrow_end_at' => $row['borrow_end_at'],
                         'reservation_ids' => [],
-                        'items' => []
+                        'items' => [],
+                        'details' => []
                     ];
                 }
                 $groupedPending[$groupKey]['reservation_ids'][] = $row['reservation_id'];
@@ -536,6 +547,13 @@ if (isset($dbError) && $dbError !== '') {
                 $items = fetchItems($link, (int)$row['reservation_id']);
                 foreach ($items as $it) {
                     $groupedPending[$groupKey]['items'][] = $it;
+                }
+                // Fetch full reservation details (include only existing columns)
+                $details = fetchReservationDetails($link, (int)$row['reservation_id']);
+                if (!empty($details)) {
+                    $groupedPending[$groupKey]['details'][$row['reservation_id']] = $details;
+                    // DEBUG: write per-reservation details to log
+                    @file_put_contents(__DIR__ . '/approve_debug.log', date('c') . " details reservation_id={$row['reservation_id']}: " . json_encode($details, JSON_UNESCAPED_UNICODE) . PHP_EOL, FILE_APPEND | LOCK_EX);
                 }
             }
             $pending = array_values($groupedPending);
@@ -585,6 +603,42 @@ function fetchItems(mysqli $link, int $reservationId): array
     return $items;
 }
 
+function fetchReservationDetails(mysqli $link, int $reservationId): array
+{
+    $items = [];
+    // candidate columns we want to show if they exist
+    $candidates = [
+        'organization_name','activity_name','participant_count','staff_count',
+        'club_president','activity_coordinator','coordinator_department','coordinator_phone',
+        'coordinator_other_contact','vehicle_entry','setup_flags','purpose',
+        'borrow_start_at','borrow_end_at','space_id','proposal_file','proposal_uploaded_at',
+        'has_alcohol','has_fire','has_sales','proposal_file','proposal_uploaded_at','rejection_reason',
+        'revision_deadline','revision_data_json'
+    ];
+
+    $cols = [];
+    $colRes = mysqli_query($link, "SHOW COLUMNS FROM reservations");
+    if ($colRes) {
+        while ($crow = mysqli_fetch_assoc($colRes)) {
+            $cols[] = $crow['Field'];
+        }
+    }
+
+    $useCols = array_values(array_intersect($candidates, $cols));
+    if (empty($useCols)) return [];
+
+    $selSql = 'SELECT ' . implode(', ', $useCols) . ' FROM reservations WHERE reservation_id = ?';
+    $selS = mysqli_prepare($link, $selSql);
+    if (!$selS) return [];
+    mysqli_stmt_bind_param($selS, 'i', $reservationId);
+    mysqli_stmt_execute($selS);
+    $rres = mysqli_stmt_get_result($selS);
+    $snapshot = $rres ? mysqli_fetch_assoc($rres) : null;
+    mysqli_stmt_close($selS);
+
+    return $snapshot ? $snapshot : [];
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -593,6 +647,34 @@ function fetchItems(mysqli $link, int $reservationId): array
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>審核面板｜校園資源租借系統</title>
     <link rel="stylesheet" href="styles.css?v=<?php echo time(); ?>">
+    <style>
+        /* Approve panel tweaks */
+        :root{--primary:#2563eb;--accent:#0ea5a4;--muted:#475569;--card-bg:#ffffff;--panel-bg:#fbfbff}
+        .admin-application-card { padding:20px; border-radius:12px; background:var(--card-bg); box-shadow:0 6px 20px rgba(2,6,23,0.06); border:1px solid #e6eef8; font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+        .admin-application-card .card-header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+        .admin-application-card .card-header .left { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+        .admin-application-card strong { color:#0f172a; font-size:1.02rem; }
+        .admin-application-card .meta { color:var(--muted); font-size:0.95rem; }
+        .detail-toggle { margin-top:0.6rem; }
+        .detail-toggle.btn-primary { padding:8px 14px; background:var(--accent); color:#fff; border-radius:10px; border:none; font-weight:600; font-size:0.95rem; }
+        .detail-toggle.btn-primary:hover { background:#028b86; }
+        .admin-application-card .btn-primary { background:var(--primary); color:#fff; border:none; padding:8px 12px; font-weight:600; border-radius:8px; }
+        .admin-application-card .btn-primary:hover { background:#1e40af; }
+        .admin-application-card .btn-secondary { background:#f8fafc; color:#0f172a; border:1px solid #e2e8f0; padding:8px 12px; border-radius:8px; }
+        .btn-warning { background:#f59e0b; color:#000; border:none; padding:8px 12px; border-radius:8px; font-weight:600; }
+        .btn-warning:hover { background:#d97706; }
+        .detail-panel { background:var(--panel-bg); border:1px solid #eef2ff; padding:14px; border-radius:10px; margin-top:0.5rem; }
+        .admin-application-card table td { border:1px solid #f0f0f0; padding:10px; }
+        /* action form */
+        .action-form { margin-top:0.6rem; display:flex; gap:0.75rem; align-items:flex-end; }
+        .action-comment { flex:1; }
+        .comment-textarea { width:100%; min-height:56px; padding:8px 10px; border:1px solid #e6eef8; border-radius:8px; font-family:inherit; }
+        .action-buttons { display:flex; flex-direction:column; gap:0.5rem; }
+        /* small helpers */
+        .submitted-time { color:var(--muted); font-size:0.9rem; }
+        ul { margin:0.25rem 0 0 1.2rem; }
+        @media (max-width:900px) { .action-form { flex-direction:column; } .action-buttons { flex-direction:row; gap:0.5rem; } }
+    </style>
  </head>
 <body>
     <!-- 導覽列 放到 container 之外以讓背景拉滿整個視窗 -->
@@ -615,52 +697,96 @@ function fetchItems(mysqli $link, int $reservationId): array
                     <?php if (count($pending) === 0) { ?>
                         <p>目前沒有待審核的申請。</p>
                     <?php } else { ?>
-                        <?php foreach ($pending as $p) { ?>
+                        <?php foreach ($pending as $idx => $p) { ?>
                             <div class="card admin-application-card" style="margin-bottom:1rem;">
                                 <div style="display:flex;justify-content:space-between;align-items:center;">
                                     <div>
                                         <strong>申請編號：</strong><?php echo implode(', ', $p['reservation_ids']); ?>
                                         &nbsp; <strong>申請人：</strong><?php echo htmlspecialchars($p['full_name'], ENT_QUOTES, 'UTF-8'); ?> (<?php echo htmlspecialchars($p['applicant_user_id'], ENT_QUOTES, 'UTF-8'); ?>)
+                                        &nbsp; <?php $firstRid = count($p['reservation_ids'])>0 ? $p['reservation_ids'][0] : ''; ?>
                                     </div>
                                     <div><small>送出時間：<?php echo htmlspecialchars($p['submitted_at'], ENT_QUOTES, 'UTF-8'); ?></small></div>
                                 </div>
 
-                                <div style="margin-top:0.5rem;">
-                                    <strong>借用時段：</strong>
-                                    <?php echo htmlspecialchars($p['borrow_start_at'], ENT_QUOTES, 'UTF-8'); ?> ～ <?php echo htmlspecialchars($p['borrow_end_at'], ENT_QUOTES, 'UTF-8'); ?>
+                                <!-- 在申請編號與審核表單之間插入同頁展開按鈕 -->
+                                <div style="text-align:center;margin:0.5rem 0;">
+                                    <a class="btn-primary" href="approve_detail.php?reservation_id=<?php echo htmlspecialchars($firstRid, ENT_QUOTES, 'UTF-8'); ?>">申請詳細資料</a>
                                 </div>
 
-                                <div style="margin-top:0.5rem;">
-                                    <strong>申請項目：</strong>
-                                    <ul>
-                                        <?php foreach ($p['items'] as $it) { ?>
-                                            <?php
-                                                $itemType = (string)($it['item_type'] ?? 'equipment');
-                                                $itemCode = (string)($it['item_code'] ?? ($it['equipment_code'] ?? ''));
-                                                $itemName = (string)($it['item_name'] ?? ($it['equipment_name'] ?? ''));
-                                                if ($itemType === 'space') {
-                                                    $itemText = '【空間】' . $itemCode . ' - ' . $itemName;
-                                                } else {
-                                                    $itemText = '【器材】' . $itemCode . ' - ' . $itemName;
-                                                }
-                                            ?>
-                                            <li><?php echo htmlspecialchars($itemText, ENT_QUOTES, 'UTF-8'); ?></li>
-                                        <?php } ?>
-                                    </ul>
-                                </div>
-
-                                <form method="post" style="margin-top:0.5rem;display:flex;gap:0.5rem;align-items:flex-end;">
+                                <form method="post" class="action-form">
                                     <input type="hidden" name="reservation_ids" value="<?php echo implode(',', $p['reservation_ids']); ?>">
-                                    <div style="flex:1;">
+                                    <div class="action-comment">
                                         <label>審核備註（可選）：</label>
-                                        <textarea name="comment" rows="2" style="width:100%;"></textarea>
+                                        <div style="display:flex;gap:0.5rem;align-items:flex-start;">
+                                            <select id="canned_message" class="canned-select" style="min-width:220px;padding:0.4rem;border-radius:4px;border:1px solid #ccc;background:#fff;">
+                                                <option value="">— 退回原因 —</option>
+                                                <option value="活動用途不明">活動用途不明</option>
+                                                <option value="活動企劃書資訊不足">活動企劃書資訊不足</option>
+                                            </select>
+                                            <textarea name="comment" rows="2" class="comment-textarea" id="comment_textarea"></textarea>
+                                        </div>
                                     </div>
-                                    <div style="display:flex;flex-direction:column;gap:0.5rem;">
+                                    <div class="action-buttons">
                                         <button type="submit" name="action" value="approve" class="btn-primary" onclick="return confirm('確認要核准此批申請？')">核准</button>
-                                        <button type="submit" name="action" value="request_revision" style="background-color:#ffc107;color:#000;border:none;padding:0.4rem;border-radius:4px;cursor:pointer;font-size:0.9rem;" onclick="return confirm('確認要退回要求補件？\n(可於左側選填要求補件的審核備註)')">要求補件</button>
+                                        <button type="submit" name="action" value="request_revision" class="btn-warning" onclick="return confirm('確認要退回要求補件？\n(可於左側選填要求補件的審核備註)')">要求補件</button>
                                         <button type="submit" name="action" value="reject" class="btn-secondary" onclick="return confirm('確認要拒絕此批申請？')">拒絕</button>
                                     </div>
                                 </form>
+                                <!-- old external detail link removed; using in-page toggle above -->
+                                <?php if (!empty($p['details'])) { ?>
+                                    <div id="details-panel-<?php echo $idx; ?>" class="detail-panel" style="display:none;margin-top:0.5rem;">
+                                        <strong>申請內容：</strong>
+                                        <?php foreach ($p['details'] as $rid => $det) { ?>
+                                            <div style="border:1px solid #eee;padding:0.5rem;margin-top:0.5rem;">
+                                                <div><strong>申請編號：</strong><?php echo htmlspecialchars($rid, ENT_QUOTES, 'UTF-8'); ?></div>
+                                                <table style="width:100%;border-collapse:collapse;margin-top:0.5rem;">
+                                                    <?php
+                                                    $order = [
+                                                        'organization_name','activity_name','participant_count','staff_count','club_president',
+                                                        'activity_coordinator','coordinator_department','coordinator_phone','coordinator_other_contact',
+                                                        'vehicle_entry','setup_flags','purpose','borrow_start_at','borrow_end_at','space_id',
+                                                        'flag_count','flag_organization_name','flag_activity_name','flag_responsible_person','flag_contact_phone',
+                                                        'proposal_file','proposal_uploaded_at','revision_data_json','rejection_reason'
+                                                    ];
+                                                    foreach ($order as $k) {
+                                                        if (!array_key_exists($k, $det)) continue;
+                                                        $v = $det[$k];
+                                                        $label = ucwords(str_replace('_', ' ', $k));
+                                                        if ($k === 'proposal_file' && !empty($v)) {
+                                                            $basename = basename((string)$v);
+                                                            $display = '<a href="' . htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8') . '" target="_blank" rel="noopener">' . htmlspecialchars($basename, ENT_QUOTES, 'UTF-8') . '</a>';
+                                                        } elseif ($k === 'revision_data_json' && !empty($v)) {
+                                                            $decoded = json_decode((string)$v, true);
+                                                            if (is_array($decoded)) {
+                                                                $display = '<pre style="white-space:pre-wrap;margin:0;">' . htmlspecialchars(json_encode($decoded, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT), ENT_QUOTES, 'UTF-8') . '</pre>';
+                                                            } else {
+                                                                $display = nl2br(htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'));
+                                                            }
+                                                        } else {
+                                                            $display = $v === null ? '<em>無</em>' : nl2br(htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'));
+                                                        }
+                                                    ?>
+                                                        <tr>
+                                                            <td style="vertical-align:top;padding:0.25rem 0.5rem;width:30%;background:#fafafa;border:1px solid #f0f0f0;"><strong><?php echo htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?></strong></td>
+                                                            <td style="vertical-align:top;padding:0.25rem 0.5rem;border:1px solid #f0f0f0;"><?php echo $display; ?></td>
+                                                        </tr>
+                                                    <?php } // end order loop ?>
+                                                    <?php // render any additional keys not in order
+                                                    foreach ($det as $k => $v) {
+                                                        if (in_array($k, $order, true)) continue;
+                                                        $label = ucwords(str_replace('_', ' ', $k));
+                                                        $display = $v === null ? '<em>無</em>' : nl2br(htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'));
+                                                    ?>
+                                                        <tr>
+                                                            <td style="vertical-align:top;padding:0.25rem 0.5rem;width:30%;background:#fafafa;border:1px solid #f0f0f0;"><strong><?php echo htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?></strong></td>
+                                                            <td style="vertical-align:top;padding:0.25rem 0.5rem;border:1px solid #f0f0f0;"><?php echo $display; ?></td>
+                                                        </tr>
+                                                    <?php } ?>
+                                                </table>
+                                            </div>
+                                        <?php } ?>
+                                    </div>
+                                <?php } ?>
                             </div>
                         <?php } ?>
                     <?php } ?>
@@ -696,6 +822,27 @@ document.addEventListener('DOMContentLoaded', function() {
                 alert('呼叫失敗，請檢查伺服器日誌：' + err);
             })
             .finally(() => { btn.disabled = false; btn.textContent = orig; });
+    });
+    // Toggle detail panels for approval cards (supports legacy btn-link and new .detail-toggle)
+    Array.from(document.querySelectorAll('button.btn-link[data-target], button.detail-toggle[data-target]')).forEach(function(b){
+        b.addEventListener('click', function(){
+            const targetId = b.getAttribute('data-target');
+            const panel = document.getElementById(targetId);
+            if (!panel) return;
+            const isVisible = !(panel.style.display === 'none' || panel.style.display === '');
+            if (!isVisible) {
+                panel.style.display = 'block';
+                b.textContent = '收合資訊';
+            } else {
+                panel.style.display = 'none';
+                // restore initial label depending on button type
+                if (b.classList.contains('detail-toggle')) {
+                    b.textContent = '申請詳細資料';
+                } else {
+                    b.textContent = '詳細資訊';
+                }
+            }
+        });
     });
 });
 </script>

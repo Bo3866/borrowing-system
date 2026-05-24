@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 session_start();
 
 function getEquipmentIcon($name) {
@@ -1574,20 +1574,20 @@ SQL;
                                     <input type="text" id="coordinator_other_contact" name="coordinator_other_contact" class="form-control" placeholder="請輸入其他聯絡方式（如 Email）" value="<?php echo htmlspecialchars($formData['coordinator_other_contact'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                 </div>
 
-                                <div class="form-group" style="margin-top: 12px;">
-                                    <label>特殊項目（請勾選適用項目）</label>
-                                    <div style="display:flex; gap:20px; margin-top:8px; align-items:center;">
-                                        <label style="display:flex; align-items:center; gap:8px; margin:0;">
-                                            <input type="checkbox" name="has_fire" value="1" <?php echo ($formData['has_fire'] === '1') ? 'checked' : ''; ?>>
-                                            <span>明火</span>
-                                        </label>
-                                        <label style="display:flex; align-items:center; gap:8px; margin:0;">
+                                <div class="form-group" style="margin-top: 10px;">
+                                    <label>活動特殊性質（可複選）- 勾選則下一頁將出現表單</label>
+                                    <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-top: 8px;">
+                                        <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; white-space: nowrap;">
                                             <input type="checkbox" name="has_alcohol" value="1" <?php echo ($formData['has_alcohol'] === '1') ? 'checked' : ''; ?>>
-                                            <span>含酒精</span>
+                                            <span>有酒精</span>
                                         </label>
-                                        <label style="display:flex; align-items:center; gap:8px; margin:0;">
+                                        <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; white-space: nowrap;">
+                                            <input type="checkbox" name="has_fire" value="1" <?php echo ($formData['has_fire'] === '1') ? 'checked' : ''; ?>>
+                                            <span>有明火</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; white-space: nowrap;">
                                             <input type="checkbox" name="has_sales" value="1" <?php echo ($formData['has_sales'] === '1') ? 'checked' : ''; ?>>
-                                            <span>販售活動</span>
+                                            <span>需擺攤販售</span>
                                         </label>
                                     </div>
                                 </div>
@@ -1608,7 +1608,7 @@ SQL;
                                         ?>
                                         <select name="borrow_start_time_h" class="form-control" required style="padding: 8px; width: 80px;">
                                             <option value="">選擇</option>
-                                            <?php for($h=0; $h<=23; $h++) { 
+                                            <?php for($h=7; $h<=22; $h++) { 
                                                 $selected = ($curBsh !== '' && $curBsh === $h) ? 'selected' : '';
                                             ?>
                                                 <option value="<?php echo $h; ?>" <?php echo $selected; ?>><?php echo $h; ?></option>
@@ -1618,8 +1618,12 @@ SQL;
                                         
                                         <select name="borrow_start_time_m" class="form-control" required style="padding: 8px; width: 80px;">
                                             <option value="">選擇</option>
-                                            <option value="00" <?php echo ($curBsm !== '' && $curBsm === 00) ? 'selected' : ''; ?>>00</option>
+                                            <option value="00" <?php echo ($curBsm !== '' && $curBsm === 0) ? 'selected' : ''; ?>>00</option>
+                                            <option value="10" <?php echo ($curBsm !== '' && $curBsm === 10) ? 'selected' : ''; ?>>10</option>
+                                            <option value="20" <?php echo ($curBsm !== '' && $curBsm === 20) ? 'selected' : ''; ?>>20</option>
                                             <option value="30" <?php echo ($curBsm !== '' && $curBsm === 30) ? 'selected' : ''; ?>>30</option>
+                                            <option value="40" <?php echo ($curBsm !== '' && $curBsm === 40) ? 'selected' : ''; ?>>40</option>
+                                            <option value="50" <?php echo ($curBsm !== '' && $curBsm === 50) ? 'selected' : ''; ?>>50</option>
                                         </select>
                                         <span>分</span>
                                     </div>
@@ -1639,7 +1643,7 @@ SQL;
                                         ?>
                                         <select name="borrow_end_time_h" class="form-control" required style="padding: 8px; width: 80px;">
                                             <option value="">選擇</option>
-                                            <?php for($h=0; $h<=23; $h++) { 
+                                            <?php for($h=7; $h<=22; $h++) { 
                                                 $selected = ($curBeh !== '' && $curBeh === $h) ? 'selected' : '';
                                             ?>
                                                 <option value="<?php echo $h; ?>" <?php echo $selected; ?>><?php echo $h; ?></option>
@@ -1649,8 +1653,12 @@ SQL;
                                         
                                         <select name="borrow_end_time_m" class="form-control" required style="padding: 8px; width: 80px;">
                                             <option value="">選擇</option>
-                                            <option value="00" <?php echo ($curBem !== '' && $curBem === 00) ? 'selected' : ''; ?>>00</option>
+                                            <option value="00" <?php echo ($curBem !== '' && $curBem === 0) ? 'selected' : ''; ?>>00</option>
+                                            <option value="10" <?php echo ($curBem !== '' && $curBem === 10) ? 'selected' : ''; ?>>10</option>
+                                            <option value="20" <?php echo ($curBem !== '' && $curBem === 20) ? 'selected' : ''; ?>>20</option>
                                             <option value="30" <?php echo ($curBem !== '' && $curBem === 30) ? 'selected' : ''; ?>>30</option>
+                                            <option value="40" <?php echo ($curBem !== '' && $curBem === 40) ? 'selected' : ''; ?>>40</option>
+                                            <option value="50" <?php echo ($curBem !== '' && $curBem === 50) ? 'selected' : ''; ?>>50</option>
                                         </select>
                                         <span>分</span>
                                     </div>
@@ -1674,7 +1682,7 @@ SQL;
 
                             </div>
                             
-                            <!-- ========== 步驟 2 內容區 ========== -->
+<!-- ========== 步驟 2 內容區 ========== -->
                             <div class="step-content" id="step-content-2">
                                 <h3 class="step-title" style="margin-bottom: 10px;">第二步：場地需求</h3>
                                 
@@ -1689,7 +1697,7 @@ SQL;
                                         </label>
                                     </div>
                                 </div>
-                                <!-- 特殊項目已移至第一步：不在此處顯示 -->
+                                
                                 <div class="form-group" style="margin-top: 20px;">
                                     <label>插立旗幟(選擇"是"將填寫旗幟插立表單) <span style="color:red">*</span></label>
                                     <div style="margin-top: 8px; display: flex; align-items: center; gap: 20px;">
@@ -1702,77 +1710,182 @@ SQL;
                                     </div>
                                 </div>
                                 
-<div id="flagDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:8px;">
-                                <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
-                                    旗幟插立申請表
-                                </div>
+                                <div id="flagDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:8px;">
+                                    <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
+                                        旗幟插立申請表
+                                    </div>
 
-                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start; margin-bottom:12px;">
-                                    <div>
-                                        <label>申請單位 <span style="color:red">*</span></label>
-                                        <input type="text" id="flag_organization_name" name="flag_organization_name" class="form-control" value="<?php echo htmlspecialchars($formData['flag_organization_name'] ?? $formData['organization_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
-                                    <div>
-                                        <label>活動名稱 <span style="color:red">*</span></label>
-                                        <input type="text" id="flag_activity_name" name="flag_activity_name" class="form-control" value="<?php echo htmlspecialchars($formData['flag_activity_name'] ?? $formData['activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
-                                    <div>
-                                        <label>負責人 <span style="color:red">*</span></label>
-                                        <input type="text" id="flag_responsible_person" name="flag_responsible_person" class="form-control" value="<?php echo htmlspecialchars($formData['flag_responsible_person'] ?? $formData['activity_coordinator'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
-                                    <div>
-                                        <label>連絡電話 <span style="color:red">*</span></label>
-                                        <input type="text" id="flag_contact_phone" name="flag_contact_phone" class="form-control" value="<?php echo htmlspecialchars($formData['flag_contact_phone'] ?? $formData['coordinator_phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
-                                </div>
-
-                                <div style="display:flex; gap:15px; align-items:center; margin-bottom:15px;">
-                                    <div>
-                                        <label>使用日期 <span style="color:red">*</span></label>
-                                        <div style="display:flex; gap:8px; align-items:center;">
-                                            <input type="date" id="flag_use_start" name="flag_use_start" class="form-control" readonly style="background:#fff;" value="<?php echo htmlspecialchars($formData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                            <span>至</span>
-                                            <input type="date" id="flag_use_end" name="flag_use_end" class="form-control" readonly style="background:#fff;" value="<?php echo htmlspecialchars($formData['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start; margin-bottom:12px; padding: 20px 20px 0 20px;">
+                                        <div>
+                                            <label>申請單位 <span style="color:red">*</span></label>
+                                            <input type="text" id="flag_organization_name" name="flag_organization_name" class="form-control" value="<?php echo htmlspecialchars($formData['flag_organization_name'] ?? $formData['organization_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                         </div>
-                                        <div style="font-size:12px;color:#64748b;margin-top:6px;">說明：使用日期已自動帶入活動起訖時間，無法修改。</div>
-                                    </div>
-                                </div>
-
-                                <div style="display:flex; gap:15px; align-items:center; margin-bottom:15px;">
-                                    <div style="flex:1;">
-                                        <label>宣傳旗幟 <span style="color:red">*</span></label>
-                                        <div style="display:flex; align-items:center; gap:8px;">
-                                            <span>共</span>
-                                            <input type="number"
-                                                name="flag_count"
-                                                id="flag_count"
-                                                class="form-control"
-                                                min="1"
-                                                max="20"
-                                                step="1"
-                                                style="width:100px;height:38px;"
-                                                placeholder="最多20"
-                                                value="<?php echo htmlspecialchars((string)($formData['flag_count'] ?? '1'), ENT_QUOTES, 'UTF-8'); ?>">
-                                            <span>支</span>
+                                        <div>
+                                            <label>活動名稱 <span style="color:red">*</span></label>
+                                            <input type="text" id="flag_activity_name" name="flag_activity_name" class="form-control" value="<?php echo htmlspecialchars($formData['flag_activity_name'] ?? $formData['activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                        </div>
+                                        <div>
+                                            <label>負責人 <span style="color:red">*</span></label>
+                                            <input type="text" id="flag_responsible_person" name="flag_responsible_person" class="form-control" value="<?php echo htmlspecialchars($formData['flag_responsible_person'] ?? $formData['activity_coordinator'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                        </div>
+                                        <div>
+                                            <label>連絡電話 <span style="color:red">*</span></label>
+                                            <input type="text" id="flag_contact_phone" name="flag_contact_phone" class="form-control" value="<?php echo htmlspecialchars($formData['flag_contact_phone'] ?? $formData['coordinator_phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                         </div>
                                     </div>
 
-                                    <div style="flex:1;">
-                                        <label>懸掛位置</label>
-                                        <div style="padding:8px 10px; background:#fff; border:1px solid #e2e8f0; border-radius:4px;">中央走道</div>
-                                        <input type="hidden" id="flag_location" name="flag_location" value="中央走道">
+                                    <div style="display:flex; gap:15px; align-items:center; margin-bottom:15px; padding: 0 20px;">
+                                        <div>
+                                            <label>使用日期 <span style="color:red">*</span></label>
+                                            <div style="display:flex; gap:8px; align-items:center;">
+                                                <input type="date" id="flag_use_start" name="flag_use_start" class="form-control" readonly style="background:#fff;" value="<?php echo htmlspecialchars($formData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                                <span>至</span>
+                                                <input type="date" id="flag_use_end" name="flag_use_end" class="form-control" readonly style="background:#fff;" value="<?php echo htmlspecialchars($formData['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                            </div>
+                                            <div style="font-size:12px;color:#64748b;margin-top:6px;">說明：使用日期已自動帶入活動起訖時間，無法修改。</div>
+                                        </div>
                                     </div>
+
+                                    <div style="display:flex; gap:15px; align-items:center; margin-bottom:15px; padding: 0 20px 20px 20px;">
+                                        <div style="flex:1;">
+                                            <label>宣傳旗幟 <span style="color:red">*</span></label>
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <span>共</span>
+                                                <input type="number" name="flag_count" id="flag_count" class="form-control" min="1" max="20" step="1" style="width:100px;height:38px;" placeholder="最多20" value="<?php echo htmlspecialchars((string)($formData['flag_count'] ?? '1'), ENT_QUOTES, 'UTF-8'); ?>">
+                                                <span>支</span>
+                                            </div>
+                                        </div>
+                                        <div style="flex:1;">
+                                            <label>懸掛位置</label>
+                                            <div style="padding:8px 10px; background:#fff; border:1px solid #e2e8f0; border-radius:4px;">中央走道</div>
+                                            <input type="hidden" id="flag_location" name="flag_location" value="中央走道">
+                                        </div>
+                                    </div>
+
+                                    <label style="display: flex; align-items: flex-start; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; background: #eff6ff; padding: 15px 20px; border-top: 1px solid #cbd5e1; border-radius: 0 0 8px 8px;">
+                                        <input type="checkbox" name="flag_agreement" id="flag_agreement" value="1" <?php echo (isset($formData['flag_agreement']) && $formData['flag_agreement'] == '1') ? 'checked' : ''; ?> style="margin-top: 2px;" required>
+                                        <span style="color: #1e3a8a; line-height: 1.5; font-size: 14px;">本人為旗幟插立總負責人，已詳細閱讀並遵守以下各項注意事項，為維護校園安全與景觀，願無條件承擔所插旗幟所致之一切賠償責任，特此聲明。 <span style="color:red">*</span></span>
+                                    </label>
                                 </div>
 
-                                <!-- 單一同意勾選保留於下方（id=flag_agreement） -->
-                                
-                                <label style="display: flex; align-items: flex-start; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; background: #eff6ff; padding: 15px 20px; border-top: 1px solid #cbd5e1; border-radius: 0 0 8px 8px;">
-                                    <input type="checkbox" name="flag_agreement" id="flag_agreement" value="1" <?php echo (isset($formData['flag_agreement']) && $formData['flag_agreement'] == '1') ? 'checked' : ''; ?> style="margin-top: 2px;" required>
-                                    <span style="color: #1e3a8a; line-height: 1.5; font-size: 14px;">本人為旗幟插立總負責人，已詳細閱讀並遵守以下各項注意事項，為維護校園安全與景觀，願無條件承擔所插旗幟所致之一切賠償責任，特此聲明。 <span style="color:red">*</span></span>
-                                </label>
-                            </div>
+                                <!-- 👇 這裡幫你把遺失的【酒精申請表 HTML】補回來了 👇 -->
+                                <div id="alcoholDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:8px;">
+                                    <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
+                                        輔仁大學學生自治組織暨社團辦理提供酒精飲品活動須知
+                                    </div>
+                                    <div style="padding: 20px;">
+                                        <p style="color: #1e293b; font-size: 15px; margin-bottom: 15px; line-height: 1.6; font-weight: bold;">
+                                            關於本校學生社團活動具酒精飲品活動，為避免參與人員酒後行為脫序、危及自身或他人安全，或造成飲用人健康上之負擔，請確認以下事項皆已納入活動規劃，並遵守相關規範︰
+                                        </p>
+                                        
+                                        <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 25px;">
+                                            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; margin-left: -20px; font-weight: bold; color: #3b82f6;">
+                                                <input type="checkbox" id="alcohol_agree_all" onchange="toggleAllAlcoholAgreements(this)" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
+                                                <span style="font-size: 15px; line-height: 1.6;">同意全部</span>
+                                            </label>
+                                            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                                                <input type="checkbox" name="alcohol_agree_1" value="yes" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
+                                                <span style="font-size: 15px; line-height: 1.6;">辦理活動供應酒精性飲品者，需於活動申請時，於企劃書中敘明酒精飲品種類、準備數量、活動形式，連同活動申請表及本須知於活動前一個月送至課外活動指導組。</span>
+                                            </label>
+                                            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                                                <input type="checkbox" name="alcohol_agree_2" value="yes" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
+                                                <span style="font-size: 15px; line-height: 1.6;">為避免同學酒後行為脫序、危及自身或他人安全，或造成飲用人健康上之負擔，請於企劃書敘明失序行為因應措施。</span>
+                                            </label>
+                                            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                                                <input type="checkbox" name="alcohol_agree_3" value="yes" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
+                                                <span style="font-size: 15px; line-height: 1.6;">於活動期間主辦單位務必於活動現場明顯處所加註「未滿十八歲請勿購買/領取酒精性飲品」及「飲酒過量有害身體健康」與「禁止酒駕」之警語，提醒活動參與者避免飲酒過量。</span>
+                                            </label>
+                                            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                                                <input type="checkbox" name="alcohol_agree_4" value="yes" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
+                                                <span style="font-size: 15px; line-height: 1.6;">依「兒童及少年福利與權益保障法」規定，販賣、交付或供應酒或檳榔予兒童及少年者，處新臺幣一萬元以上十萬元以下罰鍰。主辦單位應要求活動中發送或販賣酒精飲料之人員核對領取/購買人身分證明文件，並禁止對未滿十八歲之人發送或販賣。</span>
+                                            </label>
+                                            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                                                <input type="checkbox" name="alcohol_agree_5" value="yes" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
+                                                <span style="font-size: 15px; line-height: 1.6;">主辦單位應提供《辦理提供酒精飲品活動理性飲酒同意書》 供有飲酒意願之參加人員簽署，並提醒參加人員有關警語所示事項(包含未滿十八歲請勿飲酒，於活動中飲用酒精飲料者不得駕駛汽車、機車、腳踏車等)。於活動結束翌日(遇例假日順延)將該同意書送至課外活動指導組備查</span>
+                                            </label>
+                                        </div>
+
+                                        <div style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 20px; align-items: center; background: #f8fafc; padding: 20px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                                            <div style="display: flex; align-items: center; gap: 8px;">
+                                                <label for="alcohol_coordinator" style="margin: 0; font-size: 15px; font-weight: bold; white-space: nowrap;">活動負責人</label>
+                                                <input type="text" id="alcohol_coordinator" name="alcohol_coordinator" placeholder="姓名" value="<?php echo htmlspecialchars($formData['alcohol_coordinator'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" style="width: 150px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
+                                            </div>
+                                            <div style="display: flex; align-items: center; gap: 8px;">
+                                                <label for="alcohol_president" style="margin: 0; font-size: 15px; font-weight: bold; white-space: nowrap;">社長</label>
+                                                <input type="text" id="alcohol_president" name="alcohol_president" placeholder="姓名" value="<?php echo htmlspecialchars($formData['alcohol_president'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" style="width: 150px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
+                                            </div>
+                                            <span style="font-size: 15px; color: #1e293b; font-weight: bold;">已知悉以上事項，願負一切責任。</span>
+                                        </div>
+                                        
+                                        <p style="color: #000; font-size: 15px; font-weight: bold; margin-bottom: 0; text-align: center;">
+                                            活動時所有接觸酒精飲品與會者請親自簽署《酒精飲品活動理性飲酒同意書》，請於活動結束翌日(遇例假日順延)送課指組備查。
+                                        </p>
+                                    </div>
+                                </div>
+                                <!-- 👆 酒精申請表 HTML 結束 👆 -->
 
                                 <script>
+                                // 👇 這裡幫你把遺失的【酒精驗證 Javascript】補回來了 👇
+                                function toggleAllAlcoholAgreements(source) {
+                                    const checkboxes = document.querySelectorAll('input[name^="alcohol_agree_"]');
+                                    checkboxes.forEach(function(cb) {
+                                        if(cb !== source) {
+                                            cb.checked = source.checked;
+                                        }
+                                    });
+                                }
+
+                                function isAlcoholEnabled() {
+                                    const checkedAlc = document.querySelector('input[name="has_alcohol"]');
+                                    return checkedAlc && checkedAlc.checked;
+                                }
+
+                                function toggleAlcoholDetails() {
+                                    const alcSection = document.getElementById('alcoholDetailsSection');
+                                    if (!alcSection) return;
+                                    const show = isAlcoholEnabled();
+                                    alcSection.style.display = show ? 'block' : 'none';
+                                    
+                                    alcSection.querySelectorAll('input').forEach(function(el) {
+                                        if (show) {
+                                            el.removeAttribute('disabled');
+                                        } else {
+                                            el.setAttribute('disabled', 'disabled');
+                                        }
+                                    });
+                                }
+
+                                function validateAlcoholForm() {
+                                    if (!isAlcoholEnabled()) return true;
+                                    
+                                    const checkboxes = document.querySelectorAll('#alcoholDetailsSection input[type="checkbox"]');
+                                    let allChecked = true;
+                                    checkboxes.forEach(function(cb) {
+                                        if (!cb.checked) allChecked = false;
+                                    });
+                                    
+                                    const coordinator = document.getElementById('alcohol_coordinator').value.trim();
+                                    const president = document.getElementById('alcohol_president').value.trim();
+                                    
+                                    if (!allChecked) {
+                                        alert('請先勾選並確認遵守「酒精飲品活動須知」的所有規範事項。');
+                                        return false;
+                                    }
+                                    
+                                    if (!coordinator) {
+                                        alert('請填寫「酒精飲品活動須知」的活動負責人。');
+                                        return false;
+                                    }
+                                    
+                                    if (!president) {
+                                        alert('請填寫「酒精飲品活動須知」的社長。');
+                                        return false;
+                                    }
+                                    
+                                    return true;
+                                }
+                                // 👆 酒精驗證 Javascript 結束 👆
+
                                 function isFlagEnabled() {
                                     const checkedFlag = document.querySelector('input[name="setup_flags"]:checked');
                                     return checkedFlag && checkedFlag.value === 'yes';
@@ -1789,7 +1902,6 @@ SQL;
                                             count++;
                                         }
                                     }
-
                                     return date;
                                 }
 
@@ -1811,7 +1923,6 @@ SQL;
                                     const show = isFlagEnabled();
                                     detailsSection.style.display = show ? 'block' : 'none';
 
-                                    // Enable or disable all controls in the flag section when showing/hiding.
                                     detailsSection.querySelectorAll('input, select, textarea').forEach(function (el) {
                                         if (show) {
                                             el.removeAttribute('disabled');
@@ -1885,12 +1996,11 @@ SQL;
                                         flagCount.value = 20;
                                     }
 
-                                    // Sync usage dates from main activity dates and lock them
                                     const bs = document.getElementById('borrow_start_date');
                                     const be = document.getElementById('borrow_end_date');
                                     const fus = document.getElementById('flag_use_start');
                                     const fue = document.getElementById('flag_use_end');
-                                    // Sync basic text fields from step1 into flag fields as well
+                                    
                                     const mapping = [
                                         ['organization_name', 'flag_organization_name'],
                                         ['activity_name', 'flag_activity_name'],
@@ -1907,19 +2017,16 @@ SQL;
                                     if (fus && fue && bs && be) {
                                         fus.value = bs.value || '';
                                         fue.value = be.value || '';
-                                        // set min for visual cue (even though fields are read-only)
                                         try {
                                             const min = getMinFlagDate();
                                             fus.setAttribute('min', min);
                                             fue.setAttribute('min', min);
                                         } catch (e) {}
 
-                                        // If the activity start is earlier than allowed minimum, warn user
                                         if (bs.value) {
                                             const minDate = new Date(getMinFlagDate());
                                             const startDate = new Date(bs.value);
                                             if (startDate < minDate) {
-                                                // show gentle alert and focus the activity start date for correction
                                                 alert('插立旗幟使用日期必須為 7 個工作天之後，請將活動開始日期調整至 ' + getMinFlagDate() + '（或更晚）。');
                                                 bs.focus();
                                             }
@@ -1953,7 +2060,24 @@ SQL;
                                         }
                                     });
 
-                                    // Auto-sync specific step-1 fields into the flag application fields
+                                    // 👇 綁定切換按鈕，勾選酒精時會跳出申請表 👇
+                                    ['has_alcohol', 'has_fire', 'has_sales'].forEach(function(name) {
+                                        const el = document.querySelector('input[name="' + name + '"]');
+                                        if (el) {
+                                            el.addEventListener('change', function() {
+                                                if (name === 'has_alcohol' && typeof toggleAlcoholDetails === 'function') {
+                                                    toggleAlcoholDetails();
+                                                }
+                                            });
+                                        }
+                                    });
+                                    
+                                    // 確保重整網頁時如果有勾選，也能正確顯示
+                                    if (typeof toggleAlcoholDetails === 'function') {
+                                        toggleAlcoholDetails();
+                                    }
+                                    // 👆 綁定結束 👆
+
                                     (function(){
                                         const pairs = [
                                             ['organization_name', 'flag_organization_name'],
@@ -1965,9 +2089,7 @@ SQL;
                                             const src = document.getElementById(pair[0]);
                                             const dst = document.getElementById(pair[1]);
                                             if (!src || !dst) return;
-                                            // initial copy
                                             dst.value = src.value || dst.value || '';
-                                            // update on input/change
                                             src.addEventListener('input', function(){ dst.value = src.value; });
                                             src.addEventListener('change', function(){ dst.value = src.value; });
                                         });
@@ -1979,7 +2101,6 @@ SQL;
                                                 this.value = 20;
                                                 alert('宣傳旗幟最多只能選 20 支');
                                             }
-
                                             if (this.value !== '' && Number(this.value) < 1) {
                                                 this.value = 1;
                                             }
@@ -1989,15 +2110,7 @@ SQL;
                                     toggleFlagDetails();
                                     syncFlagForm();
 
-                                    // 註解掉避免重複綁定 saveDraft
-                                    // const saveBtns = document.querySelectorAll('.saveDraftBtn');
-                                    // saveBtns.forEach(function (btn) {
-                                    //    ...
-                                    // });
-
-                                    // 草稿箱
                                     const draftBtns = document.querySelectorAll('.openDraftBoxBtn');
-
                                     draftBtns.forEach(function (btn) {
                                         btn.addEventListener('click', function () {
                                             window.location.href = 'drafts.php';
@@ -2008,7 +2121,8 @@ SQL;
 
                                 <div class="step-actions">
                                     <button type="button" class="btn btn-secondary" onclick="goToStep(1)"> ⬅ 回上一步</button>
-                                    <button type="button" class="btn btn-primary btn-next" onclick="goToStep(3)">下一步 ➔ 挑選器材與場地</button>
+                                    <!-- 👇 這裡也幫你把進入第三步前的檢查條件加回來了 👇 -->
+                                    <button type="button" class="btn btn-primary btn-next" onclick="if(validateAlcoholForm()) { goToStep(3); }">下一步 ➔ 挑選器材與場地</button>
                                 </div>
 
                                 <div class="draft-action-row">
@@ -2020,8 +2134,7 @@ SQL;
                                     </button>
                                 </div>
                                 <div id="submitDebugMsg" class="draft-message"></div>
-                            </div>
-                            <!-- ========== 步驟 3 內容區 ========== -->
+                            </div>                            <!-- ========== 步驟 3 內容區 ========== -->
                             <div class="step-content" id="step-content-3">
                                 <h3 class="step-title" style="margin-bottom: 10px;">第三步：器材與場地</h3>
                                 
@@ -3687,10 +3800,8 @@ function getMinDateByParticipantCount(countValue) {
         d.setDate(d.getDate() + 30);
         return d;
     } else {
-        // 一般情況：7 天後 (日曆天)
-        let d = new Date();
-        d.setDate(d.getDate() + 7);
-        return d;
+        // 一般情況：7 個工作天後
+        return getWorkingDaysFromToday(7);
     }
 }
 
@@ -3907,7 +4018,9 @@ document.addEventListener('DOMContentLoaded', function () {
         if (typeof window.toggleFlagDetails === 'function') {
             window.toggleFlagDetails();
         }
-
+if (typeof window.toggleAlcoholDetails === 'function') {
+            window.toggleAlcoholDetails();
+        }
         if (typeof window.syncFlagForm === 'function') {
             window.syncFlagForm();
         }
@@ -4263,10 +4376,14 @@ document.addEventListener('DOMContentLoaded', function () {
             });
         });
 
-        ['has_alcohol', 'has_fire', 'has_sales'].forEach(function (key) {
+['has_alcohol', 'has_fire', 'has_sales'].forEach(function (key) {
             document.querySelectorAll('#' + key + ', input[name="' + key + '"]').forEach(function (el) {
                 el.addEventListener('change', function () {
                     window.validateActivityDateRange(true);
+                    // 補回觸發酒精表單的靈魂！
+                    if (key === 'has_alcohol' && typeof toggleAlcoholDetails === 'function') {
+                        toggleAlcoholDetails();
+                    }
                 });
 
                 el.addEventListener('click', function () {
@@ -4276,6 +4393,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 });
             });
         });
+
+        // 確保網頁重整、載入草稿或切換上一步時，如果酒精已勾選，能正確把表單開起來
+        if (typeof toggleAlcoholDetails === 'function') {
+            toggleAlcoholDetails();
+        }
 
         const originalGoToStep = window.goToStep;
 

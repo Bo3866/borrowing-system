@@ -1867,13 +1867,200 @@ SQL;
                                         輔仁大學學生活動上火確認表(火舞)
                                     </div>
                                     <div style="padding: 20px;">
-                                        <!-- 這裡先預留填寫區塊，等待後續需求加上具體內容 -->
-                                        <p style="color: #64748b; font-size: 15px; margin-bottom: 0;">
-                                            (內部表單欄位待後續確認建置)
-                                        </p>
+                                        <div class="form-group" style="margin-bottom: 15px;">
+                                            <label for="fire_activity_name">活動名稱 <span style="color:red">*</span></label>
+                                            <input type="text" id="fire_activity_name" name="fire_activity_name" class="form-control" placeholder="請輸入活動名稱" value="<?php echo htmlspecialchars($formData['fire_activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                        </div>
+
+                                        <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
+                                            <div class="form-group" style="flex: 1; min-width: 150px;">
+                                                <label for="fire_date">日期 (限30天後) <span style="color:red">*</span></label>
+                                                <input type="date" id="fire_date" name="fire_date" class="form-control" min="<?php echo date('Y-m-d', strtotime('+30 days')); ?>" value="<?php echo htmlspecialchars($formData['fire_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                            </div>
+                                            <div class="form-group" style="flex: 1; min-width: 150px;">
+                                                <label for="fire_location">地點 <span style="color:red">*</span></label>
+                                                <input type="text" id="fire_location" name="fire_location" class="form-control" placeholder="請輸入地點" value="<?php echo htmlspecialchars($formData['fire_location'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                            </div>
+                                        </div>
+
+                                        <div class="form-group" style="margin-bottom: 15px;">
+                                            <label>時間 <span style="color:red">*</span></label>
+                                            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                                                <?php
+                                                $curFsh = $formData['fire_start_time_h'] ?? '';
+                                                $curFsm = $formData['fire_start_time_m'] ?? '';
+                                                $curFeh = $formData['fire_end_time_h'] ?? '';
+                                                $curFem = $formData['fire_end_time_m'] ?? '';
+                                                ?>
+                                                <select name="fire_start_time_h" class="form-control" style="padding: 8px; width: 80px;">
+                                                    <option value="">選擇</option>
+                                                    <?php for($h=7; $h<=22; $h++) { ?>
+                                                        <option value="<?php echo $h; ?>" <?php echo ($curFsh !== '' && (int)$curFsh === $h) ? 'selected' : ''; ?>><?php echo $h; ?></option>
+                                                    <?php } ?>
+                                                </select>
+                                                <span>時</span>
+                                                <select name="fire_start_time_m" class="form-control" style="padding: 8px; width: 80px;">
+                                                    <option value="">選擇</option>
+                                                    <?php foreach(['00','10','20','30','40','50'] as $m) { ?>
+                                                        <option value="<?php echo $m; ?>" <?php echo ($curFsm !== '' && $curFsm === $m) ? 'selected' : ''; ?>><?php echo $m; ?></option>
+                                                    <?php } ?>
+                                                </select>
+                                                <span>分</span>
+                                                
+                                                <span style="margin: 0 10px;">～</span>
+                                                
+                                                <select name="fire_end_time_h" class="form-control" style="padding: 8px; width: 80px;">
+                                                    <option value="">選擇</option>
+                                                    <?php for($h=7; $h<=22; $h++) { ?>
+                                                        <option value="<?php echo $h; ?>" <?php echo ($curFeh !== '' && (int)$curFeh === $h) ? 'selected' : ''; ?>><?php echo $h; ?></option>
+                                                    <?php } ?>
+                                                </select>
+                                                <span>時</span>
+                                                <select name="fire_end_time_m" class="form-control" style="padding: 8px; width: 80px;">
+                                                    <option value="">選擇</option>
+                                                    <?php foreach(['00','10','20','30','40','50'] as $m) { ?>
+                                                        <option value="<?php echo $m; ?>" <?php echo ($curFem !== '' && $curFem === $m) ? 'selected' : ''; ?>><?php echo $m; ?></option>
+                                                    <?php } ?>
+                                                </select>
+                                                <span>分</span>
+                                            </div>
+                                        </div>
+
+                                        <!-- 👇 這裡新增各種人員的表格 👇 -->
+                                        <hr style="margin: 30px 0; border: 0; border-top: 1px solid #e2e8f0;">
+                                        <h4 style="margin: 0 0 15px 0; color: #1e40af; font-size: 16px; font-weight: bold;">活動相關人員名單</h4>
+                                        <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">請點擊「＋新增」按鈕來增加列數，您也可以點擊「刪除」移除列。</p>
+
+                                        <style>
+                                            .fire-staff-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; font-size: 14px; }
+                                            .fire-staff-table th, .fire-staff-table td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; }
+                                            .fire-staff-table th { background: #f8fafc; font-weight: 600; color: #334155; }
+                                            .fire-staff-title { font-size: 15px; font-weight: bold; margin: 0 0 8px 0; color: #334155; }
+                                            .fire-staff-wrapper { margin-bottom: 25px; padding: 15px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
+                                            .btn-add-staff { background: #3b82f6; color: white; border: none; padding: 5px 12px; border-radius: 5px; cursor: pointer; font-size: 13px; transition: 0.2s; }
+                                            .btn-add-staff:hover { background: #2563eb; }
+                                            .btn-del-staff { color: #ef4444; background: none; border: none; cursor: pointer; font-size: 13px; padding: 4px; transition: 0.2s; }
+                                            .btn-del-staff:hover { color: #b91c1c; background: rgba(239, 68, 68, 0.1); border-radius: 4px; }
+                                        </style>
+
+                                        <div class="fire-staff-wrapper">
+                                            <h5 class="fire-staff-title">表演人員</h5>
+                                            <table class="fire-staff-table" id="table_staff_performer">
+                                                <thead><tr><th>姓名</th><th style="width: 70px; text-align: center;">操作</th></tr></thead>
+                                                <tbody>
+                                                    <tr>
+                                                        <td><input type="text" name="fire_staff_performer[]" class="form-control" placeholder="請輸入姓名"></td>
+                                                        <td style="text-align: center;"><button type="button" class="btn-del-staff" onclick="removeFireStaffRow(this)">刪除</button></td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                            <button type="button" class="btn-add-staff" onclick="addFireStaffRow('table_staff_performer', 'fire_staff_performer[]')">＋ 新增人員</button>
+                                        </div>
+
+                                        <div class="fire-staff-wrapper">
+                                            <h5 class="fire-staff-title">上油人員 <span style="color: #ef4444; font-weight: normal; font-size: 13px;">(至少一人)</span></h5>
+                                            <table class="fire-staff-table" id="table_staff_oiler">
+                                                <thead><tr><th>姓名</th><th style="width: 70px; text-align: center;">操作</th></tr></thead>
+                                                <tbody>
+                                                    <tr>
+                                                        <td><input type="text" name="fire_staff_oiler[]" class="form-control" placeholder="請輸入姓名"></td>
+                                                        <td style="text-align: center;"><button type="button" class="btn-del-staff" onclick="removeFireStaffRow(this)">刪除</button></td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                            <button type="button" class="btn-add-staff" onclick="addFireStaffRow('table_staff_oiler', 'fire_staff_oiler[]')">＋ 新增人員</button>
+                                        </div>
+
+                                        <div class="fire-staff-wrapper">
+                                            <h5 class="fire-staff-title">滅火人員 <span style="color: #ef4444; font-weight: normal; font-size: 13px;">(至少一人)</span></h5>
+                                            <table class="fire-staff-table" id="table_staff_extinguisher">
+                                                <thead><tr><th>姓名</th><th style="width: 70px; text-align: center;">操作</th></tr></thead>
+                                                <tbody>
+                                                    <tr>
+                                                        <td><input type="text" name="fire_staff_extinguisher[]" class="form-control" placeholder="請輸入姓名"></td>
+                                                        <td style="text-align: center;"><button type="button" class="btn-del-staff" onclick="removeFireStaffRow(this)">刪除</button></td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                            <button type="button" class="btn-add-staff" onclick="addFireStaffRow('table_staff_extinguisher', 'fire_staff_extinguisher[]')">＋ 新增人員</button>
+                                        </div>
+
+                                        <div class="fire-staff-wrapper">
+                                            <h5 class="fire-staff-title">維安人員 <span style="color: #ef4444; font-weight: normal; font-size: 13px;">(至少三人)</span></h5>
+                                            <table class="fire-staff-table" id="table_staff_security">
+                                                <thead><tr><th>姓名</th><th style="width: 70px; text-align: center;">操作</th></tr></thead>
+                                                <tbody>
+                                                    <tr>
+                                                        <td><input type="text" name="fire_staff_security[]" class="form-control" placeholder="請輸入姓名"></td>
+                                                        <td style="text-align: center;"><button type="button" class="btn-del-staff" onclick="removeFireStaffRow(this)">刪除</button></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td><input type="text" name="fire_staff_security[]" class="form-control" placeholder="請輸入姓名"></td>
+                                                        <td style="text-align: center;"><button type="button" class="btn-del-staff" onclick="removeFireStaffRow(this)">刪除</button></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td><input type="text" name="fire_staff_security[]" class="form-control" placeholder="請輸入姓名"></td>
+                                                        <td style="text-align: center;"><button type="button" class="btn-del-staff" onclick="removeFireStaffRow(this)">刪除</button></td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                            <button type="button" class="btn-add-staff" onclick="addFireStaffRow('table_staff_security', 'fire_staff_security[]')">＋ 新增人員</button>
+                                        </div>
+
+                                        <div class="fire-staff-wrapper">
+                                            <h5 class="fire-staff-title">緊急狀況處理人員 <span style="color: #ef4444; font-weight: normal; font-size: 13px;">(至少一人)</span></h5>
+                                            <table class="fire-staff-table" id="table_staff_emergency">
+                                                <thead><tr><th>姓名</th><th style="width: 70px; text-align: center;">操作</th></tr></thead>
+                                                <tbody>
+                                                    <tr>
+                                                        <td><input type="text" name="fire_staff_emergency[]" class="form-control" placeholder="請輸入姓名"></td>
+                                                        <td style="text-align: center;"><button type="button" class="btn-del-staff" onclick="removeFireStaffRow(this)">刪除</button></td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                            <button type="button" class="btn-add-staff" onclick="addFireStaffRow('table_staff_emergency', 'fire_staff_emergency[]')">＋ 新增人員</button>
+                                        </div>
+
+                                        <div class="fire-staff-wrapper">
+                                            <h5 class="fire-staff-title">醫療人員 <span style="color: #ef4444; font-weight: normal; font-size: 13px;">(至少一人)</span></h5>
+                                            <table class="fire-staff-table" id="table_staff_medical">
+                                                <thead><tr><th>姓名</th><th style="width: 70px; text-align: center;">操作</th></tr></thead>
+                                                <tbody>
+                                                    <tr>
+                                                        <td><input type="text" name="fire_staff_medical[]" class="form-control" placeholder="請輸入姓名"></td>
+                                                        <td style="text-align: center;"><button type="button" class="btn-del-staff" onclick="removeFireStaffRow(this)">刪除</button></td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                            <button type="button" class="btn-add-staff" onclick="addFireStaffRow('table_staff_medical', 'fire_staff_medical[]')">＋ 新增人員</button>
+                                        </div>
+                                        <!-- 👆 新增各種人員的表格結束 👆 -->
+                                        
                                     </div>
                                 </div>
                                 <!-- 👆 明火申請表 HTML 結束 👆 -->
+
+                                <script>
+                                function addFireStaffRow(tableId, inputName) {
+                                    const tbody = document.getElementById(tableId).querySelector('tbody');
+                                    const tr = document.createElement('tr');
+                                    tr.innerHTML = `
+                                        <td><input type="text" name="${inputName}" class="form-control" placeholder="請輸入姓名"></td>
+                                        <td style="text-align: center;"><button type="button" class="btn-del-staff" onclick="removeFireStaffRow(this)">刪除</button></td>
+                                    `;
+                                    tbody.appendChild(tr);
+                                }
+                                function removeFireStaffRow(btn) {
+                                    const tr = btn.closest('tr');
+                                    const tbody = tr.parentNode;
+                                    // 防呆：如果刪到剩最後一筆，只清空內容不刪除整列
+                                    if (tbody.querySelectorAll('tr').length <= 1) {
+                                        tr.querySelector('input').value = '';
+                                        return;
+                                    }
+                                    tr.remove();
+                                }
+                                </script>
 
                                 <script>
                                 // 👇 這裡幫你把遺失的【酒精驗證 Javascript】補回來了 👇

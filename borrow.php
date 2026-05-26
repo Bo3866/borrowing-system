@@ -827,7 +827,7 @@ SQL;
                     'alcohol_coordinator' => ['type' => 's', 'value' => $formData['alcohol_coordinator'] ?? ''],
                     'alcohol_president' => ['type' => 's', 'value' => $formData['alcohol_president'] ?? ''],
                     'fire_activity_name' => ['type' => 's', 'value' => $formData['fire_activity_name'] ?? ''],
-                    'fire_date' => ['type' => 's', 'value' => $formData['fire_date'] ?? ''],
+                    'fire_date' => ['type' => 's', 'value' => (isset($formData['fire_date']) && $formData['fire_date'] !== '') ? $formData['fire_date'] : null],
                     'fire_time_start' => ['type' => 's', 'value' => $formData['fire_time_start'] ?? ''],
                     'fire_time_end' => ['type' => 's', 'value' => $formData['fire_time_end'] ?? ''],
                     'fire_location' => ['type' => 's', 'value' => $formData['fire_location'] ?? ''],

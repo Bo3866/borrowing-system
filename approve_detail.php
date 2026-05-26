@@ -142,6 +142,7 @@ if ($spStmt) {
                     <input type="text" value="<?php echo safe_html($row['activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" disabled>
                 </div>
 
+
                 <div>
                     <label>參與人數</label>
                     <input type="text" value="<?php echo safe_html($row['participant_count'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" disabled>
@@ -196,6 +197,112 @@ if ($spStmt) {
                 <?php
                     }
                 }
+                ?>
+
+                <?php
+                // 顯示明火相關欄位（改為單欄位 label + input 格式，並確保人員至少出現一列）
+                $hasFireCol = in_array('has_fire', $cols, true) ? 'has_fire' : null;
+                // 若 has_fire 標記為 yes，或任一 fire_* 欄位有內容，皆顯示明火區塊
+                $anyFireField = false;
+                $fireFieldCandidates = ['fire_activity_name','fire_activity','fire_date','fire_day','fire_time_start','fire_time_end','fire_time','fire_start_time','fire_end_time','fire_location','fire_staff_json','fire_performers','fire_oilers','fire_extinguishers','fire_security','fire_emergency','fire_medical'];
+                foreach ($fireFieldCandidates as $f) {
+                    if (in_array($f, $cols, true) && trim((string)($row[$f] ?? '')) !== '') { $anyFireField = true; break; }
+                }
+                if (( $hasFireCol && is_yes($row[$hasFireCol] ?? '') ) || $anyFireField) {
+                    $fireActivity = trim((string)($row['fire_activity_name'] ?? $row['fire_activity'] ?? ''));
+                    $fireDate = trim((string)($row['fire_date'] ?? $row['fire_day'] ?? ''));
+                    $fireTimeStartRaw = trim((string)($row['fire_time_start'] ?? $row['fire_time'] ?? $row['fire_start_time'] ?? ''));
+                    $fireTimeEndRaw = trim((string)($row['fire_time_end'] ?? $row['fire_end_time'] ?? ''));
+                    $fireLocation = trim((string)($row['fire_location'] ?? ''));
+
+                    // 格式化時間，去掉秒（若為 HH:MM:SS）
+                    $fmtTime = function($t) {
+                        if ($t === '') return '';
+                        if (preg_match('/^(\d{2}:\d{2}):\d{2}$/', $t, $m)) return $m[1];
+                        return $t;
+                    };
+                    $fireTimeStart = $fmtTime($fireTimeStartRaw);
+                    $fireTimeEnd = $fmtTime($fireTimeEndRaw);
+
+                    // 取得人員資料：優先取 fire_staff_json，否則個別欄位
+                    $fireStaffLabels = [
+                        'fire_performers' => '表演人員',
+                        'fire_oilers' => '上油人員',
+                        'fire_extinguishers' => '滅火人員',
+                        'fire_security' => '維安人員',
+                        'fire_emergency' => '緊急狀況處理人員',
+                        'fire_medical' => '醫療人員'
+                    ];
+
+                    $staffData = [];
+                    if (in_array('fire_staff_json', $cols, true) && trim((string)($row['fire_staff_json'] ?? '')) !== '') {
+                        $decoded = json_decode($row['fire_staff_json'], true);
+                        if (is_array($decoded)) {
+                            // 預期若為關聯陣列，嘗試對應 key；若為平面陣列，放入 performers
+                            $isAssoc = array_values($decoded) !== $decoded;
+                            if ($isAssoc) {
+                                foreach ($fireStaffLabels as $k => $_) {
+                                    $staffData[$k] = is_array($decoded[$k] ?? null) ? $decoded[$k] : (array)($decoded[$k] ?? []);
+                                }
+                            } else {
+                                $staffData['fire_performers'] = $decoded;
+                                foreach ($fireStaffLabels as $k => $_) if (!isset($staffData[$k])) $staffData[$k] = [];
+                            }
+                        }
+                    } else {
+                        foreach (array_keys($fireStaffLabels) as $k) {
+                            if (in_array($k, $cols, true) && trim((string)($row[$k] ?? '')) !== '') {
+                                $val = $row[$k];
+                                $decoded = json_decode($val, true);
+                                if (is_array($decoded)) {
+                                    $staffData[$k] = $decoded;
+                                } else {
+                                    $tmp = preg_split('/[\r\n,;]+/', (string)$val);
+                                    $staffData[$k] = array_values(array_filter(array_map('trim', $tmp), function($v){ return $v !== ''; }));
+                                }
+                            } else {
+                                // 欄位存在但空，或欄位不存在，先當成空陣列，之後至少會顯示一列空白輸入
+                                $staffData[$k] = [];
+                            }
+                        }
+                    }
+
+                ?>
+                <div>
+                    <label>明火活動名稱</label>
+                    <input type="text" value="<?php echo safe_html($fireActivity, ENT_QUOTES, 'UTF-8'); ?>" disabled>
+                </div>
+                <div>
+                    <label>明火日期</label>
+                    <input type="text" value="<?php echo safe_html($fireDate, ENT_QUOTES, 'UTF-8'); ?>" disabled>
+                </div>
+                <div>
+                    <label>活動時間</label>
+                    <input type="text" value="<?php echo safe_html(($fireTimeStart ?: '') . ($fireTimeStart && $fireTimeEnd ? ' ~ ' : '') . ($fireTimeEnd ?: ''), ENT_QUOTES, 'UTF-8'); ?>" disabled>
+                </div>
+                <div style="grid-column:1/3;">
+                    <label>活動地點</label>
+                    <input type="text" value="<?php echo safe_html($fireLocation, ENT_QUOTES, 'UTF-8'); ?>" disabled>
+                </div>
+
+                <?php
+                    // 顯示人員群組：即使為空，也至少顯示一個空輸入框
+                    foreach ($fireStaffLabels as $key => $label) {
+                        // 若資料表完全沒有這個欄位，也可能是我們仍要顯示空欄位？只在欄位存在或 fire_staff_json 存在時顯示
+                        if (!in_array($key, $cols, true) && !in_array('fire_staff_json', $cols, true)) continue;
+                        $list = $staffData[$key] ?? [];
+                        if (!is_array($list)) $list = [];
+                        if (empty($list)) $list = [''];
+                ?>
+                    <div style="grid-column:1/3;margin-top:0.5rem;padding:0.5rem;border-radius:6px;background:#fafbfd;border:1px solid #eef6ff;">
+                        <label class="meta-label"><?php echo safe_html($label, ENT_QUOTES, 'UTF-8'); ?></label>
+                        <?php foreach ($list as $p) { ?>
+                            <div style="margin:6px 0;"><input type="text" value="<?php echo safe_html($p, ENT_QUOTES, 'UTF-8'); ?>" disabled style="width:40%;"></div>
+                        <?php } ?>
+                    </div>
+                <?php } // end foreach staff groups ?>
+                <?php
+                } // end if has_fire
                 ?>
 
                 <div>

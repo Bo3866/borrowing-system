@@ -327,21 +327,78 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['alcohol_president'] = trim((string)($_POST['alcohol_president'] ?? ''));
 
     // 明火表單 JSON 解析
-    $formData['fire_activity_name'] = trim((string)($_POST['fire_activity_name'] ?? ''));
+$formData['fire_activity_name'] = trim((string)($_POST['fire_activity_name'] ?? ''));
     $formData['fire_date'] = trim((string)($_POST['fire_date'] ?? ''));
-    $formData['fire_time_start'] = trim((string)($_POST['fire_time_start'] ?? ''));
-    $formData['fire_time_end'] = trim((string)($_POST['fire_time_end'] ?? ''));
     $formData['fire_location'] = trim((string)($_POST['fire_location'] ?? ''));
-    
-    foreach (['fire_performers', 'fire_oilers', 'fire_extinguishers', 'fire_security', 'fire_emergency', 'fire_medical'] as $key) {
-        if (isset($_POST[$key]) && is_array($_POST[$key])) {
-            $vals = array_filter(array_map('trim', $_POST[$key]), function($v) { return $v !== ''; });
-            $formData[$key] = json_encode(array_values($vals), JSON_UNESCAPED_UNICODE);
-        } else {
-            $formData[$key] = '[]';
-        }
-    }
 
+$formData['fire_date'] = !empty($_POST['fire_date']) ? trim((string)$_POST['fire_date']) : null;
+
+    $fsh = $_POST['fire_start_time_h'] ?? '';
+    $fsm = $_POST['fire_start_time_m'] ?? '';
+    $formData['fire_start_time'] = ($fsh !== '' && $fsm !== '') ? sprintf('%02d:%02d:00', $fsh, $fsm) : null;
+
+    $feh = $_POST['fire_end_time_h'] ?? '';
+    $fem = $_POST['fire_end_time_m'] ?? '';
+    $formData['fire_end_time'] = ($feh !== '' && $fem !== '') ? sprintf('%02d:%02d:00', $feh, $fem) : null;
+
+    $formData['fire_start_time_h'] = $fsh;
+    $formData['fire_start_time_m'] = $fsm;
+    $formData['fire_end_time_h'] = $feh;
+    $formData['fire_end_time_m'] = $fem;
+
+    // 將六種人員合併成一個 Array 再轉 JSON
+    // 支援多種前端送出格式：陣列、JSON 字串、或逗號/換行分隔字串
+    $parseStaffField = function($input) {
+        if (is_array($input)) {
+            $vals = array_filter(array_map('trim', $input), function($v) { return $v !== ''; });
+            return array_values($vals);
+        }
+        if (is_string($input)) {
+            $s = trim($input);
+            if ($s === '') {
+                return [];
+            }
+            $decoded = json_decode($s, true);
+            if (is_array($decoded)) {
+                $vals = array_filter(array_map('trim', $decoded), function($v) { return $v !== ''; });
+                return array_values($vals);
+            }
+            $parts = preg_split('/[,\n\r]+/', $s);
+            $vals = array_filter(array_map('trim', $parts), function($v) { return $v !== ''; });
+            return array_values($vals);
+        }
+        return [];
+    };
+
+    $staffData = [];
+    $fieldMap = [
+        'fire_performers' => 'fire_staff_performer',
+        'fire_oilers' => 'fire_staff_oiler',
+        'fire_extinguishers' => 'fire_staff_extinguisher',
+        'fire_security' => 'fire_staff_security',
+        'fire_emergency' => 'fire_staff_emergency',
+        'fire_medical' => 'fire_staff_medical',
+    ];
+    foreach (array_keys($fieldMap) as $key) {
+        $alt = $fieldMap[$key];
+        $value = null;
+        if (isset($_POST[$key])) {
+            $value = $_POST[$key];
+        } elseif (isset($_POST[$alt])) {
+            $value = $_POST[$alt];
+        }
+        $staffData[$key] = $parseStaffField($value);
+    }
+    $formData['fire_staff_json'] = json_encode($staffData, JSON_UNESCAPED_UNICODE);
+
+    // Also populate individual longtext columns from the staff arrays
+    $formData['fire_performers'] = !empty($staffData['fire_performers']) ? implode("\n", $staffData['fire_performers']) : null;
+    $formData['fire_oilers'] = !empty($staffData['fire_oilers']) ? implode("\n", $staffData['fire_oilers']) : null;
+    $formData['fire_extinguishers'] = !empty($staffData['fire_extinguishers']) ? implode("\n", $staffData['fire_extinguishers']) : null;
+    $formData['fire_security'] = !empty($staffData['fire_security']) ? implode("\n", $staffData['fire_security']) : null;
+    $formData['fire_emergency'] = !empty($staffData['fire_emergency']) ? implode("\n", $staffData['fire_emergency']) : null;
+    $formData['fire_medical'] = !empty($staffData['fire_medical']) ? implode("\n", $staffData['fire_medical']) : null;
+    @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " STAFF PARSE: " . json_encode(['staffData' => $staffData, 'fire_performers' => $formData['fire_performers'], 'fire_oilers' => $formData['fire_oilers'], 'fire_extinguishers' => $formData['fire_extinguishers'], 'fire_security' => $formData['fire_security'], 'fire_emergency' => $formData['fire_emergency'], 'fire_medical' => $formData['fire_medical']], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND | LOCK_EX);
     $cartEquipments = [];
     $cartSpaceId = null;
 
@@ -735,17 +792,12 @@ SQL;
                     'proposal_file' => "VARCHAR(255) NULL COMMENT '企劃書路徑'",
                     'proposal_uploaded_at' => "DATETIME NULL COMMENT '企劃書上傳時間'",
                     'certificate_id' => "BIGINT UNSIGNED NULL COMMENT '證照編號'",
-                    'fire_activity_name' => "VARCHAR(255) NULL COMMENT '明火活動名稱'",
-                    'fire_date' => "DATE NULL COMMENT '明火日期'",
-                    'fire_time_start' => "VARCHAR(10) NULL COMMENT '明火開始時間'",
-                    'fire_time_end' => "VARCHAR(10) NULL COMMENT '明火結束時間'",
-                    'fire_location' => "VARCHAR(255) NULL COMMENT '明火地點'",
-                    'fire_performers' => "LONGTEXT NULL COMMENT '明火表演人員'",
-                    'fire_oilers' => "LONGTEXT NULL COMMENT '明火上油人員(>=1)'",
-                    'fire_extinguishers' => "LONGTEXT NULL COMMENT '明火滅火人員(>=1)'",
-                    'fire_security' => "LONGTEXT NULL COMMENT '明火維安人員(>=3)'",
-                    'fire_emergency' => "LONGTEXT NULL COMMENT '明火緊急狀況處理人員(>=1)'",
-                    'fire_medical' => "LONGTEXT NULL COMMENT '明火醫療人員(>=1)'"
+'fire_activity_name' => "VARCHAR(255) NULL COMMENT '明火活動名稱'",
+    'fire_date' => "DATE NULL COMMENT '明火日期'",
+    'fire_start_time' => "TIME NULL COMMENT '明火開始時間'",
+    'fire_end_time' => "TIME NULL COMMENT '明火結束時間'",
+    'fire_location' => "VARCHAR(255) NULL COMMENT '明火地點'",
+    'fire_staff_json' => "JSON NULL COMMENT '明火工作人員清單'"
                 ];
 
                 foreach ($requiredReservationColumns as $columnName => $columnDefinition) {
@@ -826,17 +878,19 @@ SQL;
                     'has_sales' => ['type' => 's', 'value' => $formData['has_sales']],
                     'alcohol_coordinator' => ['type' => 's', 'value' => $formData['alcohol_coordinator'] ?? ''],
                     'alcohol_president' => ['type' => 's', 'value' => $formData['alcohol_president'] ?? ''],
-                    'fire_activity_name' => ['type' => 's', 'value' => $formData['fire_activity_name'] ?? ''],
-                    'fire_date' => ['type' => 's', 'value' => (isset($formData['fire_date']) && $formData['fire_date'] !== '') ? $formData['fire_date'] : null],
-                    'fire_time_start' => ['type' => 's', 'value' => $formData['fire_time_start'] ?? ''],
-                    'fire_time_end' => ['type' => 's', 'value' => $formData['fire_time_end'] ?? ''],
-                    'fire_location' => ['type' => 's', 'value' => $formData['fire_location'] ?? ''],
-                    'fire_performers' => ['type' => 's', 'value' => $formData['fire_performers'] ?? '[]'],
-                    'fire_oilers' => ['type' => 's', 'value' => $formData['fire_oilers'] ?? '[]'],
-                    'fire_extinguishers' => ['type' => 's', 'value' => $formData['fire_extinguishers'] ?? '[]'],
-                    'fire_security' => ['type' => 's', 'value' => $formData['fire_security'] ?? '[]'],
-                    'fire_emergency' => ['type' => 's', 'value' => $formData['fire_emergency'] ?? '[]'],
-                    'fire_medical' => ['type' => 's', 'value' => $formData['fire_medical'] ?? '[]']
+                    'fire_activity_name' => ['type' => 's', 'value' => $formData['fire_activity_name'] !== '' ? $formData['fire_activity_name'] : null],
+                    'fire_date' => ['type' => 's', 'value' => $formData['fire_date']],
+                    'fire_start_time' => ['type' => 's', 'value' => $formData['fire_start_time']],
+                    'fire_end_time' => ['type' => 's', 'value' => $formData['fire_end_time']],
+                    'fire_location' => ['type' => 's', 'value' => $formData['fire_location'] !== '' ? $formData['fire_location'] : null],
+                    // Individual longtext columns for backward compatibility
+                    'fire_performers' => ['type' => 's', 'value' => $formData['fire_performers']],
+                    'fire_oilers' => ['type' => 's', 'value' => $formData['fire_oilers']],
+                    'fire_extinguishers' => ['type' => 's', 'value' => $formData['fire_extinguishers']],
+                    'fire_security' => ['type' => 's', 'value' => $formData['fire_security']],
+                    'fire_emergency' => ['type' => 's', 'value' => $formData['fire_emergency']],
+                    'fire_medical' => ['type' => 's', 'value' => $formData['fire_medical']],
+                    'fire_staff_json' => ['type' => 's', 'value' => $formData['fire_staff_json']]
                 ];
 
                 foreach ($optionalReservationValues as $columnName => $config) {
@@ -2074,8 +2128,9 @@ SQL;
                                 }
 
                                 function isAlcoholEnabled() {
-                                    const checkedAlc = document.querySelector('input[name="has_alcohol"]');
-                                    return checkedAlc && checkedAlc.checked;
+// 改為直接抓取 checkbox 的 checked 屬性
+    const checkbox = document.querySelector('input[name="has_alcohol"]');
+    return checkbox ? checkbox.checked : false;
                                 }
 
                                 function toggleAlcoholDetails() {
@@ -2126,8 +2181,8 @@ SQL;
 
                                 // 👇 明火驗證 Javascript 開始 👇
                                 function isFireEnabled() {
-                                    const checkedFire = document.querySelector('input[name="has_fire"]');
-                                    return checkedFire && checkedFire.checked;
+const checkbox = document.querySelector('input[name="has_fire"]');
+    return checkbox ? checkbox.checked : false;
                                 }
 
                                 function toggleFireDetails() {
@@ -2776,7 +2831,15 @@ function startApplication() {
     // 啟用草稿管理模組
     initializeDraftManagement();
 }
-
+// 新增這個函數，確保頁面載入時檢查 radio/checkbox 狀態
+function initializeFormVisibility() {
+    // 延遲一下確保 DOM 穩定，或是確保在數據綁定後執行
+    setTimeout(() => {
+        if (typeof toggleAlcoholDetails === 'function') toggleAlcoholDetails();
+        if (typeof toggleFireDetails === 'function') toggleFireDetails();
+        if (typeof toggleFlagDetails === 'function') toggleFlagDetails();
+    }, 300); // 給 JS 載入資料一點時間
+}
         // ================== 借用表單邏輯 ==================
         function initializeBorrowForm() {
             (function () {
@@ -3292,21 +3355,63 @@ function startApplication() {
                     return;
                 }
 
-                const draft = data.draft || {};
+const draft = data.draft || {};
                 const formData = draft.formData || {};
 
                 Object.keys(formData).forEach(function (name) {
-                    const els = document.querySelectorAll(`[name="${name}"]`);
+                    let values = formData[name];
+                    let targetName = name;
+                    let els = document.querySelectorAll(`[name="${targetName}"]`);
 
-                    els.forEach(function (el) {
-                        if (el.type === 'checkbox') {
-                            el.checked = formData[name] === '1' || formData[name] === 1 || formData[name] === true;
-                        } else if (el.type === 'radio') {
-                            el.checked = el.value === String(formData[name]);
-                        } else if (el.type !== 'file') {
-                            el.value = formData[name];
+                    // 1. 如果找不到元素，有可能是因為 PHP 把陣列的 '[]' 拿掉了，我們幫它加回來找找看
+                    if (els.length === 0) {
+                        targetName = name + '[]';
+                        els = document.querySelectorAll(`[name="${targetName}"]`);
+                    }
+
+                    // 2. 如果這個欄位存的是陣列 (例如明火表單的人員名單)
+                    if (Array.isArray(values)) {
+                        let tableId = '';
+                        if (targetName === 'fire_staff_performer[]') tableId = 'table_staff_performer';
+                        else if (targetName === 'fire_staff_oiler[]') tableId = 'table_staff_oiler';
+                        else if (targetName === 'fire_staff_extinguisher[]') tableId = 'table_staff_extinguisher';
+                        else if (targetName === 'fire_staff_security[]') tableId = 'table_staff_security';
+                        else if (targetName === 'fire_staff_emergency[]') tableId = 'table_staff_emergency';
+                        else if (targetName === 'fire_staff_medical[]') tableId = 'table_staff_medical';
+
+                        if (tableId) {
+                            const tbody = document.getElementById(tableId).querySelector('tbody');
+                            if (tbody) {
+                                // 動態把缺少的列數補齊 (確保輸入框數量等於陣列長度)
+                                while (tbody.querySelectorAll('tr').length < values.length) {
+                                    addFireStaffRow(tableId, targetName);
+                                }
+                                // 重新抓取所有輸入框，依序把值填進去
+                                const inputs = document.querySelectorAll(`[name="${targetName}"]`);
+                                values.forEach((val, idx) => {
+                                    if (inputs[idx]) inputs[idx].value = val;
+                                });
+                            }
+                        } else {
+                            // 預留給其他一般的多選 checkbox
+                            els.forEach(el => {
+                                if (el.type === 'checkbox' || el.type === 'radio') {
+                                    el.checked = values.includes(el.value);
+                                }
+                            });
                         }
-                    });
+                    } else {
+                        // 3. 一般的單一欄位處理
+                        els.forEach(function (el) {
+                            if (el.type === 'checkbox') {
+                                el.checked = values === '1' || values === 1 || values === true || String(values).toLowerCase() === 'yes';
+                            } else if (el.type === 'radio') {
+                                el.checked = el.value === String(values);
+                            } else if (el.type !== 'file') {
+                                el.value = values;
+                            }
+                        });
+                    }
                 });
 
                 const currentDraftIdInput = document.getElementById('current_draft_id');
@@ -3365,6 +3470,15 @@ function startApplication() {
                 } else if (typeof goToStep === 'function') {
                     goToStep(Number(step));
                 }
+                // --- 在這裡加入我們說的強制觸發區塊 ---
+    
+    // 強制 UI 更新，確保載入後的顯示正確
+    setTimeout(() => {
+        console.log('執行強制 UI 更新檢查...');
+        if (typeof toggleAlcoholDetails === 'function') toggleAlcoholDetails();
+        if (typeof toggleFireDetails === 'function') toggleFireDetails();
+        if (typeof toggleFlagDetails === 'function') toggleFlagDetails();
+    }, 500);
             } catch (error) {
                 console.error(error);
                 alert('草稿載入失敗：' + error.message);

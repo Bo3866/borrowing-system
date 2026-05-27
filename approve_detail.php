@@ -200,15 +200,10 @@ if ($spStmt) {
                 ?>
 
                 <?php
-                // 顯示明火相關欄位（改為單欄位 label + input 格式，並確保人員至少出現一列）
+                // 顯示明火相關欄位（僅在 reservations.has_fire === '1' 時顯示）
                 $hasFireCol = in_array('has_fire', $cols, true) ? 'has_fire' : null;
-                // 若 has_fire 標記為 yes，或任一 fire_* 欄位有內容，皆顯示明火區塊
-                $anyFireField = false;
-                $fireFieldCandidates = ['fire_activity_name','fire_activity','fire_date','fire_day','fire_time_start','fire_time_end','fire_time','fire_start_time','fire_end_time','fire_location','fire_staff_json','fire_performers','fire_oilers','fire_extinguishers','fire_security','fire_emergency','fire_medical'];
-                foreach ($fireFieldCandidates as $f) {
-                    if (in_array($f, $cols, true) && trim((string)($row[$f] ?? '')) !== '') { $anyFireField = true; break; }
-                }
-                if (( $hasFireCol && is_yes($row[$hasFireCol] ?? '') ) || $anyFireField) {
+                // 依照需求：只在資料庫欄位 has_fire 的值為字串 '1' 時顯示
+                if ($hasFireCol && ((string)($row[$hasFireCol] ?? '') === '1')) {
                     $fireActivity = trim((string)($row['fire_activity_name'] ?? $row['fire_activity'] ?? ''));
                     $fireDate = trim((string)($row['fire_date'] ?? $row['fire_day'] ?? ''));
                     $fireTimeStartRaw = trim((string)($row['fire_time_start'] ?? $row['fire_time'] ?? $row['fire_start_time'] ?? ''));

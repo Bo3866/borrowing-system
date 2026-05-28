@@ -1176,17 +1176,22 @@ SQL;
                                 require_once __DIR__ . '/lib/PHPMailer/PHPMailer.php';
                                 require_once __DIR__ . '/lib/PHPMailer/SMTP.php';
                             }
+                            require_once __DIR__ . '/config/mail.php';
                             $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
                             try {
+                                if (empty($MAIL_ENABLED) || empty($MAIL_USERNAME) || empty($MAIL_PASSWORD)) {
+                                    throw new RuntimeException('郵件設定未啟用或未完成，請檢查 config/mail.php');
+                                }
+                                $mailFrom = !empty($MAIL_FROM) ? $MAIL_FROM : $MAIL_USERNAME;
                                 $mail->isSMTP();
                                 $mail->Host       = 'smtp.gmail.com'; 
                                 $mail->SMTPAuth   = true;
-                                $mail->Username   = 'right.jing0104@gmail.com';
-                                $mail->Password   = 'hwarm0625.0603';      
+                                $mail->Username   = $MAIL_USERNAME;
+                                $mail->Password   = $MAIL_PASSWORD;
                                 $mail->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
                                 $mail->Port       = 465;
                                 $mail->CharSet    = 'UTF-8';
-                                $mail->setFrom('right.jing0104@gmail.com', '器材借用系統');
+                                $mail->setFrom($mailFrom, $MAIL_FROM_NAME ?? '器材借用系統');
                                 $mail->addAddress($userEmail, $displayName);
                                 $mail->isHTML(true);
                                 $mail->Subject = '【系統通知】預約申請已成功送出';

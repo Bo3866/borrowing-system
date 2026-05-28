@@ -7,13 +7,13 @@ if (!defined('MAIL_CONFIG_LOADED')) {
     define('MAIL_CONFIG_LOADED', true);
 
     // Toggle to enable/disable sending
-    $MAIL_ENABLED = false;
+    $MAIL_ENABLED = true;
 
     // SMTP credentials (use app password when enabling)
-    $MAIL_USERNAME = '';
-    $MAIL_PASSWORD = '';
+    $MAIL_USERNAME = 'sasa0522522@gmail.com';
+    $MAIL_PASSWORD = 'jvtc kohj khyb yjbn';
 
     // From address and name
-    $MAIL_FROM = '';
+    $MAIL_FROM = 'sasa0522522@gmail.com';
     $MAIL_FROM_NAME = '器材借用系統';
 }

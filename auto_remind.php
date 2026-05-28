@@ -46,18 +46,23 @@ function run_auto_remind() {
         $overdueReservations = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         if (count($overdueReservations) > 0) {
+            require_once __DIR__ . '/config/mail.php';
+            if (empty($MAIL_ENABLED) || empty($MAIL_USERNAME) || empty($MAIL_PASSWORD)) {
+                throw new RuntimeException('郵件設定未啟用或未完成，請檢查 config/mail.php');
+            }
             $mail = new PHPMailer(true);
+            $mailFrom = !empty($MAIL_FROM) ? $MAIL_FROM : $MAIL_USERNAME;
             $mail->isSMTP();
             $mail->Host       = 'smtp.gmail.com'; 
             $mail->SMTPAuth   = true;
-            $mail->Username   = 'sasa0522522@gmail.com'; // 您新的寄件帳號
-            $mail->Password   = 'jvtc kohj khyb yjbn';       // 您提供的應用程式密碼
+            $mail->Username   = $MAIL_USERNAME; // 寄件帳號
+            $mail->Password   = $MAIL_PASSWORD; // 應用程式密碼
             $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
             $mail->Port       = 465;
             $mail->CharSet    = 'UTF-8';
             
             // 不使用大學名稱，改為一般的「借用系統」
-            $mail->setFrom('sasa0522522@gmail.com', '器材借用系統');
+            $mail->setFrom($mailFrom, $MAIL_FROM_NAME ?? '器材借用系統');
             $mail->isHTML(true);
 
             // 準備更新已經寄過信的欄位

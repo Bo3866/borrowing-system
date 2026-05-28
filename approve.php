@@ -396,18 +396,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
             }
 
             // Send notification emails per final-result groups
+            require_once __DIR__ . '/config/mail.php';
             $mail = new PHPMailer(true);
             try {
+                if (empty($MAIL_ENABLED) || empty($MAIL_USERNAME) || empty($MAIL_PASSWORD)) {
+                    throw new RuntimeException('郵件設定未啟用或未完成，請檢查 config/mail.php');
+                }
+                $mailFrom = !empty($MAIL_FROM) ? $MAIL_FROM : $MAIL_USERNAME;
                 $mail->isSMTP();
                 $mail->Host       = 'smtp.gmail.com';
                 $mail->SMTPAuth   = true;
-                $mail->Username   = 'sasa0522522@gmail.com';
-                $mail->Password   = 'jvtc kohj khyb yjbn';
+                $mail->Username   = $MAIL_USERNAME;
+                $mail->Password   = $MAIL_PASSWORD;
                 $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
                 $mail->Port       = 465;
                 $mail->CharSet    = 'UTF-8';
 
-                $mail->setFrom('sasa0522522@gmail.com', '器材借用系統');
+                $mail->setFrom($mailFrom, $MAIL_FROM_NAME ?? '器材借用系統');
 
                 // Approved
                 if (count($notifyApproved) > 0) {

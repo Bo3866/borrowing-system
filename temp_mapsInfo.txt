@@ -1,0 +1,139 @@
+$periodSlots = [
+    'D0' => ['label' => '日間第0節', 'start' => '07:10:00', 'end' => '08:00:00'],
+    'D1' => ['label' => '日間第1節', 'start' => '08:10:00', 'end' => '09:00:00'],
+    'D2' => ['label' => '日間第2節', 'start' => '09:10:00', 'end' => '10:00:00'],
+    'D3' => ['label' => '日間第3節', 'start' => '10:10:00', 'end' => '11:00:00'],
+    'D4' => ['label' => '日間第4節', 'start' => '11:10:00', 'end' => '12:00:00'],
+    'DN' => ['label' => '日間第5節', 'start' => '12:40:00', 'end' => '13:30:00'],
+    'D5' => ['label' => '日間第6節', 'start' => '13:40:00', 'end' => '14:30:00'],
+    'D6' => ['label' => '日間第7節', 'start' => '14:40:00', 'end' => '15:30:00'],
+    'D7' => ['label' => '日間第8節', 'start' => '15:40:00', 'end' => '16:30:00'],
+    'D8' => ['label' => '夜間第1節', 'start' => '16:40:00', 'end' => '17:30:00'],
+    'E0' => ['label' => '夜間第2節', 'start' => '17:40:00', 'end' => '18:30:00'],
+    'E1' => ['label' => '夜間第3節', 'start' => '18:40:00', 'end' => '19:30:00'],
+    'E2' => ['label' => '夜間第4節', 'start' => '19:35:00', 'end' => '20:20:00'],
+    'E3' => ['label' => '夜間第5節', 'start' => '20:30:00', 'end' => '21:20:00'],
+    'E4' => ['label' => '夜間第6節', 'start' => '21:25:00', 'end' => '22:10:00'],
+];
+$periodOrder = array_keys($periodSlots);
+
+$dbError = '';
+$link = getMysqliConnection($dbError);
+
+
+$equipmentMap = [];
+$spaceMap = [];
+$existingSpaceReservations = [];
+$existingEquipmentReservations = [];
+if ($dbError === '') {
+    $equipmentSql = "
+        SELECT
+            ec.equipment_code,
+            ec.equipment_name,
+            ec.borrow_limit_quantity,
+            COALESCE(SUM(CASE WHEN e.operation_status = 1 THEN 1 ELSE 0 END), 0) - COALESCE(COUNT(eri.equipment_id), 0) AS available_quantity
+        FROM equipment_categories ec
+        LEFT JOIN equipments e ON e.equipment_code = ec.equipment_code
+        LEFT JOIN equipment_reservation_items eri ON e.equipment_id = eri.equipment_id
+        LEFT JOIN reservations r ON eri.reservation_id = r.reservation_id
+            AND r.borrow_start_at <= NOW()
+            AND r.borrow_end_at > NOW()
+            AND r.approval_status IN ('pending', 'approved')
+        GROUP BY ec.equipment_code, ec.equipment_name, ec.borrow_limit_quantity
+        ORDER BY ec.equipment_code ASC
+    ";
+
+    $equipmentResult = mysqli_query($link, $equipmentSql);
+    if ($equipmentResult) {
+        while ($row = mysqli_fetch_assoc($equipmentResult)) {
+            $code = (string)$row['equipment_code'];
+            $limit = $row['borrow_limit_quantity'] !== null ? (int)$row['borrow_limit_quantity'] : null;
+            $equipmentMap[$code] = [
+                'equipment_code' => $code,
+                'equipment_name' => (string)$row['equipment_name'],
+                'borrow_limit_quantity' => $limit,
+                'available_quantity' => (int)$row['available_quantity'],
+            ];
+        }
+    } else {
+        $dbError = '讀取器材資料失敗：' . mysqli_error($link);
+    }
+
+    if ($dbError === '') {
+        $spaceSql = "
+            SELECT
+                s.space_id,
+                s.space_name,
+                s.capacity,
+                s.space_status
+            FROM spaces s
+            WHERE s.space_status IN ('available', '1')
+            ORDER BY s.space_id ASC
+        ";
+
+        $spaceResult = mysqli_query($link, $spaceSql);
+        if ($spaceResult) {
+            while ($row = mysqli_fetch_assoc($spaceResult)) {
+                $spaceId = (string)$row['space_id'];
+                $spaceMap[$spaceId] = [
+                    'space_id' => $spaceId,
+                    'space_name' => (string)$row['space_name'],
+                    'capacity' => (int)$row['capacity'],
+                    'space_status' => (string)$row['space_status'],
+                ];
+            }
+        } else {
+            $dbError = '讀取空間資料失敗：' . mysqli_error($link);
+        }
+
+        // 讀取既有空間預約，提供前端節次衝突提示使用
+        // 若資料表尚未建立，維持空陣列即可，不中斷頁面。
+        $spaceItemsTableRes = mysqli_query($link, "SHOW TABLES LIKE 'space_reservation_items'");
+        if ($spaceItemsTableRes && mysqli_num_rows($spaceItemsTableRes) > 0) {
+            $existingReservationsSql = "
+                SELECT
+                    sri.space_id,
+                    DATE(r.borrow_start_at) AS reserve_date,
+                    TIME(r.borrow_start_at) AS reserve_start,
+                    TIME(r.borrow_end_at) AS reserve_end
+                FROM space_reservation_items sri
+                JOIN reservations r ON r.reservation_id = sri.reservation_id
+                WHERE r.approval_status IN ('pending', 'approved')
+            ";
+            $existingReservationsResult = mysqli_query($link, $existingReservationsSql);
+            if ($existingReservationsResult) {
+                while ($existingRow = mysqli_fetch_assoc($existingReservationsResult)) {
+                    $existingSpaceReservations[] = [
+                        'space_id' => (string)$existingRow['space_id'],
+                        'date' => (string)$existingRow['reserve_date'],
+                        'start' => (string)$existingRow['reserve_start'],
+                        'end' => (string)$existingRow['reserve_end'],
+                    ];
+                }
+            }
+        }
+        // 讀取既有器材預約（按日），提供前端當日是否已借出判定
+        $equipItemsTableRes = mysqli_query($link, "SHOW TABLES LIKE 'equipment_reservation_items'");
+        if ($equipItemsTableRes && mysqli_num_rows($equipItemsTableRes) > 0) {
+            $existingEquipSql = "
+                SELECT
+                    e.equipment_code,
+                    DATE(r.borrow_start_at) AS reserve_date
+                FROM equipment_reservation_items eri
+                JOIN reservations r ON r.reservation_id = eri.reservation_id
+                JOIN equipments e ON eri.equipment_id = e.equipment_id
+                WHERE r.approval_status IN ('pending', 'approved')
+            ";
+            $existingEquipResult = mysqli_query($link, $existingEquipSql);
+            if ($existingEquipResult) {
+                while ($erow = mysqli_fetch_assoc($existingEquipResult)) {
+                    $existingEquipmentReservations[] = [
+                        'equipment_code' => (string)$erow['equipment_code'],
+                        'date' => (string)$erow['reserve_date'],
+                    ];
+                }
+            }
+        }
+    }
+}
+

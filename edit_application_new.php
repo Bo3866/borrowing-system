@@ -97,6 +97,81 @@ if ($dbError === '') {
         mysqli_stmt_close($spaceStmt);
     }
 
+$periodSlots = [
+    'D0' => ['label' => '日間第0節', 'start' => '07:10:00', 'end' => '08:00:00'],
+    'D1' => ['label' => '日間第1節', 'start' => '08:10:00', 'end' => '09:00:00'],
+    'D2' => ['label' => '日間第2節', 'start' => '09:10:00', 'end' => '10:00:00'],
+    'D3' => ['label' => '日間第3節', 'start' => '10:10:00', 'end' => '11:00:00'],
+    'D4' => ['label' => '日間第4節', 'start' => '11:10:00', 'end' => '12:00:00'],
+    'DN' => ['label' => '日間第5節', 'start' => '12:40:00', 'end' => '13:30:00'],
+    'D5' => ['label' => '日間第6節', 'start' => '13:40:00', 'end' => '14:30:00'],
+    'D6' => ['label' => '日間第7節', 'start' => '14:40:00', 'end' => '15:30:00'],
+    'D7' => ['label' => '日間第8節', 'start' => '15:40:00', 'end' => '16:30:00'],
+    'D8' => ['label' => '夜間第1節', 'start' => '16:40:00', 'end' => '17:30:00'],
+    'E0' => ['label' => '夜間第2節', 'start' => '17:40:00', 'end' => '18:30:00'],
+    'E1' => ['label' => '夜間第3節', 'start' => '18:40:00', 'end' => '19:30:00'],
+    'E2' => ['label' => '夜間第4節', 'start' => '19:35:00', 'end' => '20:20:00'],
+    'E3' => ['label' => '夜間第5節', 'start' => '20:30:00', 'end' => '21:20:00'],
+    'E4' => ['label' => '夜間第6節', 'start' => '21:25:00', 'end' => '22:10:00'],
+];
+$periodOrder = array_keys($periodSlots);
+
+$dbError = '';
+$link = getMysqliConnection($dbError);
+
+$userPhone = '';
+if ($dbError === '') {
+    $phoneStmt = mysqli_prepare($link, 'SELECT phone FROM users WHERE user_id = ? LIMIT 1');
+    if ($phoneStmt) {
+        mysqli_stmt_bind_param($phoneStmt, 's', $userId);
+        mysqli_stmt_execute($phoneStmt);
+        $phoneResult = mysqli_stmt_get_result($phoneStmt);
+        if ($phoneResult) {
+            $phoneRow = mysqli_fetch_assoc($phoneResult);
+            if ($phoneRow && isset($phoneRow['phone'])) {
+                $userPhone = trim((string)$phoneRow['phone']);
+            }
+        }
+        mysqli_stmt_close($phoneStmt);
+    }
+}
+
+$equipmentMap = [];
+$spaceMap = [];
+$existingSpaceReservations = [];
+$existingEquipmentReservations = [];
+if ($dbError === '') {
+    $equipmentSql = "
+        SELECT
+            ec.equipment_code,
+            ec.equipment_name,
+            ec.borrow_limit_quantity,
+            COALESCE(SUM(CASE WHEN e.operation_status = 1 THEN 1 ELSE 0 END), 0) - COALESCE(COUNT(eri.equipment_id), 0) AS available_quantity
+        FROM equipment_categories ec
+        LEFT JOIN equipments e ON e.equipment_code = ec.equipment_code
+        LEFT JOIN equipment_reservation_items eri ON e.equipment_id = eri.equipment_id
+        LEFT JOIN reservations r ON eri.reservation_id = r.reservation_id
+            AND r.borrow_start_at <= NOW()
+            AND r.borrow_end_at > NOW()
+            AND r.approval_status IN ('pending', 'approved')
+        GROUP BY ec.equipment_code, ec.equipment_name, ec.borrow_limit_quantity
+        ORDER BY ec.equipment_code ASC
+    ";
+
+    $equipmentResult = mysqli_query($link, $equipmentSql);
+    if ($equipmentResult) {
+        while ($row = mysqli_fetch_assoc($equipmentResult)) {
+            $code = (string)$row['equipment_code'];
+            $limit = $row['borrow_limit_quantity'] !== null ? (int)$row['borrow_limit_quantity'] : null;
+            $equipmentMap[$code] = [
+                'equipment_code' => $code,
+                'equipment_name' => (string)$row['equipment_name'],
+                'borrow_limit_quantity' => $limit,
+                'available_quantity' => (int)$row['available_quantity'],
+            ];
+        }
+    }
+
     // handle POST (update)
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && $editError === '') {
         $updated = [];
@@ -249,64 +324,76 @@ if ($dbError === '') {
                 mysqli_stmt_execute($updateStmt);
                 mysqli_stmt_close($updateStmt);
 
-                // handle equipment/space removals and additions
-                // removals: remove_equipment[] (equipment_id), remove_space[] (space_id)
-                $removeEquipment = $_POST['remove_equipment'] ?? [];
-                $removeSpace = $_POST['remove_space'] ?? [];
+                                // Parse cart_items JSON
+                $cartItemsRaw = trim((string)($_POST['cart_items'] ?? '[]'));
+                $cartItems = json_decode($cartItemsRaw, true) ?: [];
+                $cartEquipments = [];
+                $cartSpaceId = null;
 
-                // additions: arrays
-                $addEquipCodes = $_POST['add_equipment_code'] ?? [];
-                $addEquipQtys = $_POST['add_equipment_qty'] ?? [];
-                $addSpaceIds = $_POST['add_space_id'] ?? [];
-
-                // remove equipment: delete rows and free equipment status
-                if (!empty($removeEquipment) && is_array($removeEquipment)) {
-                    $delEquipStmt = mysqli_prepare($link, 'DELETE FROM equipment_reservation_items WHERE reservation_id = ? AND equipment_id = ? LIMIT 1');
-                    $freeEquipStmt = mysqli_prepare($link, 'UPDATE equipments SET operation_status = 1 WHERE equipment_id = ? AND operation_status = 2');
-                    if (!$delEquipStmt || !$freeEquipStmt) {
-                        throw new RuntimeException('準備移除器材失敗：' . mysqli_error($link));
+                foreach ($cartItems as $item) {
+                    if (isset($item['type']) && $item['type'] === 'space') {
+                        $cartSpaceId = trim((string)$item['code']);
+                    } else {
+                        $cartEquipments[] = $item;
                     }
-                    foreach ($removeEquipment as $eid) {
-                        $eid = (int)$eid;
-                        mysqli_stmt_bind_param($delEquipStmt, 'ii', $reservationId, $eid);
-                        mysqli_stmt_execute($delEquipStmt);
-                        mysqli_stmt_bind_param($freeEquipStmt, 'i', $eid);
-                        mysqli_stmt_execute($freeEquipStmt);
-                    }
-                    mysqli_stmt_close($delEquipStmt);
-                    mysqli_stmt_close($freeEquipStmt);
                 }
 
-                // remove spaces
-                if (!empty($removeSpace) && is_array($removeSpace)) {
-                    $delSpaceStmt = mysqli_prepare($link, 'DELETE FROM space_reservation_items WHERE reservation_id = ? AND space_id = ? LIMIT 1');
+                // 2. Clear old spaces and unlock them
+                $oldSpaceStmt = mysqli_prepare($link, 'SELECT space_id FROM space_reservation_items WHERE reservation_id = ?');
+                mysqli_stmt_bind_param($oldSpaceStmt, 'i', $reservationId);
+                mysqli_stmt_execute($oldSpaceStmt);
+                $oldSpaceRes = mysqli_stmt_get_result($oldSpaceStmt);
+                while ($os = mysqli_fetch_assoc($oldSpaceRes)) {
                     $freeSpaceStmt = mysqli_prepare($link, 'UPDATE spaces SET space_status = "1" WHERE space_id = ? AND space_status = "2"');
-                    if (!$delSpaceStmt || !$freeSpaceStmt) {
-                        throw new RuntimeException('準備移除場地失敗：' . mysqli_error($link));
-                    }
-                    foreach ($removeSpace as $sid) {
-                        $sid = (string)$sid;
-                        mysqli_stmt_bind_param($delSpaceStmt, 'is', $reservationId, $sid);
-                        mysqli_stmt_execute($delSpaceStmt);
-                        mysqli_stmt_bind_param($freeSpaceStmt, 's', $sid);
-                        mysqli_stmt_execute($freeSpaceStmt);
-                    }
-                    mysqli_stmt_close($delSpaceStmt);
+                    mysqli_stmt_bind_param($freeSpaceStmt, 's', $os['space_id']);
+                    mysqli_stmt_execute($freeSpaceStmt);
                     mysqli_stmt_close($freeSpaceStmt);
                 }
+                mysqli_stmt_close($oldSpaceStmt);
+                mysqli_query($link, "DELETE FROM space_reservation_items WHERE reservation_id = " . (int)$reservationId);
 
-                // add equipments: for each code/qty, pick available equipment_ids and insert
-                if (!empty($addEquipCodes) && is_array($addEquipCodes)) {
+                // 3. Clear old equipments and unlock them
+                $oldEquipStmt = mysqli_prepare($link, 'SELECT equipment_id FROM equipment_reservation_items WHERE reservation_id = ?');
+                mysqli_stmt_bind_param($oldEquipStmt, 'i', $reservationId);
+                mysqli_stmt_execute($oldEquipStmt);
+                $oldEquipRes = mysqli_stmt_get_result($oldEquipStmt);
+                while ($oe = mysqli_fetch_assoc($oldEquipRes)) {
+                    $freeEquipStmt = mysqli_prepare($link, 'UPDATE equipments SET operation_status = 1 WHERE equipment_id = ? AND operation_status = 2');
+                    mysqli_stmt_bind_param($freeEquipStmt, 'i', $oe['equipment_id']);
+                    mysqli_stmt_execute($freeEquipStmt);
+                    mysqli_stmt_close($freeEquipStmt);
+                }
+                mysqli_stmt_close($oldEquipStmt);
+                mysqli_query($link, "DELETE FROM equipment_reservation_items WHERE reservation_id = " . (int)$reservationId);
+
+                // 4. Insert new Space
+                if (!empty($cartSpaceId)) {
+                    $spaceConflictStmt = mysqli_prepare($link, 'SELECT COUNT(*) AS conflict_count FROM space_reservation_items sri JOIN reservations r ON r.reservation_id = sri.reservation_id WHERE sri.space_id = ? AND r.approval_status IN ("pending", "approved") AND NOT (r.borrow_end_at <= ? OR r.borrow_start_at >= ?)');
+                    mysqli_stmt_bind_param($spaceConflictStmt, 'sss', $cartSpaceId, $borrow_start_at, $borrow_end_at);
+                    mysqli_stmt_execute($spaceConflictStmt);
+                    $confRes = mysqli_stmt_get_result($spaceConflictStmt);
+                    $crow = $confRes ? mysqli_fetch_assoc($confRes) : null;
+                    if ($crow && (int)$crow['conflict_count'] > 0) {
+                        throw new RuntimeException("場地 {$cartSpaceId} 時段衝突，無法新增。");
+                    }
+                    mysqli_stmt_close($spaceConflictStmt);
+
+                    $insertSpaceItemStmt = mysqli_prepare($link, 'INSERT INTO space_reservation_items (reservation_id, space_id) VALUES (?, ?)');
+                    mysqli_stmt_bind_param($insertSpaceItemStmt, 'is', $reservationId, $cartSpaceId);
+                    mysqli_stmt_execute($insertSpaceItemStmt);
+                    mysqli_stmt_close($insertSpaceItemStmt);
+                }
+
+                // 5. Insert new Equipments
+                if (!empty($cartEquipments)) {
                     $selectEquipmentStmt = mysqli_prepare($link, 'SELECT e.equipment_id FROM equipments e WHERE e.equipment_code = ? AND e.operation_status = 1 AND e.equipment_id NOT IN (SELECT eri.equipment_id FROM equipment_reservation_items eri JOIN reservations r ON r.reservation_id = eri.reservation_id WHERE r.approval_status IN ("pending", "approved") AND r.borrow_start_at < ? AND r.borrow_end_at > ?) ORDER BY e.equipment_id ASC LIMIT ?');
                     $insertEquipItemStmt = mysqli_prepare($link, 'INSERT INTO equipment_reservation_items (reservation_id, equipment_id) VALUES (?, ?)');
                     $markEquipUsedStmt = mysqli_prepare($link, 'UPDATE equipments SET operation_status = 2 WHERE equipment_id = ? AND operation_status = 1');
-                    if (!$selectEquipmentStmt || !$insertEquipItemStmt || !$markEquipUsedStmt) {
-                        throw new RuntimeException('準備新增器材失敗：' . mysqli_error($link));
-                    }
-                    foreach ($addEquipCodes as $i => $code) {
-                        $code = trim((string)$code);
-                        $qty = isset($addEquipQtys[$i]) ? (int)$addEquipQtys[$i] : 0;
-                        if ($code === '' || $qty <= 0) continue;
+                    
+                    foreach ($cartEquipments as $item) {
+                        $code = trim((string)$item['code']);
+                        $qty = (int)$item['quantity'];
+                        if ($qty <= 0) continue;
 
                         mysqli_stmt_bind_param($selectEquipmentStmt, 'sssi', $code, $borrow_end_at, $borrow_start_at, $qty);
                         mysqli_stmt_execute($selectEquipmentStmt);
@@ -316,11 +403,13 @@ if ($dbError === '') {
                             $equipmentIds[] = (int)$rowEq['equipment_id'];
                         }
                         if (count($equipmentIds) < $qty) {
-                            throw new RuntimeException("器材 {$code} 可取得數量不足。請檢查時段或數量。");
+                            throw new RuntimeException("器材 {$code} 可用數量不足，無法新增。");
                         }
                         foreach (array_slice($equipmentIds, 0, $qty) as $eid) {
                             mysqli_stmt_bind_param($insertEquipItemStmt, 'ii', $reservationId, $eid);
                             mysqli_stmt_execute($insertEquipItemStmt);
+                            
+                            // Optional: mark as used if you want strict locks
                             mysqli_stmt_bind_param($markEquipUsedStmt, 'i', $eid);
                             mysqli_stmt_execute($markEquipUsedStmt);
                         }
@@ -329,31 +418,6 @@ if ($dbError === '') {
                     mysqli_stmt_close($insertEquipItemStmt);
                     mysqli_stmt_close($markEquipUsedStmt);
                 }
-
-                // add spaces: for each space id, check conflict and insert
-                if (!empty($addSpaceIds) && is_array($addSpaceIds)) {
-                    $spaceConflictStmt = mysqli_prepare($link, 'SELECT COUNT(*) AS conflict_count FROM space_reservation_items sri JOIN reservations r ON r.reservation_id = sri.reservation_id WHERE sri.space_id = ? AND r.approval_status IN ("pending", "approved") AND NOT (r.borrow_end_at < ? OR r.borrow_start_at > ?)');
-                    $insertSpaceItemStmt = mysqli_prepare($link, 'INSERT INTO space_reservation_items (reservation_id, space_id) VALUES (?, ?)');
-                    if (!$spaceConflictStmt || !$insertSpaceItemStmt) {
-                        throw new RuntimeException('準備新增場地失敗：' . mysqli_error($link));
-                    }
-                    foreach ($addSpaceIds as $sid) {
-                        $sid = trim((string)$sid);
-                        if ($sid === '') continue;
-                        mysqli_stmt_bind_param($spaceConflictStmt, 'sss', $sid, $borrow_start_at, $borrow_end_at);
-                        mysqli_stmt_execute($spaceConflictStmt);
-                        $confRes = mysqli_stmt_get_result($spaceConflictStmt);
-                        $crow = $confRes ? mysqli_fetch_assoc($confRes) : null;
-                        if ($crow && (int)$crow['conflict_count'] > 0) {
-                            throw new RuntimeException("場地 {$sid} 時段衝突，無法新增。");
-                        }
-                        mysqli_stmt_bind_param($insertSpaceItemStmt, 'is', $reservationId, $sid);
-                        mysqli_stmt_execute($insertSpaceItemStmt);
-                    }
-                    mysqli_stmt_close($spaceConflictStmt);
-                    mysqli_stmt_close($insertSpaceItemStmt);
-                }
-
                 mysqli_commit($link);
                 $editSuccess = '申請已更新。';
                 // refresh reservationRow values
@@ -1240,101 +1304,164 @@ if ($dbError === '') {
                             </div>
 
                                 <div class="step-content" id="step-content-3">
-                                    <h3 class="step-title" style="margin-bottom: 10px;">第三步：器材與場地</h3>
-                                    <p class="step-desc" style="color: #7f8c8d; margin-bottom: 20px;">請確認要移除或新增的場地與器材，最後送出修改。</p>
-
-                                    <div class="form-group">
-                                        <label>場地（可移除或新增）</label>
-                                        <?php if (!empty($space_items)) { ?>
-                                            <div style="margin-bottom:8px;">目前場地：請勾選欲移除的場地</div>
-                                            <ul>
-                                                <?php foreach ($space_items as $s) { ?>
-                                                    <li>
-                                                        <label><input type="checkbox" name="remove_space[]" value="<?php echo htmlspecialchars($s['space_id'], ENT_QUOTES, 'UTF-8'); ?>"> <?php echo htmlspecialchars($s['space_name'] . ' (' . $s['space_id'] . ')', ENT_QUOTES, 'UTF-8'); ?></label>
-                                                    </li>
-                                                <?php } ?>
-                                            </ul>
-                                        <?php } else { ?>
-                                            <div>目前沒有場地預約。</div>
-                                        <?php } ?>
-
-                                        <div style="margin-top:10px;">
-                                            <label>新增場地（輸入場地代碼，每次可新增一個，可重複送出多個）</label>
-                                            <div style="display:flex; gap:8px; align-items:center;">
-                                                <input type="text" name="add_space_id[]" placeholder="場地代碼（例如 S101）">
-                                            </div>
-                                            <small style="color:#666;">注意：新增時系統會檢查時段衝突。</small>
-                                        </div>
-                                    </div>
-
-                                    <div class="form-group">
-                                        <label>器材（可移除或新增）</label>
-                                        <?php if (!empty($equipment_items)) { ?>
-                                            <div style="margin-bottom:8px;">目前器材：請勾選欲移除的器材</div>
-                                            <ul>
-                                                <?php foreach ($equipment_items as $e) { ?>
-                                                    <li>
-                                                        <label><input type="checkbox" name="remove_equipment[]" value="<?php echo (int)$e['equipment_id']; ?>"> <?php echo htmlspecialchars($e['equipment_code'] . ' - ' . $e['equipment_name'], ENT_QUOTES, 'UTF-8'); ?></label>
-                                                    </li>
-                                                <?php } ?>
-                                            </ul>
-                                        <?php } else { ?>
-                                            <div>目前沒有器材預約。</div>
-                                        <?php } ?>
-
-                                        <div style="margin-top:10px;">
-                                            <label>新增器材（輸入器材代碼與數量）</label>
-                                            <div id="addEquipContainer">
-                                                <div style="display:flex; gap:8px; margin-bottom:6px; align-items:center;">
-                                                    <input type="text" name="add_equipment_code[]" placeholder="器材代碼（例如 MIC01）">
-                                                    <input type="number" name="add_equipment_qty[]" placeholder="數量" min="1" style="width:80px;">
-                                                </div>
-                                            </div>
-                                            <button type="button" class="btn-secondary" id="addEquipRowBtn" style="margin-top:6px;">再加一筆</button>
-                                            <small style="display:block; color:#666; margin-top:6px;">系統會依照時段與可用狀態自動分配實體器材。</small>
-                                        </div>
-                                    </div>
-
-                                    <script>
-                                        document.addEventListener('DOMContentLoaded', function(){
-                                            const btn = document.getElementById('addEquipRowBtn');
-                                            const container = document.getElementById('addEquipContainer');
-                                            btn && btn.addEventListener('click', function(){
-                                                const div = document.createElement('div');
-                                                div.style.display = 'flex'; div.style.gap = '8px'; div.style.marginBottom = '6px'; div.style.alignItems = 'center';
-                                                div.innerHTML = '<input type="text" name="add_equipment_code[]" placeholder="器材代碼（例如 MIC01）"> <input type="number" name="add_equipment_qty[]" placeholder="數量" min="1" style="width:80px;"> <button type="button" class="btn-secondary" onclick="this.parentNode.remove()">移除</button>';
-                                                container.appendChild(div);
-                                            });
-                                        });
-
-                                        function goToStep(stepNumber) {
-                                            const steps = [1, 2, 3];
-                                            steps.forEach(function(step) {
-                                                const content = document.getElementById('step-content-' + step);
-                                                const stepper = document.getElementById('stepper-' + step);
-                                                if (content && stepper) {
-                                                    content.classList.toggle('active', step === stepNumber);
-                                                    stepper.classList.toggle('active', step === stepNumber);
-                                                }
-                                            });
-                                            const currentStep = document.getElementById('current_step');
-                                            if (currentStep) {
-                                                currentStep.value = String(stepNumber);
-                                            }
-                                            const card = document.getElementById('mainBorrowLayout');
-                                            if (card) {
-                                                card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                            }
-                                        }
-                                    </script>
-
-                                    <div class="step-actions">
-                                        <button type="button" class="btn btn-secondary" onclick="goToStep(2)"> ⬅ 回上一步</button>
-                                        <button type="submit" class="btn btn-primary btn-next">確認修改</button>
-                                    </div>
+                                <h3 class="step-title" style="margin-bottom: 10px;">第三步：器材與場地</h3>
+                                
+                                <!-- 隱藏或不需要重新顯示的部分 -->
+                                <div class="form-group" style="display:none;">
+                                    <label for="resource_type">借用類型 (已合併)</label>
+                                    <select id="resource_type" name="resource_type">
+                                        <option value="both" selected>兩者</option>
+                                    </select>
                                 </div>
 
-                            </form>
+                            <!-- Old proposalGroup removed -->
+
+                            <div class="form-group">
+                                <label for="applicant_user_id">申請人帳號</label>
+                                <input type="text" id="applicant_user_id" value="<?php echo htmlspecialchars($userId, ENT_QUOTES, 'UTF-8'); ?>" readonly>
+                            </div>
+
+                            <div id="equipmentSelectorContainer" class="equipment-selector-container">
+                                <div class="es-left">
+                                    <div class="es-title">
+                                        <span style="color: #3b82f6; margin-right: 8px;">
+                                            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                                                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                                            </svg>
+                                        </span>
+                                        選擇借用項目
+                                    </div>
+                                    <div class="es-tabs" style="display:flex; background:#fff; border-bottom:1px solid #e2e8f0; flex-shrink: 0;">
+                                        <button type="button" class="es-tab-btn active" data-target="equipment" style="flex:1; padding:10px; border:none; background:none; cursor:pointer; font-weight:bold; color:#3b82f6; border-bottom:2px solid #3b82f6; transition:all 0.2s;">器材</button>
+                                        <button type="button" class="es-tab-btn" data-target="space" style="flex:1; padding:10px; border:none; background:none; cursor:pointer; font-weight:bold; color:#64748b; border-bottom:2px solid transparent; transition:all 0.2s;">空間場地</button>
+                                    </div>
+                                    <div class="es-search" style="display: flex; align-items: center; justify-content: space-between; gap: 15px;">
+                                        <div style="flex: 1;">
+                                            <input type="text" id="esSearchInput" placeholder="搜尋名稱...">
+                                        </div>
+                                        <div id="esItemCount" style="font-size: 13px; color: #64748b; white-space: nowrap;">
+                                            顯示所有項目
+                                        </div>
+                                    </div>
+                                    <ul class="es-list" id="esEquipmentList">
+                                        <?php foreach ($equipmentMap as $equipment) { 
+                                            $avail = (int)$equipment['available_quantity'];
+                                            $limitRaw = $equipment['borrow_limit_quantity'];
+                                            $limit = $limitRaw === null ? '不限' : (int)$limitRaw;
+                                            $maxInput = $limitRaw !== null ? min($avail, (int)$limitRaw) : $avail;
+                                        ?>
+                                            <li class="es-item" data-type="equipment" data-name="<?php echo htmlspecialchars($equipment['equipment_name'], ENT_QUOTES, 'UTF-8'); ?>" data-code="<?php echo htmlspecialchars($equipment['equipment_code'], ENT_QUOTES, 'UTF-8'); ?>" data-original-disabled="0">
+                                                <div class="es-item-header">
+                                                    <div class="es-item-info">
+                                                        <div class="es-item-icon"><?php echo getEquipmentIcon($equipment['equipment_name']); ?></div>
+                                                        <div class="es-item-name-block">
+                                                            <div class="es-item-title"><?php echo htmlspecialchars($equipment['equipment_name'], ENT_QUOTES, 'UTF-8'); ?></div>
+                                                            <div class="es-item-subtitle">
+                                                                <span>型號: <?php echo htmlspecialchars($equipment['equipment_code'], ENT_QUOTES, 'UTF-8'); ?></span>
+                                                                <span>可借數量: <span class="es-available-value" data-code="<?php echo htmlspecialchars($equipment['equipment_code'], ENT_QUOTES, 'UTF-8'); ?>" data-type="equipment">請先選日期</span></span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <button type="button" class="es-btn-invite">選擇</button>
+                                                </div>
+                                                <div class="es-item-body">
+                                                    <div class="es-item-details">
+                                                        <span>目前可借用數量：<strong class="es-availability-detail" data-code="<?php echo htmlspecialchars($equipment['equipment_code'], ENT_QUOTES, 'UTF-8'); ?>" data-type="equipment">請先選日期</strong></span>
+                                                        <span>限借數量：<?php echo $limit; ?></span>
+                                                    </div>
+                                                    <div class="es-item-action">
+                                                        <label>選擇借幾個：</label>
+                                                        <input type="number" class="es-qty-input" min="1" max="1" value="1" disabled>
+                                                        <button type="button" class="es-btn-add">加入清單</button>
+                                                    </div>
+                                                </div>
+                                            </li>
+                                        <?php } ?>
+                                        <?php foreach ($spaceMap as $space) { 
+                                            $spaceStatusVal = (string)$space['space_status'];
+                                        ?>
+                                            <li class="es-item" data-type="space" data-name="<?php echo htmlspecialchars($space['space_name'], ENT_QUOTES, 'UTF-8'); ?>" data-code="<?php echo htmlspecialchars($space['space_id'], ENT_QUOTES, 'UTF-8'); ?>" data-original-disabled="0">
+                                                <div class="es-item-header">
+                                                    <div class="es-item-info">
+                                                        <div class="es-item-icon"><?php echo getSpaceIcon($space['space_name']); ?></div>
+                                                        <div class="es-item-name-block">
+                                                            <div class="es-item-title"><?php echo htmlspecialchars($space['space_name'], ENT_QUOTES, 'UTF-8'); ?></div>
+                                                            <div class="es-item-subtitle">
+                                                                <span>編號: <?php echo htmlspecialchars($space['space_id'], ENT_QUOTES, 'UTF-8'); ?></span>
+                                                                <span>可借數量: <span class="es-available-value" data-code="<?php echo htmlspecialchars($space['space_id'], ENT_QUOTES, 'UTF-8'); ?>" data-type="space">請先選日期與節次</span></span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <button type="button" class="es-btn-invite">選擇</button>
+                                                </div>
+                                                <div class="es-item-body">
+                                                    <div class="es-item-details">
+                                                        <span>容納人數：<?php echo (int)$space['capacity']; ?></span>
+                                                        <span>目前可借用數量：<strong class="es-availability-detail" data-code="<?php echo htmlspecialchars($space['space_id'], ENT_QUOTES, 'UTF-8'); ?>" data-type="space">請先選日期與節次</strong></span>
+                                                    </div>
+                                                    <div class="es-item-action">
+                                                        <label>場地僅能選擇一個</label>
+                                                        <input type="number" class="es-qty-input" min="1" max="1" value="1" style="display:none;">
+                                                        <button type="button" class="es-btn-add">加入清單</button>
+                                                    </div>
+                                                </div>
+                                            </li>
+                                        <?php } ?>
+                                    </ul>
+                                </div>
+                                <div class="es-right">
+                                    <div class="es-title" style="color: #333;">
+                                        <span style="color: #f59e0b; margin-right: 8px;">
+                                            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                                                <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/>
+                                            </svg>
+                                        </span>
+                                        已選取項目
+                                    </div>
+                                    <div style="flex: 1; display: flex; flex-direction: column; min-height: 0; background:#f8fafc; padding: 15px;">
+                                        <div class="cart-header" style="flex-shrink: 0; background: #f8fafc;">
+                                            <div class="cart-col-name">項目名稱</div>
+                                            <div class="cart-col-qty">數量</div>
+                                            <div class="cart-col-action">操作</div>
+                                        </div>
+                                        <ul class="es-list" id="esSelectedList" style="padding: 0; background: #f8fafc !important;">
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+
+
+                            <div class="form-group">
+                                <label for="purpose">用途說明 <span style="color:red">*</span></label>
+                                <textarea id="purpose" name="purpose" rows="4" required><?php echo htmlspecialchars($formData['purpose'], ENT_QUOTES, 'UTF-8'); ?></textarea>
+                            </div>
+
+                            <div class="step-actions">
+                                <button type="button" class="btn btn-secondary" onclick="goToStep(2)"> ⬅ 回上一步</button>
+                                <button type="submit" class="btn btn-primary btn-next" id="borrowSubmitBtn">確認借用</button>
+                            </div>
+
+                            <div class="draft-action-row">
+                                <button type="button" class="draft-btn save-btn saveDraftBtn">
+                                    暫存申請
+                                </button>
+                                <button type="button" class="draft-btn draft-box-btn openDraftBoxBtn">
+                                    草稿箱
+                                </button>
+                            </div>
+                            <div id="submitDebugMsg" class="draft-message"></div>
+                        </div> <!-- end of step-content-3 -->
+
+                        <!-- 草稿功能保留可放至其他位置, 或暫時隱藏, 為了簡化, 先放著 -->
+                        <!-- <div class="form-buttons">
+                                <div class="draft-buttons">
+                                    <button type="button" class="btn-draft btn-draft-save" id="saveDraftBtn">暫存申請</button>
+                                    <button type="button" class="btn-draft btn-draft-manage" id="manageDraftBtn">草稿箱</button>
+                                </div>
+                                <button type="button" class="btn-secondary" onclick="location.href='index.php'">取消</button>
+                            </div> -->
+                        <div id="submitDebugMsg" style="margin-top:8px; font-size:13px; color:#64748b;"></div>
+                        </form>
                         </section>
                     </div>
                 <?php } ?>

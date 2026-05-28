@@ -24,6 +24,8 @@ if (!isset($_SESSION['user_id'])) {
 
 $currentUserId = (string)$_SESSION['user_id'];
 $currentUserName = (string)($_SESSION['full_name'] ?? $_SESSION['user_id']);
+// 角色代碼（例如：1=學生、9=工讀生）
+$currentRole = (string)($_SESSION['role_name'] ?? '');
 
 if ($incomingQrToken === '' && isset($_SESSION['pending_checkin_qr'])) {
     $incomingQrToken = trim((string)$_SESSION['pending_checkin_qr']);
@@ -99,6 +101,11 @@ if ($dbError === '' && $feedbackType !== 'error' && $_SERVER['REQUEST_METHOD'] =
     $selectedSpaceId = trim((string)($post['space_id'] ?? ''));
 
     if ($checkinKind === 'equipment') {
+        // 學生（role_name=1）不得進行器材報到，僅允許場地報到
+        if ($currentRole === '1') {
+            $feedbackMessage = '授權不足：學生帳號無法進行器材報到。若需辦理器材交接，請由工讀生在交接頁面操作。';
+            $feedbackType = 'error';
+        } else {
         if ($selectedReservationId === '') {
             $feedbackMessage = '請選擇要報到的預約（器材）。';
             $feedbackType = 'error';
@@ -165,6 +172,7 @@ if ($dbError === '' && $feedbackType !== 'error' && $_SERVER['REQUEST_METHOD'] =
                         $feedbackType = 'error';
                     }
                 }
+            }
             } else {
                 // 以 reservation 為單位的器材報到（不指定某個 equipment_id）
                 $matchSql = "SELECT reservation_id, (SELECT GROUP_CONCAT(ec.equipment_name SEPARATOR '、') FROM equipment_reservation_items eri JOIN equipments e ON e.equipment_id = eri.equipment_id JOIN equipment_categories ec ON ec.equipment_code = e.equipment_code WHERE eri.reservation_id = r.reservation_id) AS equipment_names FROM reservations r WHERE r.`{$applicantColumn}` = ? AND r.approval_status = 'approved' AND r.reservation_id = ? LIMIT 1";
@@ -214,6 +222,7 @@ if ($dbError === '' && $feedbackType !== 'error' && $_SERVER['REQUEST_METHOD'] =
                     }
                 }
             }
+
         }
     } else {
         // 場地報到
@@ -625,7 +634,12 @@ if ($link) {
                                         <?php } ?>
                                     </select>
                                 </div>
-                                <button class="btn-primary" type="submit" <?php echo count($equipmentOptions) === 0 ? 'disabled' : ''; ?>>器材報到</button>
+                                <?php if ($currentRole === '1') { ?>
+                                    <div style="color:#7f8c8d; font-size:0.95rem;">學生帳號無法進行器材報到；如需交接，請通知工讀生在交接頁面操作。</div>
+                                    <button class="btn-primary" type="submit" disabled>器材報到</button>
+                                <?php } else { ?>
+                                    <button class="btn-primary" type="submit" <?php echo count($equipmentOptions) === 0 ? 'disabled' : ''; ?>>器材報到</button>
+                                <?php } ?>
                             </form>
                             <?php if (count($equipmentOptions) === 0) { ?>
                                 <div style="margin-top: 1rem; color: #7f8c8d; font-size: 0.9rem;">目前沒有待領取的器材核准申請。</div>

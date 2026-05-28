@@ -135,7 +135,15 @@ if ($pageError === '' && $link && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         $note = '已交接';
                         mysqli_stmt_bind_param($insertStmt, 'isss', $reservationId, $handoverAt, $note, $currentUserId);
                         if (mysqli_stmt_execute($insertStmt)) {
-                            $pageSuccess = '已標記為已交接，時間：' . $handoverAt;
+                                // 同步更新 reservations.checked_in_at 表示器材報到
+                                $updateResChkStmt = mysqli_prepare($link, 'UPDATE reservations SET checked_in_at = COALESCE(checked_in_at, ?) WHERE reservation_id = ?');
+                                if ($updateResChkStmt) {
+                                    mysqli_stmt_bind_param($updateResChkStmt, 'si', $handoverAt, $reservationId);
+                                    mysqli_stmt_execute($updateResChkStmt);
+                                    mysqli_stmt_close($updateResChkStmt);
+                                }
+
+                                $pageSuccess = '已標記為已交接，時間：' . $handoverAt;
                         } else {
                             $pageError = '標記已交接失敗：' . mysqli_stmt_error($insertStmt);
                         }

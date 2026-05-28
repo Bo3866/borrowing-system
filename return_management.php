@@ -62,7 +62,9 @@ if ($dbError === '') {
         try {
             if (!in_array('returned_at', $reservationColumns, true)) {
                 $migrationSql = 'ALTER TABLE reservations ADD COLUMN returned_at DATETIME NULL COMMENT "歸還完成時間"';
-                mysqli_query($link, $migrationSql);
+                if (!mysqli_query($link, $migrationSql) && mysqli_errno($link) !== 1060) {
+                    throw new RuntimeException(mysqli_error($link));
+                }
                 $reservationColumns[] = 'returned_at';
             }
         } catch (Throwable $e) {

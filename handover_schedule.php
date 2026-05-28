@@ -26,7 +26,6 @@ $link = getMysqliConnection($dbError);
 $pageError = '';
 $pageSuccess = '';
 $approvedRows = [];
-$recentSchedules = [];
 
 if ($dbError !== '') {
     $pageError = $dbError;
@@ -38,13 +37,14 @@ if ($pageError === '' && $link) {
             handover_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             reservation_id BIGINT UNSIGNED NOT NULL,
             handover_at DATETIME NOT NULL,
+            returned_at DATETIME NULL,
             note VARCHAR(500) NULL,
             created_by VARCHAR(10) NOT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (handover_id),
             KEY idx_handover_reservation (reservation_id),
             KEY idx_handover_at (handover_at),
+            KEY idx_handover_returned_at (returned_at),
             KEY idx_handover_created_by (created_by),
             CONSTRAINT fk_handover_reservation
                 FOREIGN KEY (reservation_id) REFERENCES reservations (reservation_id)
@@ -57,27 +57,47 @@ if ($pageError === '' && $link) {
 
     if (!mysqli_query($link, $createTableSql)) {
         $pageError = '建立交接排程資料表失敗：' . mysqli_error($link);
+    } else {
+        $returnedAtColumnResult = mysqli_query($link, "SHOW COLUMNS FROM handover_schedules LIKE 'returned_at'");
+        $returnedAtExists = $returnedAtColumnResult && mysqli_num_rows($returnedAtColumnResult) > 0;
+
+        if (!$returnedAtExists) {
+            if (!mysqli_query($link, "ALTER TABLE handover_schedules ADD COLUMN returned_at DATETIME NULL AFTER handover_at")) {
+                if (mysqli_errno($link) !== 1060) {
+                    $pageError = '補強交接歸還欄位失敗：' . mysqli_error($link);
+                }
+            }
+        }
     }
 }
 
 if ($pageError === '' && $link && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $reservationId = (int)($_POST['reservation_id'] ?? 0);
-    $handoverAtRaw = trim((string)($_POST['handover_at'] ?? ''));
-    $note = trim((string)($_POST['note'] ?? ''));
+    $action = trim((string)($_POST['action'] ?? ''));
 
     if ($reservationId <= 0) {
-        $pageError = '請先選擇要排程的申請編號。';
-    } elseif ($handoverAtRaw === '') {
-        $pageError = '請填寫交接時間。';
+        $pageError = '請先選擇要標記的申請編號。';
+    } elseif (!in_array($action, ['mark_handover', 'mark_return'], true)) {
+        $pageError = '不支援的操作。';
     } else {
-        $handoverAt = str_replace('T', ' ', $handoverAtRaw);
-        if (strlen($handoverAt) === 16) {
-            $handoverAt .= ':00';
-        }
-
         $validReservationStmt = mysqli_prepare(
             $link,
-            "SELECT reservation_id FROM reservations WHERE reservation_id = ? AND approval_status = 'approved' LIMIT 1"
+            "SELECT
+                r.reservation_id,
+                r.approval_status,
+                hs.handover_id,
+                hs.handover_at,
+                hs.returned_at
+             FROM reservations r
+             LEFT JOIN handover_schedules hs ON hs.handover_id = (
+                SELECT hs2.handover_id
+                FROM handover_schedules hs2
+                WHERE hs2.reservation_id = r.reservation_id
+                ORDER BY hs2.handover_id DESC
+                LIMIT 1
+             )
+             WHERE r.reservation_id = ?
+             LIMIT 1"
         );
 
         if (!$validReservationStmt) {
@@ -89,27 +109,63 @@ if ($pageError === '' && $link && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $validRow = $validResult ? mysqli_fetch_assoc($validResult) : null;
             mysqli_stmt_close($validReservationStmt);
 
-            if (!$validRow) {
-                $pageError = '此申請不是已核准狀態，無法新增交接排程。';
+            if (!$validRow || (string)($validRow['approval_status'] ?? '') !== 'approved') {
+                $pageError = '此申請不是已核准狀態。';
             }
         }
 
         if ($pageError === '') {
-            $insertStmt = mysqli_prepare(
-                $link,
-                'INSERT INTO handover_schedules (reservation_id, handover_at, note, created_by) VALUES (?, ?, ?, ?)'
-            );
+            $handoverId = (int)($validRow['handover_id'] ?? 0);
+            $handoverAtExisting = trim((string)($validRow['handover_at'] ?? ''));
+            $returnedAtExisting = trim((string)($validRow['returned_at'] ?? ''));
 
-            if (!$insertStmt) {
-                $pageError = '新增交接排程失敗：' . mysqli_error($link);
-            } else {
-                mysqli_stmt_bind_param($insertStmt, 'isss', $reservationId, $handoverAt, $note, $currentUserId);
-                if (mysqli_stmt_execute($insertStmt)) {
-                    $pageSuccess = '已新增交接排程。';
+            if ($action === 'mark_handover') {
+                if ($handoverId > 0) {
+                    $pageError = '此申請已經有交接紀錄，請直接按「已歸還」。';
                 } else {
-                    $pageError = '新增交接排程失敗：' . mysqli_stmt_error($insertStmt);
+                    $insertStmt = mysqli_prepare(
+                        $link,
+                        'INSERT INTO handover_schedules (reservation_id, handover_at, returned_at, note, created_by) VALUES (?, ?, NULL, ?, ?)'
+                    );
+
+                    if (!$insertStmt) {
+                        $pageError = '標記已交接失敗：' . mysqli_error($link);
+                    } else {
+                        $handoverAt = date('Y-m-d H:i:s');
+                        $note = '已交接';
+                        mysqli_stmt_bind_param($insertStmt, 'isss', $reservationId, $handoverAt, $note, $currentUserId);
+                        if (mysqli_stmt_execute($insertStmt)) {
+                            $pageSuccess = '已標記為已交接，時間：' . $handoverAt;
+                        } else {
+                            $pageError = '標記已交接失敗：' . mysqli_stmt_error($insertStmt);
+                        }
+                        mysqli_stmt_close($insertStmt);
+                    }
                 }
-                mysqli_stmt_close($insertStmt);
+            } else {
+                if ($handoverId <= 0 || $handoverAtExisting === '') {
+                    $pageError = '此申請尚未交接，不能標記歸還。';
+                } elseif ($returnedAtExisting !== '') {
+                    $pageError = '此申請已經標記歸還。';
+                } else {
+                    $updateStmt = mysqli_prepare(
+                        $link,
+                        'UPDATE handover_schedules SET returned_at = ?, note = CONCAT(COALESCE(note, ""), CASE WHEN COALESCE(note, "") = "" THEN "" ELSE "｜" END, "已歸還") WHERE handover_id = ? AND returned_at IS NULL'
+                    );
+
+                    if (!$updateStmt) {
+                        $pageError = '標記已歸還失敗：' . mysqli_error($link);
+                    } else {
+                        $returnedAt = date('Y-m-d H:i:s');
+                        mysqli_stmt_bind_param($updateStmt, 'si', $returnedAt, $handoverId);
+                        if (mysqli_stmt_execute($updateStmt)) {
+                            $pageSuccess = '已標記為已歸還，時間：' . $returnedAt;
+                        } else {
+                            $pageError = '標記已歸還失敗：' . mysqli_stmt_error($updateStmt);
+                        }
+                        mysqli_stmt_close($updateStmt);
+                    }
+                }
             }
         }
     }
@@ -124,8 +180,14 @@ if ($pageError === '' && $link) {
             u.email,
             r.borrow_start_at,
             r.borrow_end_at,
-            hs.latest_handover_at,
-            hs.schedule_count,
+            hs.handover_id,
+            hs.handover_at AS latest_handover_at,
+            hs.returned_at AS latest_returned_at,
+            CASE
+                WHEN hs.handover_id IS NULL THEN 'pending'
+                WHEN hs.returned_at IS NULL THEN 'handover'
+                ELSE 'returned'
+            END AS handover_state,
             (
                 SELECT GROUP_CONCAT(DISTINCT ec.equipment_name ORDER BY ec.equipment_name SEPARATOR '、')
                 FROM equipment_reservation_items eri
@@ -142,9 +204,13 @@ if ($pageError === '' && $link) {
         FROM reservations r
         JOIN users u ON u.user_id = r.user_id
         LEFT JOIN (
-            SELECT reservation_id, MAX(handover_at) AS latest_handover_at, COUNT(*) AS schedule_count
-            FROM handover_schedules
-            GROUP BY reservation_id
+            SELECT hs1.*
+            FROM handover_schedules hs1
+            INNER JOIN (
+                SELECT reservation_id, MAX(handover_id) AS max_handover_id
+                FROM handover_schedules
+                GROUP BY reservation_id
+            ) latest ON latest.max_handover_id = hs1.handover_id
         ) hs ON hs.reservation_id = r.reservation_id
         WHERE r.approval_status = 'approved'
         ORDER BY r.borrow_start_at ASC
@@ -161,29 +227,6 @@ if ($pageError === '' && $link) {
     }
 }
 
-if ($pageError === '' && $link) {
-    $recentSql = "
-        SELECT
-            hs.handover_id,
-            hs.reservation_id,
-            hs.handover_at,
-            hs.note,
-            hs.created_at,
-            u.full_name AS creator_name
-        FROM handover_schedules hs
-        LEFT JOIN users u ON u.user_id = hs.created_by
-        ORDER BY hs.created_at DESC
-        LIMIT 50
-    ";
-
-    $recentResult = mysqli_query($link, $recentSql);
-    if ($recentResult) {
-        while ($row = mysqli_fetch_assoc($recentResult)) {
-            $recentSchedules[] = $row;
-        }
-    }
-}
-
 if ($link) {
     mysqli_close($link);
 }
@@ -196,6 +239,25 @@ if ($link) {
     <title>器材交接排程｜校園資源租借系統</title>
     <link rel="stylesheet" href="styles.css?v=<?php echo time(); ?>">
     <style>
+        .status-pill {
+            display: inline-block;
+            padding: 0.2rem 0.55rem;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        .status-pending {
+            background: #fff7ed;
+            color: #9a3412;
+        }
+        .status-done {
+            background: #ecfdf5;
+            color: #047857;
+        }
+        .status-handover {
+            background: #eff6ff;
+            color: #1d4ed8;
+        }
         .handover-grid {
             display: grid;
             grid-template-columns: 1fr;
@@ -224,6 +286,24 @@ if ($link) {
             color: #64748b;
             font-size: 12px;
         }
+        .handover-action {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 88px;
+            padding: 0.45rem 0.75rem;
+            border: 0;
+            border-radius: 6px;
+            background: #0f766e;
+            color: #fff;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 700;
+        }
+        .handover-action:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
@@ -233,7 +313,7 @@ if ($link) {
         <main class="main-content">
             <section class="card">
                 <h2>器材交接排程（工讀生）</h2>
-                <p class="muted">針對已核准申請，新增交接時間紀錄，方便安排現場交接作業。</p>
+                <p class="muted">系統會自動列出所有已核准的預約，先按「已交接」記錄交接時間，再按「已歸還」記錄歸還時間。</p>
 
                 <?php if ($pageSuccess !== '') { ?>
                     <div class="borrow-success"><?php echo htmlspecialchars($pageSuccess, ENT_QUOTES, 'UTF-8'); ?></div>
@@ -244,32 +324,6 @@ if ($link) {
                 <?php } ?>
 
                 <?php if ($pageError === '') { ?>
-                    <form method="post" class="borrow-form" style="margin-bottom:1rem;">
-                        <div class="form-group">
-                            <label for="reservation_id">選擇已核准申請 <span style="color:red;">*</span></label>
-                            <select id="reservation_id" name="reservation_id" class="form-control" required>
-                                <option value="">請選擇申請</option>
-                                <?php foreach ($approvedRows as $row) { ?>
-                                    <option value="<?php echo (int)$row['reservation_id']; ?>">
-                                        <?php
-                                            $label = '#'.$row['reservation_id'].' ｜ '.($row['full_name'] ?? '').' ｜ '.($row['borrow_start_at'] ?? '').' ~ '.($row['borrow_end_at'] ?? '');
-                                            echo htmlspecialchars($label, ENT_QUOTES, 'UTF-8');
-                                        ?>
-                                    </option>
-                                <?php } ?>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="handover_at">交接時間 <span style="color:red;">*</span></label>
-                            <input id="handover_at" name="handover_at" type="datetime-local" class="form-control" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="note">備註</label>
-                            <textarea id="note" name="note" class="form-control" placeholder="可填寫集合地點、聯絡方式、注意事項" rows="3"></textarea>
-                        </div>
-                        <button type="submit" class="btn-primary">新增交接紀錄</button>
-                    </form>
-
                     <div class="handover-grid">
                         <div class="card" style="margin:0;">
                             <h3 style="margin-top:0;">已核准申請清單</h3>
@@ -281,13 +335,15 @@ if ($link) {
                                             <th>申請人</th>
                                             <th>借用時段</th>
                                             <th>借用項目</th>
-                                            <th>排程次數</th>
-                                            <th>最近交接時間</th>
+                                            <th>交接狀態</th>
+                                            <th>交接時間</th>
+                                            <th>歸還時間</th>
+                                            <th>操作</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <?php if (count($approvedRows) === 0) { ?>
-                                            <tr><td colspan="6">目前沒有已核准申請。</td></tr>
+                                            <tr><td colspan="8">目前沒有已核准申請。</td></tr>
                                         <?php } else { ?>
                                             <?php foreach ($approvedRows as $row) { ?>
                                                 <?php
@@ -299,6 +355,12 @@ if ($link) {
                                                         $items[] = '場地：' . $row['space_names'];
                                                     }
                                                     $itemText = count($items) > 0 ? implode(' ｜ ', $items) : '-';
+                                                    $handoverState = (string)($row['handover_state'] ?? 'pending');
+                                                    $handoverTimeText = $handoverState === 'pending' ? '-' : (string)($row['latest_handover_at'] ?? '-');
+                                                    $returnTimeText = $handoverState === 'returned' ? (string)($row['latest_returned_at'] ?? '-') : '-';
+                                                    $buttonLabel = $handoverState === 'pending' ? '已交接' : ($handoverState === 'handover' ? '已歸還' : '已完成');
+                                                    $buttonClass = $handoverState === 'handover' ? 'status-handover' : ($handoverState === 'returned' ? 'status-done' : 'status-pending');
+                                                    $buttonDisabled = $handoverState === 'returned';
                                                 ?>
                                                 <tr>
                                                     <td>#<?php echo (int)$row['reservation_id']; ?></td>
@@ -311,42 +373,20 @@ if ($link) {
                                                         ~ <?php echo htmlspecialchars((string)$row['borrow_end_at'], ENT_QUOTES, 'UTF-8'); ?>
                                                     </td>
                                                     <td><?php echo htmlspecialchars($itemText, ENT_QUOTES, 'UTF-8'); ?></td>
-                                                    <td><?php echo (int)($row['schedule_count'] ?? 0); ?></td>
-                                                    <td><?php echo htmlspecialchars((string)($row['latest_handover_at'] ?? '-'), ENT_QUOTES, 'UTF-8'); ?></td>
-                                                </tr>
-                                            <?php } ?>
-                                        <?php } ?>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-
-                        <div class="card" style="margin:0;">
-                            <h3 style="margin-top:0;">最近新增的交接紀錄</h3>
-                            <div class="handover-table-wrapper">
-                                <table class="handover-table">
-                                    <thead>
-                                        <tr>
-                                            <th>ID</th>
-                                            <th>申請編號</th>
-                                            <th>交接時間</th>
-                                            <th>備註</th>
-                                            <th>建立人</th>
-                                            <th>建立時間</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php if (count($recentSchedules) === 0) { ?>
-                                            <tr><td colspan="6">目前沒有交接紀錄。</td></tr>
-                                        <?php } else { ?>
-                                            <?php foreach ($recentSchedules as $schedule) { ?>
-                                                <tr>
-                                                    <td><?php echo (int)$schedule['handover_id']; ?></td>
-                                                    <td>#<?php echo (int)$schedule['reservation_id']; ?></td>
-                                                    <td><?php echo htmlspecialchars((string)$schedule['handover_at'], ENT_QUOTES, 'UTF-8'); ?></td>
-                                                    <td><?php echo htmlspecialchars((string)($schedule['note'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
-                                                    <td><?php echo htmlspecialchars((string)($schedule['creator_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
-                                                    <td><?php echo htmlspecialchars((string)$schedule['created_at'], ENT_QUOTES, 'UTF-8'); ?></td>
+                                                    <td>
+                                                        <span class="status-pill <?php echo $buttonClass; ?>">
+                                                            <?php echo $handoverState === 'pending' ? '待交接' : ($handoverState === 'handover' ? '已交接' : '已歸還'); ?>
+                                                        </span>
+                                                    </td>
+                                                    <td><?php echo htmlspecialchars($handoverTimeText, ENT_QUOTES, 'UTF-8'); ?></td>
+                                                    <td><?php echo htmlspecialchars($returnTimeText, ENT_QUOTES, 'UTF-8'); ?></td>
+                                                    <td>
+                                                        <form method="post" style="margin:0;">
+                                                            <input type="hidden" name="action" value="<?php echo $handoverState === 'pending' ? 'mark_handover' : 'mark_return'; ?>">
+                                                            <input type="hidden" name="reservation_id" value="<?php echo (int)$row['reservation_id']; ?>">
+                                                            <button type="submit" class="handover-action" <?php echo $buttonDisabled ? 'disabled' : ''; ?>><?php echo htmlspecialchars($buttonLabel, ENT_QUOTES, 'UTF-8'); ?></button>
+                                                        </form>
+                                                    </td>
                                                 </tr>
                                             <?php } ?>
                                         <?php } ?>

@@ -180,7 +180,7 @@ if ($link) {
                     <?php if ($currentRole === '9') { ?>
                     <div class="card dashboard-card">
                         <h3>🤝 交接排程</h3>
-                        <p>查看已核准申請並新增器材交接時間，方便現場交接作業。</p>
+                        <p>查看已核准申請並標記已交接，方便現場交接作業。</p>
                         <button class="btn-primary" onclick="location.href='handover_schedule.php'">前往排程</button>
                     </div>
                     <?php } ?>

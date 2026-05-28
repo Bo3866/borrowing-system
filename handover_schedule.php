@@ -116,6 +116,23 @@ if ($pageError === '' && $link && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($pageError === '') {
             $handoverId = (int)($validRow['handover_id'] ?? 0);
+            // 檢查該申請是否包含器材項目（工讀生只能交接器材）
+            if ($action === 'mark_handover') {
+                $equipCount = 0;
+                $validRowReservationId = (int)($validRow['reservation_id'] ?? 0);
+                $countStmt = mysqli_prepare($link, 'SELECT COUNT(*) AS cnt FROM equipment_reservation_items WHERE reservation_id = ?');
+                if ($countStmt) {
+                    mysqli_stmt_bind_param($countStmt, 'i', $validRowReservationId);
+                    mysqli_stmt_execute($countStmt);
+                    $cntRes = mysqli_stmt_get_result($countStmt);
+                    $cntRow = $cntRes ? mysqli_fetch_assoc($cntRes) : null;
+                    $equipCount = (int)($cntRow['cnt'] ?? 0);
+                    mysqli_stmt_close($countStmt);
+                }
+                if ($equipCount === 0) {
+                    $pageError = '此申請沒有器材項目，工讀生不得為純場地申請標記交接。';
+                }
+            }
             $handoverAtExisting = trim((string)($validRow['handover_at'] ?? ''));
             $returnedAtExisting = trim((string)($validRow['returned_at'] ?? ''));
 
@@ -220,7 +237,11 @@ if ($pageError === '' && $link) {
                 GROUP BY reservation_id
             ) latest ON latest.max_handover_id = hs1.handover_id
         ) hs ON hs.reservation_id = r.reservation_id
-        WHERE r.approval_status = 'approved'
+                WHERE r.approval_status = 'approved'
+                    -- 只列出至少有一筆器材項目的申請（工讀生僅需處理器材交接）
+                    AND EXISTS (
+                            SELECT 1 FROM equipment_reservation_items eri WHERE eri.reservation_id = r.reservation_id
+                    )
         ORDER BY r.borrow_start_at ASC
         LIMIT 300
     ";
@@ -354,10 +375,12 @@ if ($link) {
                                             <tr><td colspan="8">目前沒有已核准申請。</td></tr>
                                         <?php } else { ?>
                                             <?php foreach ($approvedRows as $row) { ?>
-                                                <?php
+                                                    <?php
                                                     $items = [];
+                                                    $hasEquipment = false;
                                                     if (!empty($row['equipment_names'])) {
                                                         $items[] = '器材：' . $row['equipment_names'];
+                                                        $hasEquipment = true;
                                                     }
                                                     if (!empty($row['space_names'])) {
                                                         $items[] = '場地：' . $row['space_names'];
@@ -366,9 +389,21 @@ if ($link) {
                                                     $handoverState = (string)($row['handover_state'] ?? 'pending');
                                                     $handoverTimeText = $handoverState === 'pending' ? '-' : (string)($row['latest_handover_at'] ?? '-');
                                                     $returnTimeText = $handoverState === 'returned' ? (string)($row['latest_returned_at'] ?? '-') : '-';
-                                                    $buttonLabel = $handoverState === 'pending' ? '已交接' : ($handoverState === 'handover' ? '已歸還' : '已完成');
+                                                    // 決定按鈕狀態：若為 pending 且無器材，工讀生不可交接場地
                                                     $buttonClass = $handoverState === 'handover' ? 'status-handover' : ($handoverState === 'returned' ? 'status-done' : 'status-pending');
                                                     $buttonDisabled = $handoverState === 'returned';
+                                                    $buttonLabel = '';
+                                                    if ($handoverState === 'pending') {
+                                                        if ($hasEquipment) {
+                                                            $buttonLabel = '已交接';
+                                                            $buttonDisabled = false;
+                                                        } else {
+                                                            $buttonLabel = '無器材（不可交接）';
+                                                            $buttonDisabled = true;
+                                                        }
+                                                    } else {
+                                                        $buttonLabel = $handoverState === 'handover' ? '已歸還' : '已完成';
+                                                    }
                                                 ?>
                                                 <tr>
                                                     <td>#<?php echo (int)$row['reservation_id']; ?></td>

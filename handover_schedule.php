@@ -36,7 +36,7 @@ if ($pageError === '' && $link) {
         CREATE TABLE IF NOT EXISTS handover_schedules (
             handover_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             reservation_id BIGINT UNSIGNED NOT NULL,
-            handover_at DATETIME NOT NULL,
+            handover_at DATETIME NULL,
             returned_at DATETIME NULL,
             note VARCHAR(500) NULL,
             created_by VARCHAR(10) NOT NULL,
@@ -68,14 +68,62 @@ if ($pageError === '' && $link) {
                 }
             }
         }
+
+        $handoverAtColumnResult = mysqli_query($link, "SHOW COLUMNS FROM handover_schedules LIKE 'handover_at'");
+        $handoverAtExists = $handoverAtColumnResult && mysqli_num_rows($handoverAtColumnResult) > 0;
+        if ($handoverAtExists) {
+            $handoverAtColumnRow = mysqli_fetch_assoc($handoverAtColumnResult);
+            $handoverAtNull = strtolower((string)($handoverAtColumnRow['Null'] ?? ''));
+            if ($handoverAtNull !== 'yes') {
+                if (!mysqli_query($link, "ALTER TABLE handover_schedules MODIFY handover_at DATETIME NULL")) {
+                    $pageError = '調整交接時間欄位失敗：' . mysqli_error($link);
+                }
+            }
+        }
     }
 }
 
 if ($pageError === '' && $link && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $reservationId = (int)($_POST['reservation_id'] ?? 0);
+    $handoverIdPost = (int)($_POST['handover_id'] ?? 0);
     $action = trim((string)($_POST['action'] ?? ''));
 
-    if ($reservationId <= 0) {
+    if ($action === 'save_note') {
+        $noteInput = trim((string)($_POST['note'] ?? ''));
+        $noteToSave = mb_substr($noteInput, 0, 500, 'UTF-8');
+        if ($handoverIdPost > 0) {
+            $updateNoteStmt = mysqli_prepare($link, 'UPDATE handover_schedules SET note = ? WHERE handover_id = ?');
+            if (!$updateNoteStmt) {
+                $pageError = '儲存備註失敗：' . mysqli_error($link);
+            } else {
+                mysqli_stmt_bind_param($updateNoteStmt, 'si', $noteToSave, $handoverIdPost);
+                if (mysqli_stmt_execute($updateNoteStmt)) {
+                    $pageSuccess = '備註已儲存。';
+                } else {
+                    $pageError = '儲存備註失敗：' . mysqli_stmt_error($updateNoteStmt);
+                }
+                mysqli_stmt_close($updateNoteStmt);
+            }
+        } elseif ($reservationId > 0) {
+            $insertNoteStmt = mysqli_prepare(
+                $link,
+                'INSERT INTO handover_schedules (reservation_id, handover_at, returned_at, note, created_by) VALUES (?, NULL, NULL, ?, ?)'
+            );
+            if (!$insertNoteStmt) {
+                $pageError = '儲存備註失敗：' . mysqli_error($link);
+            } else {
+                mysqli_stmt_bind_param($insertNoteStmt, 'iss', $reservationId, $noteToSave, $currentUserId);
+                if (mysqli_stmt_execute($insertNoteStmt)) {
+                    $pageSuccess = '備註已儲存。';
+                } else {
+                    $pageError = '儲存備註失敗：' . mysqli_stmt_error($insertNoteStmt);
+                }
+                mysqli_stmt_close($insertNoteStmt);
+            }
+        } else {
+            $pageError = '找不到要儲存備註的申請。';
+        }
+    } elseif ($reservationId <= 0) {
         $pageError = '請先選擇要標記的申請編號。';
     } elseif (!in_array($action, ['mark_handover', 'mark_return'], true)) {
         $pageError = '不支援的操作。';
@@ -87,7 +135,8 @@ if ($pageError === '' && $link && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 r.approval_status,
                 hs.handover_id,
                 hs.handover_at,
-                hs.returned_at
+                hs.returned_at,
+                hs.note
              FROM reservations r
              LEFT JOIN handover_schedules hs ON hs.handover_id = (
                 SELECT hs2.handover_id
@@ -116,13 +165,12 @@ if ($pageError === '' && $link && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($pageError === '') {
             $handoverId = (int)($validRow['handover_id'] ?? 0);
-            // 檢查該申請是否包含器材項目（工讀生只能交接器材）
+
             if ($action === 'mark_handover') {
                 $equipCount = 0;
-                $validRowReservationId = (int)($validRow['reservation_id'] ?? 0);
                 $countStmt = mysqli_prepare($link, 'SELECT COUNT(*) AS cnt FROM equipment_reservation_items WHERE reservation_id = ?');
                 if ($countStmt) {
-                    mysqli_stmt_bind_param($countStmt, 'i', $validRowReservationId);
+                    mysqli_stmt_bind_param($countStmt, 'i', $reservationId);
                     mysqli_stmt_execute($countStmt);
                     $cntRes = mysqli_stmt_get_result($countStmt);
                     $cntRow = $cntRes ? mysqli_fetch_assoc($cntRes) : null;
@@ -133,41 +181,63 @@ if ($pageError === '' && $link && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     $pageError = '此申請沒有器材項目，工讀生不得為純場地申請標記交接。';
                 }
             }
+
             $handoverAtExisting = trim((string)($validRow['handover_at'] ?? ''));
             $returnedAtExisting = trim((string)($validRow['returned_at'] ?? ''));
 
-            if ($action === 'mark_handover') {
-                if ($handoverId > 0) {
+            if ($pageError === '' && $action === 'mark_handover') {
+                if ($handoverId > 0 && $handoverAtExisting !== '') {
                     $pageError = '此申請已經有交接紀錄，請直接按「已歸還」。';
+                } elseif ($handoverId > 0 && $handoverAtExisting === '') {
+                    $updateHandoverStmt = mysqli_prepare(
+                        $link,
+                        'UPDATE handover_schedules SET handover_at = ? WHERE handover_id = ? AND handover_at IS NULL'
+                    );
+                    if (!$updateHandoverStmt) {
+                        $pageError = '標記已交接失敗：' . mysqli_error($link);
+                    } else {
+                        $handoverAt = date('Y-m-d H:i:s');
+                        mysqli_stmt_bind_param($updateHandoverStmt, 'si', $handoverAt, $handoverId);
+                        if (mysqli_stmt_execute($updateHandoverStmt)) {
+                            $updateResChkStmt = mysqli_prepare($link, 'UPDATE reservations SET checked_in_at = COALESCE(checked_in_at, ?) WHERE reservation_id = ?');
+                            if ($updateResChkStmt) {
+                                mysqli_stmt_bind_param($updateResChkStmt, 'si', $handoverAt, $reservationId);
+                                mysqli_stmt_execute($updateResChkStmt);
+                                mysqli_stmt_close($updateResChkStmt);
+                            }
+                            $pageSuccess = '已標記為已交接，時間：' . $handoverAt;
+                        } else {
+                            $pageError = '標記已交接失敗：' . mysqli_stmt_error($updateHandoverStmt);
+                        }
+                        mysqli_stmt_close($updateHandoverStmt);
+                    }
                 } else {
                     $insertStmt = mysqli_prepare(
                         $link,
-                        'INSERT INTO handover_schedules (reservation_id, handover_at, returned_at, note, created_by) VALUES (?, ?, NULL, ?, ?)'
+                        'INSERT INTO handover_schedules (reservation_id, handover_at, returned_at, note, created_by) VALUES (?, ?, NULL, NULL, ?)'
                     );
 
                     if (!$insertStmt) {
                         $pageError = '標記已交接失敗：' . mysqli_error($link);
                     } else {
                         $handoverAt = date('Y-m-d H:i:s');
-                        $note = '已交接';
-                        mysqli_stmt_bind_param($insertStmt, 'isss', $reservationId, $handoverAt, $note, $currentUserId);
+                        mysqli_stmt_bind_param($insertStmt, 'iss', $reservationId, $handoverAt, $currentUserId);
                         if (mysqli_stmt_execute($insertStmt)) {
-                                // 同步更新 reservations.checked_in_at 表示器材報到
-                                $updateResChkStmt = mysqli_prepare($link, 'UPDATE reservations SET checked_in_at = COALESCE(checked_in_at, ?) WHERE reservation_id = ?');
-                                if ($updateResChkStmt) {
-                                    mysqli_stmt_bind_param($updateResChkStmt, 'si', $handoverAt, $reservationId);
-                                    mysqli_stmt_execute($updateResChkStmt);
-                                    mysqli_stmt_close($updateResChkStmt);
-                                }
+                            $updateResChkStmt = mysqli_prepare($link, 'UPDATE reservations SET checked_in_at = COALESCE(checked_in_at, ?) WHERE reservation_id = ?');
+                            if ($updateResChkStmt) {
+                                mysqli_stmt_bind_param($updateResChkStmt, 'si', $handoverAt, $reservationId);
+                                mysqli_stmt_execute($updateResChkStmt);
+                                mysqli_stmt_close($updateResChkStmt);
+                            }
 
-                                $pageSuccess = '已標記為已交接，時間：' . $handoverAt;
+                            $pageSuccess = '已標記為已交接，時間：' . $handoverAt;
                         } else {
                             $pageError = '標記已交接失敗：' . mysqli_stmt_error($insertStmt);
                         }
                         mysqli_stmt_close($insertStmt);
                     }
                 }
-            } else {
+            } elseif ($pageError === '') {
                 if ($handoverId <= 0 || $handoverAtExisting === '') {
                     $pageError = '此申請尚未交接，不能標記歸還。';
                 } elseif ($returnedAtExisting !== '') {
@@ -175,7 +245,7 @@ if ($pageError === '' && $link && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $updateStmt = mysqli_prepare(
                         $link,
-                        'UPDATE handover_schedules SET returned_at = ?, note = CONCAT(COALESCE(note, ""), CASE WHEN COALESCE(note, "") = "" THEN "" ELSE "｜" END, "已歸還") WHERE handover_id = ? AND returned_at IS NULL'
+                        'UPDATE handover_schedules SET returned_at = ? WHERE handover_id = ? AND returned_at IS NULL'
                     );
 
                     if (!$updateStmt) {
@@ -195,7 +265,6 @@ if ($pageError === '' && $link && $_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
-
 if ($pageError === '' && $link) {
     $approvedSql = "
         SELECT
@@ -208,8 +277,9 @@ if ($pageError === '' && $link) {
             hs.handover_id,
             hs.handover_at AS latest_handover_at,
             hs.returned_at AS latest_returned_at,
+            hs.note AS latest_note,
             CASE
-                WHEN hs.handover_id IS NULL THEN 'pending'
+                WHEN hs.handover_at IS NULL THEN 'pending'
                 WHEN hs.returned_at IS NULL THEN 'handover'
                 ELSE 'returned'
             END AS handover_state,
@@ -237,11 +307,10 @@ if ($pageError === '' && $link) {
                 GROUP BY reservation_id
             ) latest ON latest.max_handover_id = hs1.handover_id
         ) hs ON hs.reservation_id = r.reservation_id
-                WHERE r.approval_status = 'approved'
-                    -- 只列出至少有一筆器材項目的申請（工讀生僅需處理器材交接）
-                    AND EXISTS (
-                            SELECT 1 FROM equipment_reservation_items eri WHERE eri.reservation_id = r.reservation_id
-                    )
+        WHERE r.approval_status = 'approved'
+          AND EXISTS (
+              SELECT 1 FROM equipment_reservation_items eri WHERE eri.reservation_id = r.reservation_id
+          )
         ORDER BY r.borrow_start_at ASC
         LIMIT 300
     ";
@@ -333,6 +402,24 @@ if ($link) {
             background: #94a3b8;
             cursor: not-allowed;
         }
+        .hidden {
+            display: none;
+        }
+        .note-editor textarea {
+            width: 100%;
+            min-width: 220px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            padding: 0.45rem 0.55rem;
+            font-size: 13px;
+            resize: vertical;
+        }
+        .note-editor-actions {
+            display: flex;
+            gap: 0.4rem;
+            margin-top: 0.4rem;
+            flex-wrap: wrap;
+        }
     </style>
 </head>
 <body>
@@ -367,43 +454,46 @@ if ($link) {
                                             <th>交接狀態</th>
                                             <th>交接時間</th>
                                             <th>歸還時間</th>
+                                            <th>備註</th>
                                             <th>操作</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <?php if (count($approvedRows) === 0) { ?>
-                                            <tr><td colspan="8">目前沒有已核准申請。</td></tr>
+                                            <tr><td colspan="9">目前沒有已核准申請。</td></tr>
                                         <?php } else { ?>
                                             <?php foreach ($approvedRows as $row) { ?>
-                                                    <?php
-                                                    $items = [];
-                                                    $hasEquipment = false;
-                                                    if (!empty($row['equipment_names'])) {
-                                                        $items[] = '器材：' . $row['equipment_names'];
-                                                        $hasEquipment = true;
-                                                    }
-                                                    if (!empty($row['space_names'])) {
-                                                        $items[] = '場地：' . $row['space_names'];
-                                                    }
-                                                    $itemText = count($items) > 0 ? implode(' ｜ ', $items) : '-';
-                                                    $handoverState = (string)($row['handover_state'] ?? 'pending');
-                                                    $handoverTimeText = $handoverState === 'pending' ? '-' : (string)($row['latest_handover_at'] ?? '-');
-                                                    $returnTimeText = $handoverState === 'returned' ? (string)($row['latest_returned_at'] ?? '-') : '-';
-                                                    // 決定按鈕狀態：若為 pending 且無器材，工讀生不可交接場地
-                                                    $buttonClass = $handoverState === 'handover' ? 'status-handover' : ($handoverState === 'returned' ? 'status-done' : 'status-pending');
-                                                    $buttonDisabled = $handoverState === 'returned';
-                                                    $buttonLabel = '';
-                                                    if ($handoverState === 'pending') {
-                                                        if ($hasEquipment) {
-                                                            $buttonLabel = '已交接';
-                                                            $buttonDisabled = false;
-                                                        } else {
-                                                            $buttonLabel = '無器材（不可交接）';
-                                                            $buttonDisabled = true;
-                                                        }
+                                                <?php
+                                                $items = [];
+                                                $hasEquipment = false;
+                                                if (!empty($row['equipment_names'])) {
+                                                    $items[] = '器材：' . $row['equipment_names'];
+                                                    $hasEquipment = true;
+                                                }
+                                                if (!empty($row['space_names'])) {
+                                                    $items[] = '場地：' . $row['space_names'];
+                                                }
+                                                $itemText = count($items) > 0 ? implode(' ｜ ', $items) : '-';
+                                                $handoverState = (string)($row['handover_state'] ?? 'pending');
+                                                $handoverTimeText = $handoverState === 'pending' ? '-' : (string)($row['latest_handover_at'] ?? '-');
+                                                $returnTimeText = $handoverState === 'returned' ? (string)($row['latest_returned_at'] ?? '-') : '-';
+                                                $existingNote = trim((string)($row['latest_note'] ?? ''));
+                                                $buttonClass = $handoverState === 'handover' ? 'status-handover' : ($handoverState === 'returned' ? 'status-done' : 'status-pending');
+                                                $buttonDisabled = $handoverState === 'returned';
+                                                $buttonLabel = '';
+                                                if ($handoverState === 'pending') {
+                                                    if ($hasEquipment) {
+                                                        $buttonLabel = '已交接';
+                                                        $buttonDisabled = false;
                                                     } else {
-                                                        $buttonLabel = $handoverState === 'handover' ? '已歸還' : '已完成';
+                                                        $buttonLabel = '無器材（不可交接）';
+                                                        $buttonDisabled = true;
                                                     }
+                                                } else {
+                                                    $buttonLabel = $handoverState === 'handover' ? '已歸還' : '已完成';
+                                                }
+                                                $noteEditorId = 'note-editor-' . (int)$row['reservation_id'];
+                                                $noteValueId = 'note-value-' . (int)$row['reservation_id'];
                                                 ?>
                                                 <tr>
                                                     <td>#<?php echo (int)$row['reservation_id']; ?></td>
@@ -423,6 +513,24 @@ if ($link) {
                                                     </td>
                                                     <td><?php echo htmlspecialchars($handoverTimeText, ENT_QUOTES, 'UTF-8'); ?></td>
                                                     <td><?php echo htmlspecialchars($returnTimeText, ENT_QUOTES, 'UTF-8'); ?></td>
+                                                    <td>
+                                                        <div id="<?php echo htmlspecialchars($noteValueId, ENT_QUOTES, 'UTF-8'); ?>" class="muted"><?php echo $existingNote !== '' ? htmlspecialchars($existingNote, ENT_QUOTES, 'UTF-8') : '-'; ?></div>
+                                                        <div style="margin-top:0.45rem;">
+                                                            <button type="button" class="handover-action" onclick="document.getElementById('<?php echo htmlspecialchars($noteEditorId, ENT_QUOTES, 'UTF-8'); ?>').classList.toggle('hidden');">備註</button>
+                                                        </div>
+                                                        <div id="<?php echo htmlspecialchars($noteEditorId, ENT_QUOTES, 'UTF-8'); ?>" class="hidden note-editor" style="margin-top:0.5rem;">
+                                                            <form method="post" style="margin:0;">
+                                                                <input type="hidden" name="action" value="save_note">
+                                                                <input type="hidden" name="handover_id" value="<?php echo !empty($row['handover_id']) ? (int)$row['handover_id'] : 0; ?>">
+                                                                <input type="hidden" name="reservation_id" value="<?php echo (int)$row['reservation_id']; ?>">
+                                                                <textarea name="note" rows="3"><?php echo htmlspecialchars($existingNote, ENT_QUOTES, 'UTF-8'); ?></textarea>
+                                                                <div class="note-editor-actions">
+                                                                    <button type="submit" class="handover-action">儲存</button>
+                                                                    <button type="button" class="handover-action" onclick="document.getElementById('<?php echo htmlspecialchars($noteEditorId, ENT_QUOTES, 'UTF-8'); ?>').classList.add('hidden');">取消</button>
+                                                                </div>
+                                                            </form>
+                                                        </div>
+                                                    </td>
                                                     <td>
                                                         <form method="post" style="margin:0;">
                                                             <input type="hidden" name="action" value="<?php echo $handoverState === 'pending' ? 'mark_handover' : 'mark_return'; ?>">

@@ -95,6 +95,7 @@ if ($dbError === '') {
             AND r.borrow_start_at <= NOW()
             AND r.borrow_end_at > NOW()
             AND r.approval_status IN ('pending', 'approved')
+            AND r.returned_at IS NULL
         GROUP BY ec.equipment_code, ec.equipment_name, ec.borrow_limit_quantity
         ORDER BY ec.equipment_code ASC
     ";
@@ -154,7 +155,8 @@ if ($dbError === '') {
                     TIME(r.borrow_end_at) AS reserve_end
                 FROM space_reservation_items sri
                 JOIN reservations r ON r.reservation_id = sri.reservation_id
-                WHERE r.approval_status IN ('pending', 'approved')
+                                WHERE r.approval_status IN ('pending', 'approved')
+                                    AND r.returned_at IS NULL
             ";
             $existingReservationsResult = mysqli_query($link, $existingReservationsSql);
             if ($existingReservationsResult) {
@@ -178,7 +180,8 @@ if ($dbError === '') {
                 FROM equipment_reservation_items eri
                 JOIN reservations r ON r.reservation_id = eri.reservation_id
                 JOIN equipments e ON eri.equipment_id = e.equipment_id
-                WHERE r.approval_status IN ('pending', 'approved')
+                                WHERE r.approval_status IN ('pending', 'approved')
+                                    AND r.returned_at IS NULL
             ";
             $existingEquipResult = mysqli_query($link, $existingEquipSql);
             if ($existingEquipResult) {
@@ -496,19 +499,24 @@ $formData['fire_date'] = !empty($_POST['fire_date']) ? trim((string)$_POST['fire
                         
                         if ($selectedE['borrow_limit_quantity'] !== null) {
                             $reservApplicantCol = $reservationApplicantColumn;
-                            $tqSql = sprintf(
-                                'SELECT COALESCE(COUNT(eri.equipment_id), 0) AS total_quantity
-                                 FROM reservations r
-                                 JOIN equipment_reservation_items eri ON r.reservation_id = eri.reservation_id
-                                 JOIN equipments e ON eri.equipment_id = e.equipment_id
-                                 WHERE r.%s = ?
-                                   AND r.approval_status IN ("pending", "approved")
-                                   AND e.equipment_code = ?'
-                                , $reservApplicantCol
-                            );
+                            // 1. 強制鎖定 reservations 的 user_id 欄位，並確保查詢的是「目前登入者」的 Session ID
+                            $tqSql = 'SELECT COALESCE(COUNT(eri.equipment_id), 0) AS total_quantity
+                                    FROM reservations r
+                                    JOIN equipment_reservation_items eri ON r.reservation_id = eri.reservation_id
+                                    JOIN equipments e ON eri.equipment_id = e.equipment_id
+                                    WHERE r.user_id = ? 
+                                        AND r.approval_status IN ("pending", "approved")
+                                        AND r.approval_status NOT IN ("returned", "rejected", "canceled") 
+                                        AND r.returned_at IS NULL
+                                        AND e.equipment_code = ?';
+
                             $tqStmt = mysqli_prepare($link, $tqSql);
                             if ($tqStmt) {
-                                mysqli_stmt_bind_param($tqStmt, 'ss', $userId, $cCode);
+                                // 2. 關鍵修正：將原本模糊的 $userId 強制改為 $_SESSION['user_id']
+                                // 這樣能保證算出來的「未完成預約」百分之百是此時此刻正在填表的這個人
+                                $currentLoggedInUser = $_SESSION['user_id'];
+                                mysqli_stmt_bind_param($tqStmt, 'ss', $currentLoggedInUser, $cCode);
+                                
                                 mysqli_stmt_execute($tqStmt);
                                 $tqRes = mysqli_stmt_get_result($tqStmt);
                                 $tqRow = $tqRes ? mysqli_fetch_assoc($tqRes) : null;
@@ -978,6 +986,7 @@ SQL;
                                                         JOIN equipments e ON e.equipment_id = eri.equipment_id
                                                         WHERE e.equipment_code = ?
                                                             AND r.approval_status IN ('pending', 'approved')
+                                                               AND r.returned_at IS NULL
                                                             AND DATE(r.borrow_start_at) = DATE(?)
                                                 ";
                         $overlapStmt = mysqli_prepare($link, $overlapCheckSql);
@@ -1129,6 +1138,7 @@ SQL;
                          JOIN reservations r ON r.reservation_id = sri.reservation_id
                          WHERE sri.space_id = ?
                              AND r.approval_status IN ("pending", "approved")
+                             AND r.returned_at IS NULL
                              AND NOT (r.borrow_end_at < ? OR r.borrow_start_at > ?)'
                     );
                     if (!$spaceConflictStmt) {

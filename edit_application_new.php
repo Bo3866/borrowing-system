@@ -83,6 +83,7 @@ if ($dbError === '') {
         }
         mysqli_stmt_close($equipStmt);
     }
+    }
 
     // load space items
     $space_items = [];

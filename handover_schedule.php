@@ -13,10 +13,13 @@ if (!isset($_SESSION['user_id'])) {
 $currentUserId = (string)$_SESSION['user_id'];
 $currentRole = (string)($_SESSION['role_name'] ?? '');
 $displayName = (string)($_SESSION['full_name'] ?? $_SESSION['user_id']);
+$canViewEquipment = $currentRole === '9';
+$canViewSpace = $currentRole === '8';
+$pageModeLabel = $canViewEquipment ? '器材排程' : '空間排程';
 
-if ($currentRole !== '9') {
+if (!$canViewEquipment && !$canViewSpace) {
     http_response_code(403);
-    echo '<p style="padding:1rem;background:#ffecec;border-radius:6px;">存取被拒：此功能僅限工讀生。</p>';
+    echo '<p style="padding:1rem;background:#ffecec;border-radius:6px;">存取被拒：此功能僅限工讀生或工友。</p>';
     exit;
 }
 
@@ -26,6 +29,8 @@ $link = getMysqliConnection($dbError);
 $pageError = '';
 $pageSuccess = '';
 $approvedRows = [];
+$spaceRows = [];
+$spaceError = '';
 
 if ($dbError !== '') {
     $pageError = $dbError;
@@ -38,6 +43,7 @@ if ($pageError === '' && $link) {
             reservation_id BIGINT UNSIGNED NOT NULL,
             handover_at DATETIME NULL,
             returned_at DATETIME NULL,
+            opened_at DATETIME NULL,
             note VARCHAR(500) NULL,
             created_by VARCHAR(10) NOT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -65,6 +71,16 @@ if ($pageError === '' && $link) {
             if (!mysqli_query($link, "ALTER TABLE handover_schedules ADD COLUMN returned_at DATETIME NULL AFTER handover_at")) {
                 if (mysqli_errno($link) !== 1060) {
                     $pageError = '補強交接歸還欄位失敗：' . mysqli_error($link);
+                }
+            }
+        }
+
+        $openedAtColumnResult = mysqli_query($link, "SHOW COLUMNS FROM handover_schedules LIKE 'opened_at'");
+        $openedAtExists = $openedAtColumnResult && mysqli_num_rows($openedAtColumnResult) > 0;
+        if (!$openedAtExists) {
+            if (!mysqli_query($link, "ALTER TABLE handover_schedules ADD COLUMN opened_at DATETIME NULL AFTER returned_at")) {
+                if (mysqli_errno($link) !== 1060) {
+                    $pageError = '補強空間開門欄位失敗：' . mysqli_error($link);
                 }
             }
         }
@@ -125,8 +141,10 @@ if ($pageError === '' && $link && $_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif ($reservationId <= 0) {
         $pageError = '請先選擇要標記的申請編號。';
-    } elseif (!in_array($action, ['mark_handover', 'mark_return'], true)) {
+    } elseif (!in_array($action, ['mark_handover', 'mark_return', 'mark_open_door'], true)) {
         $pageError = '不支援的操作。';
+    } elseif (($currentRole === '9' && $action === 'mark_open_door') || ($currentRole === '8' && in_array($action, ['mark_handover', 'mark_return'], true))) {
+        $pageError = '此角色無權執行這項操作。';
     } else {
         $validReservationStmt = mysqli_prepare(
             $link,
@@ -136,6 +154,7 @@ if ($pageError === '' && $link && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 hs.handover_id,
                 hs.handover_at,
                 hs.returned_at,
+                hs.opened_at,
                 hs.note
              FROM reservations r
              LEFT JOIN handover_schedules hs ON hs.handover_id = (
@@ -165,6 +184,7 @@ if ($pageError === '' && $link && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($pageError === '') {
             $handoverId = (int)($validRow['handover_id'] ?? 0);
+            $openedAtExisting = trim((string)($validRow['opened_at'] ?? ''));
 
             if ($action === 'mark_handover') {
                 $equipCount = 0;
@@ -237,6 +257,57 @@ if ($pageError === '' && $link && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         mysqli_stmt_close($insertStmt);
                     }
                 }
+            } elseif ($action === 'mark_open_door') {
+                $spaceCount = 0;
+                $countStmt = mysqli_prepare($link, 'SELECT COUNT(*) AS cnt FROM space_reservation_items WHERE reservation_id = ?');
+                if ($countStmt) {
+                    mysqli_stmt_bind_param($countStmt, 'i', $reservationId);
+                    mysqli_stmt_execute($countStmt);
+                    $cntRes = mysqli_stmt_get_result($countStmt);
+                    $cntRow = $cntRes ? mysqli_fetch_assoc($cntRes) : null;
+                    $spaceCount = (int)($cntRow['cnt'] ?? 0);
+                    mysqli_stmt_close($countStmt);
+                }
+
+                if ($spaceCount === 0) {
+                    $pageError = '此申請沒有空間項目，無法標記已開門。';
+                } elseif ($openedAtExisting !== '') {
+                    $pageError = '此申請已經標記已開門。';
+                } elseif ($handoverId > 0) {
+                    $updateOpenStmt = mysqli_prepare(
+                        $link,
+                        'UPDATE handover_schedules SET opened_at = ? WHERE handover_id = ? AND opened_at IS NULL'
+                    );
+                    if (!$updateOpenStmt) {
+                        $pageError = '標記已開門失敗：' . mysqli_error($link);
+                    } else {
+                        $openedAt = date('Y-m-d H:i:s');
+                        mysqli_stmt_bind_param($updateOpenStmt, 'si', $openedAt, $handoverId);
+                        if (mysqli_stmt_execute($updateOpenStmt)) {
+                            $pageSuccess = '已標記為已開門，時間：' . $openedAt;
+                        } else {
+                            $pageError = '標記已開門失敗：' . mysqli_stmt_error($updateOpenStmt);
+                        }
+                        mysqli_stmt_close($updateOpenStmt);
+                    }
+                } else {
+                    $insertStmt = mysqli_prepare(
+                        $link,
+                        'INSERT INTO handover_schedules (reservation_id, handover_at, returned_at, opened_at, note, created_by) VALUES (?, NULL, NULL, ?, NULL, ?)'
+                    );
+                    if (!$insertStmt) {
+                        $pageError = '標記已開門失敗：' . mysqli_error($link);
+                    } else {
+                        $openedAt = date('Y-m-d H:i:s');
+                        mysqli_stmt_bind_param($insertStmt, 'iss', $reservationId, $openedAt, $currentUserId);
+                        if (mysqli_stmt_execute($insertStmt)) {
+                            $pageSuccess = '已標記為已開門，時間：' . $openedAt;
+                        } else {
+                            $pageError = '標記已開門失敗：' . mysqli_stmt_error($insertStmt);
+                        }
+                        mysqli_stmt_close($insertStmt);
+                    }
+                }
             } elseif ($pageError === '') {
                 if ($handoverId <= 0 || $handoverAtExisting === '') {
                     $pageError = '此申請尚未交接，不能標記歸還。';
@@ -266,6 +337,7 @@ if ($pageError === '' && $link && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 if ($pageError === '' && $link) {
+    if ($canViewEquipment) {
     $approvedSql = "
         SELECT
             r.reservation_id,
@@ -323,6 +395,58 @@ if ($pageError === '' && $link) {
     } else {
         $pageError = '讀取已核准申請失敗：' . mysqli_error($link);
     }
+    }
+
+    if ($pageError === '' && $canViewSpace) {
+        $spaceSql = "
+            SELECT
+                r.reservation_id,
+                r.user_id,
+                u.full_name,
+                u.email,
+                r.borrow_start_at,
+                r.borrow_end_at,
+                hs.handover_id,
+                hs.opened_at AS latest_opened_at,
+                hs.note AS latest_note,
+                CASE
+                    WHEN hs.opened_at IS NULL THEN 'pending'
+                    ELSE 'opened'
+                END AS space_state,
+                (
+                    SELECT GROUP_CONCAT(DISTINCT s.space_name ORDER BY s.space_name SEPARATOR '、')
+                    FROM space_reservation_items sri
+                    JOIN spaces s ON s.space_id = sri.space_id
+                    WHERE sri.reservation_id = r.reservation_id
+                ) AS space_names
+            FROM reservations r
+            JOIN users u ON u.user_id = r.user_id
+            LEFT JOIN (
+                SELECT hs1.*
+                FROM handover_schedules hs1
+                INNER JOIN (
+                    SELECT reservation_id, MAX(handover_id) AS max_handover_id
+                    FROM handover_schedules
+                    GROUP BY reservation_id
+                ) latest ON latest.max_handover_id = hs1.handover_id
+            ) hs ON hs.reservation_id = r.reservation_id
+            WHERE r.approval_status = 'approved'
+              AND EXISTS (
+                  SELECT 1 FROM space_reservation_items sri WHERE sri.reservation_id = r.reservation_id
+              )
+            ORDER BY r.borrow_start_at ASC
+            LIMIT 300
+        ";
+
+        $spaceResult = mysqli_query($link, $spaceSql);
+        if ($spaceResult) {
+            while ($row = mysqli_fetch_assoc($spaceResult)) {
+                $spaceRows[] = $row;
+            }
+        } else {
+            $spaceError = '讀取空間排程失敗：' . mysqli_error($link);
+        }
+    }
 }
 
 if ($link) {
@@ -334,7 +458,7 @@ if ($link) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>器材交接排程｜校園資源租借系統</title>
+    <title><?php echo htmlspecialchars($pageModeLabel, ENT_QUOTES, 'UTF-8'); ?>｜校園資源租借系統</title>
     <link rel="stylesheet" href="styles.css?v=<?php echo time(); ?>">
     <style>
         .status-pill {
@@ -428,8 +552,8 @@ if ($link) {
     <div class="container">
         <main class="main-content">
             <section class="card">
-                <h2>器材交接排程（工讀生）</h2>
-                <p class="muted">系統會自動列出所有已核准的預約，先按「已交接」記錄交接時間，再按「已歸還」記錄歸還時間。</p>
+                <h2><?php echo htmlspecialchars($pageModeLabel, ENT_QUOTES, 'UTF-8'); ?>（<?php echo $canViewEquipment ? '工讀生' : '工友'; ?>）</h2>
+                <p class="muted"><?php echo $canViewEquipment ? '系統會自動列出所有已核准的器材申請，先按「已交接」記錄交接時間，再按「已歸還」記錄歸還時間。' : '系統會自動列出所有已核准的空間申請，按「已開門」記錄開門時間。'; ?></p>
 
                 <?php if ($pageSuccess !== '') { ?>
                     <div class="borrow-success"><?php echo htmlspecialchars($pageSuccess, ENT_QUOTES, 'UTF-8'); ?></div>
@@ -440,112 +564,200 @@ if ($link) {
                 <?php } ?>
 
                 <?php if ($pageError === '') { ?>
-                    <div class="handover-grid">
-                        <div class="card" style="margin:0;">
-                            <h3 style="margin-top:0;">已核准申請清單</h3>
-                            <div class="handover-table-wrapper">
-                                <table class="handover-table">
-                                    <thead>
-                                        <tr>
-                                            <th>申請編號</th>
-                                            <th>申請人</th>
-                                            <th>借用時段</th>
-                                            <th>借用項目</th>
-                                            <th>交接狀態</th>
-                                            <th>交接時間</th>
-                                            <th>歸還時間</th>
-                                            <th>備註</th>
-                                            <th>操作</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php if (count($approvedRows) === 0) { ?>
-                                            <tr><td colspan="9">目前沒有已核准申請。</td></tr>
-                                        <?php } else { ?>
-                                            <?php foreach ($approvedRows as $row) { ?>
-                                                <?php
-                                                $items = [];
-                                                $hasEquipment = false;
-                                                if (!empty($row['equipment_names'])) {
-                                                    $items[] = '器材：' . $row['equipment_names'];
-                                                    $hasEquipment = true;
-                                                }
-                                                if (!empty($row['space_names'])) {
-                                                    $items[] = '場地：' . $row['space_names'];
-                                                }
-                                                $itemText = count($items) > 0 ? implode(' ｜ ', $items) : '-';
-                                                $handoverState = (string)($row['handover_state'] ?? 'pending');
-                                                $handoverTimeText = $handoverState === 'pending' ? '-' : (string)($row['latest_handover_at'] ?? '-');
-                                                $returnTimeText = $handoverState === 'returned' ? (string)($row['latest_returned_at'] ?? '-') : '-';
-                                                $existingNote = trim((string)($row['latest_note'] ?? ''));
-                                                $buttonClass = $handoverState === 'handover' ? 'status-handover' : ($handoverState === 'returned' ? 'status-done' : 'status-pending');
-                                                $buttonDisabled = $handoverState === 'returned';
-                                                $buttonLabel = '';
-                                                if ($handoverState === 'pending') {
-                                                    if ($hasEquipment) {
-                                                        $buttonLabel = '已交接';
-                                                        $buttonDisabled = false;
-                                                    } else {
-                                                        $buttonLabel = '無器材（不可交接）';
-                                                        $buttonDisabled = true;
+                    <?php if ($canViewEquipment) { ?>
+                        <div class="handover-grid">
+                            <div class="card" style="margin:0;">
+                                <h3 style="margin-top:0;">已核准申請清單</h3>
+                                <div class="handover-table-wrapper">
+                                    <table class="handover-table">
+                                        <thead>
+                                            <tr>
+                                                <th>申請編號</th>
+                                                <th>申請人</th>
+                                                <th>借用時段</th>
+                                                <th>借用項目</th>
+                                                <th>交接狀態</th>
+                                                <th>交接時間</th>
+                                                <th>歸還時間</th>
+                                                <th>備註</th>
+                                                <th>操作</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php if (count($approvedRows) === 0) { ?>
+                                                <tr><td colspan="9">目前沒有已核准申請。</td></tr>
+                                            <?php } else { ?>
+                                                <?php foreach ($approvedRows as $row) { ?>
+                                                    <?php
+                                                    $items = [];
+                                                    $hasEquipment = false;
+                                                    if (!empty($row['equipment_names'])) {
+                                                        $items[] = '器材：' . $row['equipment_names'];
+                                                        $hasEquipment = true;
                                                     }
-                                                } else {
-                                                    $buttonLabel = $handoverState === 'handover' ? '已歸還' : '已完成';
-                                                }
-                                                $noteEditorId = 'note-editor-' . (int)$row['reservation_id'];
-                                                $noteValueId = 'note-value-' . (int)$row['reservation_id'];
-                                                ?>
-                                                <tr>
-                                                    <td>#<?php echo (int)$row['reservation_id']; ?></td>
-                                                    <td>
-                                                        <?php echo htmlspecialchars((string)$row['full_name'], ENT_QUOTES, 'UTF-8'); ?>
-                                                        <div class="muted"><?php echo htmlspecialchars((string)$row['user_id'], ENT_QUOTES, 'UTF-8'); ?></div>
-                                                    </td>
-                                                    <td>
-                                                        <?php echo htmlspecialchars((string)$row['borrow_start_at'], ENT_QUOTES, 'UTF-8'); ?><br>
-                                                        ~ <?php echo htmlspecialchars((string)$row['borrow_end_at'], ENT_QUOTES, 'UTF-8'); ?>
-                                                    </td>
-                                                    <td><?php echo htmlspecialchars($itemText, ENT_QUOTES, 'UTF-8'); ?></td>
-                                                    <td>
-                                                        <span class="status-pill <?php echo $buttonClass; ?>">
-                                                            <?php echo $handoverState === 'pending' ? '待交接' : ($handoverState === 'handover' ? '已交接' : '已歸還'); ?>
-                                                        </span>
-                                                    </td>
-                                                    <td><?php echo htmlspecialchars($handoverTimeText, ENT_QUOTES, 'UTF-8'); ?></td>
-                                                    <td><?php echo htmlspecialchars($returnTimeText, ENT_QUOTES, 'UTF-8'); ?></td>
-                                                    <td>
-                                                        <div id="<?php echo htmlspecialchars($noteValueId, ENT_QUOTES, 'UTF-8'); ?>" class="muted"><?php echo $existingNote !== '' ? htmlspecialchars($existingNote, ENT_QUOTES, 'UTF-8') : '-'; ?></div>
-                                                        <div style="margin-top:0.45rem;">
-                                                            <button type="button" class="handover-action" onclick="document.getElementById('<?php echo htmlspecialchars($noteEditorId, ENT_QUOTES, 'UTF-8'); ?>').classList.toggle('hidden');">備註</button>
-                                                        </div>
-                                                        <div id="<?php echo htmlspecialchars($noteEditorId, ENT_QUOTES, 'UTF-8'); ?>" class="hidden note-editor" style="margin-top:0.5rem;">
+                                                    if (!empty($row['space_names'])) {
+                                                        $items[] = '場地：' . $row['space_names'];
+                                                    }
+                                                    $itemText = count($items) > 0 ? implode(' ｜ ', $items) : '-';
+                                                    $handoverState = (string)($row['handover_state'] ?? 'pending');
+                                                    $handoverTimeText = $handoverState === 'pending' ? '-' : (string)($row['latest_handover_at'] ?? '-');
+                                                    $returnTimeText = $handoverState === 'returned' ? (string)($row['latest_returned_at'] ?? '-') : '-';
+                                                    $existingNote = trim((string)($row['latest_note'] ?? ''));
+                                                    $buttonClass = $handoverState === 'handover' ? 'status-handover' : ($handoverState === 'returned' ? 'status-done' : 'status-pending');
+                                                    $buttonDisabled = $handoverState === 'returned';
+                                                    $buttonLabel = '';
+                                                    if ($handoverState === 'pending') {
+                                                        if ($hasEquipment) {
+                                                            $buttonLabel = '已交接';
+                                                            $buttonDisabled = false;
+                                                        } else {
+                                                            $buttonLabel = '無器材（不可交接）';
+                                                            $buttonDisabled = true;
+                                                        }
+                                                    } else {
+                                                        $buttonLabel = $handoverState === 'handover' ? '已歸還' : '已完成';
+                                                    }
+                                                    $noteEditorId = 'note-editor-' . (int)$row['reservation_id'];
+                                                    $noteValueId = 'note-value-' . (int)$row['reservation_id'];
+                                                    ?>
+                                                    <tr>
+                                                        <td>#<?php echo (int)$row['reservation_id']; ?></td>
+                                                        <td>
+                                                            <?php echo htmlspecialchars((string)$row['full_name'], ENT_QUOTES, 'UTF-8'); ?>
+                                                            <div class="muted"><?php echo htmlspecialchars((string)$row['user_id'], ENT_QUOTES, 'UTF-8'); ?></div>
+                                                        </td>
+                                                        <td>
+                                                            <?php echo htmlspecialchars((string)$row['borrow_start_at'], ENT_QUOTES, 'UTF-8'); ?><br>
+                                                            ~ <?php echo htmlspecialchars((string)$row['borrow_end_at'], ENT_QUOTES, 'UTF-8'); ?>
+                                                        </td>
+                                                        <td><?php echo htmlspecialchars($itemText, ENT_QUOTES, 'UTF-8'); ?></td>
+                                                        <td>
+                                                            <span class="status-pill <?php echo $buttonClass; ?>">
+                                                                <?php echo $handoverState === 'pending' ? '待交接' : ($handoverState === 'handover' ? '已交接' : '已歸還'); ?>
+                                                            </span>
+                                                        </td>
+                                                        <td><?php echo htmlspecialchars($handoverTimeText, ENT_QUOTES, 'UTF-8'); ?></td>
+                                                        <td><?php echo htmlspecialchars($returnTimeText, ENT_QUOTES, 'UTF-8'); ?></td>
+                                                        <td>
+                                                            <div id="<?php echo htmlspecialchars($noteValueId, ENT_QUOTES, 'UTF-8'); ?>" class="muted"><?php echo $existingNote !== '' ? htmlspecialchars($existingNote, ENT_QUOTES, 'UTF-8') : '-'; ?></div>
+                                                            <div style="margin-top:0.45rem;">
+                                                                <button type="button" class="handover-action" onclick="document.getElementById('<?php echo htmlspecialchars($noteEditorId, ENT_QUOTES, 'UTF-8'); ?>').classList.toggle('hidden');">備註</button>
+                                                            </div>
+                                                            <div id="<?php echo htmlspecialchars($noteEditorId, ENT_QUOTES, 'UTF-8'); ?>" class="hidden note-editor" style="margin-top:0.5rem;">
+                                                                <form method="post" style="margin:0;">
+                                                                    <input type="hidden" name="action" value="save_note">
+                                                                    <input type="hidden" name="handover_id" value="<?php echo !empty($row['handover_id']) ? (int)$row['handover_id'] : 0; ?>">
+                                                                    <input type="hidden" name="reservation_id" value="<?php echo (int)$row['reservation_id']; ?>">
+                                                                    <textarea name="note" rows="3"><?php echo htmlspecialchars($existingNote, ENT_QUOTES, 'UTF-8'); ?></textarea>
+                                                                    <div class="note-editor-actions">
+                                                                        <button type="submit" class="handover-action">儲存</button>
+                                                                        <button type="button" class="handover-action" onclick="document.getElementById('<?php echo htmlspecialchars($noteEditorId, ENT_QUOTES, 'UTF-8'); ?>').classList.add('hidden');">取消</button>
+                                                                    </div>
+                                                                </form>
+                                                            </div>
+                                                        </td>
+                                                        <td>
                                                             <form method="post" style="margin:0;">
-                                                                <input type="hidden" name="action" value="save_note">
-                                                                <input type="hidden" name="handover_id" value="<?php echo !empty($row['handover_id']) ? (int)$row['handover_id'] : 0; ?>">
+                                                                <input type="hidden" name="action" value="<?php echo $handoverState === 'pending' ? 'mark_handover' : 'mark_return'; ?>">
                                                                 <input type="hidden" name="reservation_id" value="<?php echo (int)$row['reservation_id']; ?>">
-                                                                <textarea name="note" rows="3"><?php echo htmlspecialchars($existingNote, ENT_QUOTES, 'UTF-8'); ?></textarea>
-                                                                <div class="note-editor-actions">
-                                                                    <button type="submit" class="handover-action">儲存</button>
-                                                                    <button type="button" class="handover-action" onclick="document.getElementById('<?php echo htmlspecialchars($noteEditorId, ENT_QUOTES, 'UTF-8'); ?>').classList.add('hidden');">取消</button>
-                                                                </div>
+                                                                <button type="submit" class="handover-action" <?php echo $buttonDisabled ? 'disabled' : ''; ?>><?php echo htmlspecialchars($buttonLabel, ENT_QUOTES, 'UTF-8'); ?></button>
                                                             </form>
-                                                        </div>
-                                                    </td>
-                                                    <td>
-                                                        <form method="post" style="margin:0;">
-                                                            <input type="hidden" name="action" value="<?php echo $handoverState === 'pending' ? 'mark_handover' : 'mark_return'; ?>">
-                                                            <input type="hidden" name="reservation_id" value="<?php echo (int)$row['reservation_id']; ?>">
-                                                            <button type="submit" class="handover-action" <?php echo $buttonDisabled ? 'disabled' : ''; ?>><?php echo htmlspecialchars($buttonLabel, ENT_QUOTES, 'UTF-8'); ?></button>
-                                                        </form>
-                                                    </td>
-                                                </tr>
+                                                        </td>
+                                                    </tr>
+                                                <?php } ?>
                                             <?php } ?>
-                                        <?php } ?>
-                                    </tbody>
-                                </table>
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    <?php } elseif ($canViewSpace) { ?>
+                        <div class="handover-grid">
+                            <div class="card" style="margin:0;">
+                                <h3 style="margin-top:0;">空間排程清單</h3>
+                                <?php if ($spaceError !== '') { ?>
+                                    <div class="login-alert"><?php echo htmlspecialchars($spaceError, ENT_QUOTES, 'UTF-8'); ?></div>
+                                <?php } ?>
+                                <div class="handover-table-wrapper">
+                                    <table class="handover-table">
+                                        <thead>
+                                            <tr>
+                                                <th>申請編號</th>
+                                                <th>申請人</th>
+                                                <th>借用時段</th>
+                                                <th>借用空間</th>
+                                                <th>開門狀態</th>
+                                                <th>開門時間</th>
+                                                <th>備註</th>
+                                                <th>操作</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php if (count($spaceRows) === 0) { ?>
+                                                <tr><td colspan="8">目前沒有已核准空間申請。</td></tr>
+                                            <?php } else { ?>
+                                                <?php foreach ($spaceRows as $row) { ?>
+                                                    <?php
+                                                    $spaceState = (string)($row['space_state'] ?? 'pending');
+                                                    $spaceTimeText = $spaceState === 'opened' ? (string)($row['latest_opened_at'] ?? '-') : '-';
+                                                    $spaceNote = trim((string)($row['latest_note'] ?? ''));
+                                                    $spaceButtonClass = $spaceState === 'opened' ? 'status-done' : 'status-pending';
+                                                    $spaceButtonDisabled = $spaceState === 'opened';
+                                                    $spaceButtonLabel = '已開門';
+                                                    $spaceNoteEditorId = 'space-note-editor-' . (int)$row['reservation_id'];
+                                                    $spaceNoteValueId = 'space-note-value-' . (int)$row['reservation_id'];
+                                                    ?>
+                                                    <tr>
+                                                        <td>#<?php echo (int)$row['reservation_id']; ?></td>
+                                                        <td>
+                                                            <?php echo htmlspecialchars((string)$row['full_name'], ENT_QUOTES, 'UTF-8'); ?>
+                                                            <div class="muted"><?php echo htmlspecialchars((string)$row['user_id'], ENT_QUOTES, 'UTF-8'); ?></div>
+                                                        </td>
+                                                        <td>
+                                                            <?php echo htmlspecialchars((string)$row['borrow_start_at'], ENT_QUOTES, 'UTF-8'); ?><br>
+                                                            ~ <?php echo htmlspecialchars((string)$row['borrow_end_at'], ENT_QUOTES, 'UTF-8'); ?>
+                                                        </td>
+                                                        <td><?php echo htmlspecialchars((string)($row['space_names'] ?? '-'), ENT_QUOTES, 'UTF-8'); ?></td>
+                                                        <td>
+                                                            <span class="status-pill <?php echo $spaceButtonClass; ?>">
+                                                                <?php echo $spaceState === 'opened' ? '已開門' : '待開門'; ?>
+                                                            </span>
+                                                        </td>
+                                                        <td><?php echo htmlspecialchars($spaceTimeText, ENT_QUOTES, 'UTF-8'); ?></td>
+                                                        <td>
+                                                            <div id="<?php echo htmlspecialchars($spaceNoteValueId, ENT_QUOTES, 'UTF-8'); ?>" class="muted"><?php echo $spaceNote !== '' ? htmlspecialchars($spaceNote, ENT_QUOTES, 'UTF-8') : '-'; ?></div>
+                                                            <div style="margin-top:0.45rem;">
+                                                                <button type="button" class="handover-action" onclick="document.getElementById('<?php echo htmlspecialchars($spaceNoteEditorId, ENT_QUOTES, 'UTF-8'); ?>').classList.toggle('hidden');">備註</button>
+                                                            </div>
+                                                            <div id="<?php echo htmlspecialchars($spaceNoteEditorId, ENT_QUOTES, 'UTF-8'); ?>" class="hidden note-editor" style="margin-top:0.5rem;">
+                                                                <form method="post" style="margin:0;">
+                                                                    <input type="hidden" name="action" value="save_note">
+                                                                    <input type="hidden" name="handover_id" value="<?php echo !empty($row['handover_id']) ? (int)$row['handover_id'] : 0; ?>">
+                                                                    <input type="hidden" name="reservation_id" value="<?php echo (int)$row['reservation_id']; ?>">
+                                                                    <textarea name="note" rows="3"><?php echo htmlspecialchars($spaceNote, ENT_QUOTES, 'UTF-8'); ?></textarea>
+                                                                    <div class="note-editor-actions">
+                                                                        <button type="submit" class="handover-action">儲存</button>
+                                                                        <button type="button" class="handover-action" onclick="document.getElementById('<?php echo htmlspecialchars($spaceNoteEditorId, ENT_QUOTES, 'UTF-8'); ?>').classList.add('hidden');">取消</button>
+                                                                    </div>
+                                                                </form>
+                                                            </div>
+                                                        </td>
+                                                        <td>
+                                                            <form method="post" style="margin:0;">
+                                                                <input type="hidden" name="action" value="mark_open_door">
+                                                                <input type="hidden" name="reservation_id" value="<?php echo (int)$row['reservation_id']; ?>">
+                                                                <button type="submit" class="handover-action" <?php echo $spaceButtonDisabled ? 'disabled' : ''; ?>><?php echo htmlspecialchars($spaceButtonLabel, ENT_QUOTES, 'UTF-8'); ?></button>
+                                                            </form>
+                                                        </td>
+                                                    </tr>
+                                                <?php } ?>
+                                            <?php } ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    <?php } ?>
                 <?php } ?>
             </section>
         </main>

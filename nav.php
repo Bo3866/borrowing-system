@@ -6,6 +6,9 @@ $displayName = $displayName ?? (string)($_SESSION['full_name'] ?? $_SESSION['use
 $currentRole = $currentRole ?? (string)($_SESSION['role_name'] ?? '');
 $isLoggedIn = $isLoggedIn ?? isset($_SESSION['user_id']);
 $isManager = $isManager ?? in_array($currentRole, ['2','3','a','b','c'], true);
+$handoverMenuLabel = in_array($currentRole, ['8','9'], true)
+    ? ($currentRole === '8' ? '開門排程' : '器材交接排程')
+    : '交接/開門排程';
 ?>
 <nav class="navbar">
     <div class="navbar-brand">
@@ -19,8 +22,8 @@ $isManager = $isManager ?? in_array($currentRole, ['2','3','a','b','c'], true);
             <button class="nav-btn" onclick="location.href='history_all.php'">歷史借用紀錄</button>
         <?php } ?>
 
-        <?php if ($currentRole === '9') { ?>
-            <button class="nav-btn" onclick="location.href='handover_schedule.php'">器材交接排程</button>
+        <?php if (in_array($currentRole, ['8','9'], true)) { ?>
+            <button class="nav-btn" onclick="location.href='handover_schedule.php'"><?php echo htmlspecialchars($handoverMenuLabel, ENT_QUOTES, 'UTF-8'); ?></button>
         <?php } ?>
 
         <?php if ($isManager) { ?>

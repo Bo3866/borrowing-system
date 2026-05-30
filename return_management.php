@@ -13,7 +13,7 @@ require 'lib/PHPMailer/SMTP.php';
 require 'lib/PHPMailer/Exception.php';
 
 if (!isset($_SESSION['user_id'])) {
-    header('Location: login.php?next=return_management.php');
+    header('Location: login.php?next=return.php');
     exit;
 }
 
@@ -127,9 +127,6 @@ if ($dbError === '') {
         }
     }
 
-    // 報到功能已移除。
-    // 歸還狀態：使用 returned_at 欄位
-
     if ($dbError === '' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $action = (string)($_POST['action'] ?? '');
 
@@ -164,8 +161,6 @@ if ($dbError === '') {
                     throw new RuntimeException('找不到可操作的申請資料，或此申請不屬於目前使用者。');
                 }
 
-                // 原先會檢查是否已報到，但報到功能已移除，所以不再檢查
-
                 if (!empty($reservationRow['returned_at'])) {
                     throw new RuntimeException('此申請已完成歸還或離場。');
                 }
@@ -173,7 +168,6 @@ if ($dbError === '') {
                 mysqli_begin_transaction($link);
 
                 if ($action === 'confirm_return') {
-                    // 更新歸還時間
                     $returnSql = 'UPDATE reservations SET returned_at = COALESCE(returned_at, NOW()) WHERE reservation_id = ?';
                     $returnStmt = mysqli_prepare($link, $returnSql);
                     if (!$returnStmt) {
@@ -183,7 +177,6 @@ if ($dbError === '') {
                     mysqli_stmt_execute($returnStmt);
                     mysqli_stmt_close($returnStmt);
 
-                    // 還原借出的器材狀態
                     $restoreStmt = mysqli_prepare(
                         $link,
                         'UPDATE equipments e
@@ -198,7 +191,6 @@ if ($dbError === '') {
                     mysqli_stmt_execute($restoreStmt);
                     mysqli_stmt_close($restoreStmt);
 
-                    // 還原場地狀態（若原先標為 2 已借出，則改回 1 可借用）
                     $restoreSpaceStmt = mysqli_prepare(
                         $link,
                         'UPDATE spaces s
@@ -218,7 +210,6 @@ if ($dbError === '') {
 
                 mysqli_commit($link);
 
-                    // 寄送歸還通知信給申請人（非必要失敗不回滾）
                     try {
                         $emailStmt = mysqli_prepare(
                             $link,
@@ -264,7 +255,6 @@ if ($dbError === '') {
                             }
                         }
                     } catch (Throwable $e) {
-                        // 不要因為通知失敗而回滾主要交易
                         $actionMsg .= '（歸還通知信處理時發生錯誤）';
                     }
             }
@@ -275,17 +265,13 @@ if ($dbError === '') {
     }
 
     if ($dbError === '') {
-        // 顯示所有申請狀態（待審、已批准、已拒絕、待補件、補件逾期）
         $listWhere = "r.approval_status IN ('pending', 'approved', 'rejected', 'need_revision', 'revision_overdue')";
         $safeUserId = mysqli_real_escape_string($link, $currentUserId);
         $listWhere .= " AND r.`{$applicantColumn}` = '{$safeUserId}'";
 
-        // 更新逾期的自動狀態 (包含舊的缺漏deadline的測試資料)
         $updateOverdueSql = "UPDATE reservations SET approval_status = 'revision_overdue' WHERE approval_status = 'need_revision' AND (revision_deadline IS NULL OR revision_deadline < NOW())";
         mysqli_query($link, $updateOverdueSql);
 
-        // 查詢邏輯：
-        // - return_confirmed: 使用 reservations.returned_at 判斷（NULL = 未歸還，NOT NULL = 已歸還）
         $listSql = "
             SELECT
                 r.reservation_id,
@@ -304,6 +290,9 @@ if ($dbError === '') {
                 r.returned_at AS return_confirmed_at,
                 r.checked_in_at AS checked_in_at,
                 (r.checked_in_at IS NOT NULL) AS checked_in,
+                r.coordinator_phone,
+                r.organization_name,
+                r.activity_name,
                 (
                     SELECT GROUP_CONCAT(DISTINCT ec.equipment_code ORDER BY ec.equipment_code SEPARATOR ', ')
                     FROM equipment_reservation_items eri
@@ -340,7 +329,6 @@ if ($dbError === '') {
     }
 }
 
-// Attach per-reservation approval log info (timestamps and results) for UI
 if ($dbError === '' && count($rows) > 0) {
     foreach ($rows as $idx => $r) {
         $reservationId = (int)$r['reservation_id'];
@@ -360,7 +348,6 @@ if ($dbError === '' && count($rows) > 0) {
                     $result = $logRow['review_result'] ?? null;
                     $comment = $logRow['review_comment'] ?? null;
                     if ($role !== '') {
-                        // normalize roles '2' acting as '3' handled elsewhere
                         $rows[$idx]['_stage_times'][$role] = $reviewedAt;
                         $rows[$idx]['_stage_results'][$role] = $result;
                         $rows[$idx]['_stage_comments'][$role] = $comment;
@@ -379,53 +366,268 @@ if ($dbError === '' && count($rows) > 0) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>借還管理｜校園資源租借系統</title>
     <link rel="stylesheet" href="styles.css?v=<?php echo time(); ?>">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* Prevent step labels from wrapping */
         .stepper-text { white-space: nowrap; }
         .stepper-subtext { white-space: nowrap; }
-    </style>
+        /* 避免 Tailwind 蓋掉基本表格線段 */
+        .management-table th, .management-table td {
+            border-bottom: 1px solid #e5e7eb;
+            padding: 12px;
+        }
+        /* 左側點擊區專屬樣式 */
+        .left-trigger-zone:hover {
+            background-color: #eff6ff !important;
+            color: #2563eb;
+        }
+        /* Match history_all list styling */
+        .history-list-header,
+        .history-list-row {
+            display: grid;
+            grid-template-columns: 140px minmax(220px, 1.1fr) minmax(320px, 1.5fr) 150px;
+            gap: 1rem;
+            align-items: center;
+        }
+        .history-list-header {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 1rem 1.5rem;
+            border-radius: 1rem 1rem 0 0;
+            font-size: 0.95rem;
+            font-weight: 700;
+            letter-spacing: .02em;
+        }
+        .history-list-row {
+            background: #ffffff;
+            padding: 1rem 1.5rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 1rem;
+            cursor: pointer;
+            transition: .18s ease;
+        }
+        .history-list-row:hover {
+            border-color: #a5b4fc;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, .08);
+            transform: translateY(-1px);
+        }
+        .record-id-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: .35rem;
+            padding: .45rem .75rem;
+            border-radius: 999px;
+            background: #eef2ff;
+            color: #4f46e5;
+            border: 1px solid #c7d2fe;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+            font-weight: 800;
+            width: fit-content;
+        }
+        .detail-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: .45rem;
+            padding: .55rem .85rem;
+            border-radius: .8rem;
+            background: #f8fafc;
+            color: #475569;
+            border: 1px solid #e2e8f0;
+            font-size: .95rem;
+            font-weight: 700;
+            transition: .18s ease;
+            white-space: nowrap;
+        }
+        /* 移除整列 Hover 時強制按鈕變色的效果，讓它維持一般按鈕的 Hover 行為即可 */
+        .detail-button:hover {
+            background: #4f46e5;
+            color: #ffffff;
+            border-color: #4f46e5;
+        }
+    
+        /* ===== 同步 history_all.php 的整體視覺與字體 ===== */
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+        }
+        .text-xs { font-size: 0.95rem !important; }
+        .text-sm { font-size: 1rem !important; }
+        .text-[10px] { font-size: 0.85rem !important; }
+        .text-2xl { font-size: 1.5rem !important; }
+        .text-lg { font-size: 1.125rem !important; }
+
+        .container.main-content {
+            max-width: 1200px !important;
+            margin: 0 auto !important;
+            padding-right: 1rem !important;
+            padding-left: 1rem !important;
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        #detail-drawer { font-size: 15px; }
+        .container.main-content .text-xs,
+        .container.main-content .text-[10px],
+        .container.main-content .text-[11px],
+        .container.main-content .font-mono,
+        .container.main-content .text-slate-400,
+        .management-table th,
+        .management-table td {
+            font-size: 1rem !important;
+            line-height: 1.25 !important;
+        }
+
+        .return-management-table {
+            border-collapse: separate !important;
+            border-spacing: 0 .5rem !important;
+            background: transparent !important;
+            box-shadow: none !important;
+        }
+        .return-management-table thead th {
+            background: #1e293b !important;
+            color: #e2e8f0 !important;
+            padding: 1rem 1.1rem !important;
+            font-size: .95rem !important;
+            font-weight: 700 !important;
+            border-bottom: none !important;
+        }
+        .return-management-table thead th:first-child {
+            border-radius: 1rem 0 0 1rem;
+        }
+        .return-management-table thead th:last-child {
+            border-radius: 0 1rem 1rem 0;
+        }
+        .return-management-table tbody tr.accordion-trigger {
+            background: #ffffff;
+            cursor: pointer;
+            transition: .18s ease;
+        }
+        .return-management-table tbody tr.accordion-trigger:hover {
+            background: #ffffff !important;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, .08);
+            transform: translateY(-1px);
+        }
+        .return-management-table tbody tr.accordion-trigger td {
+            border-top: 1px solid #e2e8f0;
+            border-bottom: 1px solid #e2e8f0;
+            background: #ffffff;
+        }
+        .return-management-table tbody tr.accordion-trigger td:first-child {
+            border-left: 1px solid #e2e8f0;
+            border-radius: 1rem 0 0 1rem;
+        }
+        .return-management-table tbody tr.accordion-trigger td:last-child {
+            border-right: 1px solid #e2e8f0;
+            border-radius: 0 1rem 1rem 0;
+        }
+        .return-management-table tbody tr.accordion-content td {
+            border: 1px solid #e2e8f0;
+            border-radius: 1rem;
+            background: #f8fafc;
+        }
+
+        .accordion-icon {
+            display: inline-block;
+            transition: transform .2s ease;
+        }
+
+        .detail-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: .45rem;
+            padding: .55rem .85rem;
+            border-radius: .8rem;
+            background: #f8fafc;
+            color: #475569;
+            border: 1px solid #e2e8f0;
+            font-size: .95rem;
+            font-weight: 700;
+            transition: .18s ease;
+            white-space: nowrap;
+            cursor: pointer;
+        }
+        .detail-button:hover {
+            background: #4f46e5;
+            color: #ffffff;
+            border-color: #4f46e5;
+        }
+        .card {
+            background: #ffffff;
+            border-radius: 1rem;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, .04);
+        }
+        .page-header h2,
+        section.card h2 {
+            margin-bottom: 1rem;
+        }
+
+    
+        /* Detail Panel：固定在視窗最右側，不受表格/卡片容器限制 */
+        #drawer-overlay { position: fixed; inset: 0; }
+        #detail-drawer {
+            position: fixed !important;
+            right: 0 !important;
+            top: 0 !important;
+            bottom: 0 !important;
+            height: 100vh !important;
+            max-height: 100vh !important;
+            overflow-y: auto !important;
+            overscroll-behavior: contain;
+        }
+</style>
  </head>
-<body>
-    <!-- 導覽列 放到 container 之外以讓背景拉滿整個視窗 -->
-    <nav class="navbar">
-        <div class="navbar-brand"><h1>📚 校園資源租借系統</h1></div>
-        <div class="navbar-menu">
-            <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
-            <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
-            <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['user_id'], ENT_QUOTES, 'UTF-8'); ?></button>
-            <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
-        </div>
-    </nav>
+<body class="history-page">
 
-    <div class="container">
+    <?php include __DIR__ . '/nav.php'; ?>
 
-        <main class="main-content">
+<div class="container main-content">
+        <main>
             <section class="card">
-                <h2>我的申請紀錄</h2>
+                <h2 class="text-xl font-bold mb-4">我的申請紀錄</h2>
 
                 <?php if ($actionMsg !== '') { ?>
-                    <div class="borrow-success"><?php echo htmlspecialchars($actionMsg, ENT_QUOTES, 'UTF-8'); ?></div>
+                    <div class="borrow-success bg-emerald-50 border border-emerald-200 text-emerald-700 p-4 rounded-lg mb-4"><?php echo htmlspecialchars($actionMsg, ENT_QUOTES, 'UTF-8'); ?></div>
                 <?php } ?>
 
                 <?php if ($dbError !== '') { ?>
-                    <div class="login-alert"><?php echo htmlspecialchars($dbError, ENT_QUOTES, 'UTF-8'); ?></div>
+                    <div class="login-alert bg-rose-50 border border-rose-200 text-rose-700 p-4 rounded-lg mb-4"><?php echo htmlspecialchars($dbError, ENT_QUOTES, 'UTF-8'); ?></div>
                 <?php } else { ?>
-                    <div class="borrow-table-wrapper">
-                        <table class="management-table return-management-table">
+                    <div class="borrow-table-wrapper overflow-x-auto">
+                        <table class="management-table return-management-table w-full text-left border-collapse">
                             <thead>
-                                <tr>
-                                    <th style="width: 30px;"></th>
+                                <tr class="bg-slate-50 text-slate-600 text-sm">
+                                    <th style="width: 50px; text-align: center;">進度</th>
                                     <th>申請人</th>
                                     <th>借用時段</th>
                                     <th>借用項目</th>
                                     <th>狀態</th>
-                                    <th>修改</th>
+                                    <th>操作</th>
                                     <th>歸還</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if (count($rows) === 0) { ?>
-                                    <tr><td colspan="7">目前沒有可顯示的申請資料。</td></tr>
+                                    <tr><td colspan="7" class="text-center py-8 text-slate-400">目前沒有可顯示的申請資料。</td></tr>
                                 <?php } else { ?>
                                     <?php foreach ($rows as $row) { ?>
                                         <?php
@@ -443,7 +645,6 @@ if ($dbError === '' && count($rows) > 0) {
                                             $isCheckedIn = isset($row['checked_in']) && (int)$row['checked_in'] === 1;
                                             $approvalStage = (string)($row['approval_stage'] ?? 'a');
 
-                                            // Map approval stages to step indices (for the stepper)
                                             $stageMap = ['a' => 2, 'b' => 3, 'c' => 4, 'd' => 5];
                                             if ($approvalStatus === 'rejected' || $approvalStatus === 'revision_overdue') {
                                                 $progressStatus = 0;
@@ -452,75 +653,100 @@ if ($dbError === '' && count($rows) > 0) {
                                             } elseif ($approvalStatus === 'pending') {
                                                 $progressStatus = $stageMap[$approvalStage] ?? 2;
                                             } elseif ($approvalStatus === 'approved') {
-                                                $progressStatus = $isReturned ? 7 : 5; // without checkin, approved but not returned = 審核完成
+                                                $progressStatus = $isReturned ? 7 : 5;
                                             } else {
                                                 $progressStatus = 1;
                                             }
                                         ?>
-                                        <tr class="accordion-trigger" onclick="toggleAccordion(this, <?php echo (int)$row['reservation_id']; ?>)">
-                                            <td style="text-align: center; cursor: pointer;">
+                                        <!-- 整列點擊可展開 / 收合進度條；查看詳情按鈕會 stopPropagation，避免誤觸展開 -->
+                                        <tr class="accordion-trigger hover:bg-slate-50/50 transition"
+                                            onclick="toggleAccordion(this, <?php echo (int)$row['reservation_id']; ?>)"
+                                            id="row-<?php echo (int)$row['reservation_id']; ?>"
+                                            data-id="<?php echo (int)$row['reservation_id']; ?>"
+                                            data-borrower-name="<?php echo htmlspecialchars($row['full_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-borrower-id="<?php echo htmlspecialchars($row['applicant_user_id'] ?? '', ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-borrower-email="<?php echo htmlspecialchars((string)($row['email'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-start="<?php echo htmlspecialchars((string)($row['borrow_start_at'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-end="<?php echo htmlspecialchars((string)($row['borrow_end_at'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-submitted="<?php echo htmlspecialchars((string)($row['submitted_at'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-status="<?php echo htmlspecialchars((string)($row['approval_status'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-checkin="<?php echo htmlspecialchars((string)($row['checked_in'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-return="<?php echo htmlspecialchars((string)($row['return_confirmed_at'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-resources="<?php echo htmlspecialchars($resourceText, ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-coordinator-phone="<?php echo htmlspecialchars((string)($row['coordinator_phone'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-organization-name="<?php echo htmlspecialchars((string)($row['organization_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-activity-name="<?php echo htmlspecialchars((string)($row['activity_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-stage="<?php echo htmlspecialchars((string)($row['approval_stage'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
+                                            
+                                            <td class="left-trigger-zone text-center text-indigo-600 font-bold transition" 
+                                                style="cursor: pointer; text-align: center;"
+                                                onclick="event.stopPropagation(); toggleAccordion(this.closest('tr'), <?php echo (int)$row['reservation_id']; ?>)">
                                                 <span class="accordion-icon">▶</span>
                                             </td>
+
                                             <td>
-                                                <?php echo htmlspecialchars($row['full_name'] . ' (' . $row['applicant_user_id'] . ')', ENT_QUOTES, 'UTF-8'); ?><br>
-                                                <small><?php echo htmlspecialchars((string)$row['email'], ENT_QUOTES, 'UTF-8'); ?></small>
+                                                <span class="font-semibold text-slate-800"><?php echo htmlspecialchars($row['full_name'] . ' (' . $row['applicant_user_id'] . ')', ENT_QUOTES, 'UTF-8'); ?></span><br>
+                                                <small class="text-slate-500"><?php echo htmlspecialchars((string)$row['email'], ENT_QUOTES, 'UTF-8'); ?></small>
                                             </td>
-                                            <td>
+                                            <td class="text-sm">
                                                 <?php echo htmlspecialchars((string)$row['borrow_start_at'], ENT_QUOTES, 'UTF-8'); ?><br>
                                                 ～ <?php echo htmlspecialchars((string)$row['borrow_end_at'], ENT_QUOTES, 'UTF-8'); ?>
                                             </td>
-                                            <td><?php echo htmlspecialchars($resourceText, ENT_QUOTES, 'UTF-8'); ?></td>
+                                            <td class="text-sm max-w-xs truncate"><?php echo htmlspecialchars($resourceText, ENT_QUOTES, 'UTF-8'); ?></td>
                                             <td>
                                                 <?php
-                                                        if ($isReturned) {
-                                                        echo '<span class="return-status return-status-ok">已離場</span>';
-                                                        echo '<br><small>時間: ' . htmlspecialchars((string)$row['return_confirmed_at'], ENT_QUOTES, 'UTF-8') . '</small>';
+                                                    if ($isReturned) {
+                                                        echo '<span class="px-2 py-1 rounded bg-emerald-100 text-emerald-800 text-xs font-semibold">已離場</span>';
                                                     } else {
                                                         if ($approvalStatus === 'approved') {
-                                                            echo '<span class="return-status return-status-pending">審核完成</span>';
+                                                            echo '<span class="px-2 py-1 rounded bg-indigo-100 text-indigo-800 text-xs font-semibold">審核完成</span>';
                                                         } else {
                                                             $statusLabel = $approvalStatus;
+                                                            $badgeStyle = "bg-amber-100 text-amber-800";
                                                             if ($approvalStatus === 'rejected') {
                                                                 $statusLabel = '審核未通過';
+                                                                $badgeStyle = "bg-rose-100 text-rose-800";
                                                             } elseif ($approvalStatus === 'need_revision') {
                                                                 $statusLabel = '需要補件';
+                                                                $badgeStyle = "bg-yellow-100 text-yellow-800 border border-yellow-200";
                                                             } elseif ($approvalStatus === 'pending') {
                                                                 $statusLabel = '待審核';
                                                             }
-                                                            echo '<span class="return-status return-status-pending">' . htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8') . '</span>';
+                                                            echo '<span class="px-2 py-1 rounded text-xs font-semibold ' . $badgeStyle . '">' . htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8') . '</span>';
                                                         }
                                                     }
                                                 ?>
                                             </td>
                                             <td style="text-align: center;">
                                                 <?php if ($approvalStatus === 'pending') { ?>
-                                                    <a href="edit_application.php?reservation_id=<?php echo (int)$row['reservation_id']; ?>" class="btn-primary" style="display:inline-block; padding:6px 12px; text-decoration:none; font-size:12px; border-radius:6px;" onclick="event.stopPropagation();">修改申請</a>
+                                                    <a href="edit_application.php?reservation_id=<?php echo (int)$row['reservation_id']; ?>" class="bg-indigo-600 text-white px-2.5 py-1 rounded text-xs inline-block hover:bg-indigo-700 transition" onclick="event.stopPropagation();">修改申請</a>
                                                 <?php } else { ?>
                                                     -
                                                 <?php } ?>
+                                                <div style="margin-top:6px;">
+                                                    <!-- 查看詳情按鈕：直接傳入該列元素，觸發開窗 -->
+                                                    <button type="button" class="detail-button" onclick="event.stopPropagation(); openDrawer(this.closest('tr'))">查看詳情</button>
+                                                </div>
                                             </td>
                                             <td>
                                                 <?php if ($isReturned) { ?>
-                                                    <span class="return-status return-status-ok">已離場</span>
-                                                    <br><small>時間: <?php echo htmlspecialchars((string)$row['return_confirmed_at'], ENT_QUOTES, 'UTF-8'); ?></small>
+                                                    <span class="text-emerald-600 text-xs font-medium">已離場</span>
                                                 <?php } elseif ($approvalStatus === 'approved' && $isCheckedIn) { ?>
-                                                    <form method="post" style="margin-top: 8px;" onclick="event.stopPropagation();">
+                                                    <form method="post" class="inline-block m-0" onclick="event.stopPropagation();">
                                                         <input type="hidden" name="action" value="confirm_return">
                                                         <input type="hidden" name="reservation_id" value="<?php echo (int)$row['reservation_id']; ?>">
-                                                        <button type="submit" class="btn-secondary" style="font-size: 12px; padding: 4px 12px;" onclick="return confirm('確認此申請已歸還或離場？')">確認歸還／離場</button>
+                                                        <button type="submit" class="bg-slate-800 text-white px-3 py-1 rounded text-xs hover:bg-slate-700 transition" onclick="event.stopPropagation(); return confirm('確認此申請已歸還或離場？')">確認歸還／離場</button>
                                                     </form>
-                                                <?php } elseif ($approvalStatus === 'approved' && ! $isCheckedIn) { ?>
-                                                    <span class="return-status return-status-pending">已核准，尚未報到</span>
+                                                <?php } elseif ($approvalStatus === 'approved' && !$isCheckedIn) { ?>
+                                                    <span class="text-amber-600 text-xs">已核准，尚未報到</span>
                                                 <?php } else { ?>
-                                                    <span class="return-status return-status-pending">不可離場</span>
+                                                    <span class="text-slate-400 text-xs">不可離場</span>
                                                 <?php } ?>
                                             </td>
                                         </tr>
-                                        <!-- 展開式進度條 -->
-                                        <tr class="accordion-content" id="accordion-<?php echo (int)$row['reservation_id']; ?>" style="display: none;">
-                                            <td colspan="7">
+                                        <tr class="accordion-content bg-slate-50/50" id="accordion-<?php echo (int)$row['reservation_id']; ?>" style="display: none;">
+                                            <td colspan="7" class="p-4">
                                                 <?php
-                                                    // Prepare approved/rejected stage lists and timestamps for this row
                                                     $approvedStages = [];
                                                     $rejectedStages = [];
                                                     $stageTimes = [];
@@ -536,33 +762,22 @@ if ($dbError === '' && count($rows) > 0) {
                                                         }
                                                     }
 
-                                                    // Normalize legacy '3' (old final approver) to 'd' so UI shows properly
-                                                    if (in_array('3', $approvedStages, true)) {
-                                                        $approvedStages[] = 'd';
-                                                    }
-                                                    if (in_array('3', $rejectedStages, true)) {
-                                                        $rejectedStages[] = 'd';
-                                                    }
-                                                    // remove duplicates
+                                                    if (in_array('3', $approvedStages, true)) { $approvedStages[] = 'd'; }
+                                                    if (in_array('3', $rejectedStages, true)) { $rejectedStages[] = 'd'; }
                                                     $approvedStages = array_values(array_unique($approvedStages));
                                                     $rejectedStages = array_values(array_unique($rejectedStages));
 
-                                                    // If a later stage has been approved (e.g. role '3'), mark all prior stages as approved for visual clarity
                                                     $order = ['a','b','c','d','3'];
                                                     if (!empty($approvedStages)) {
                                                         $approvedMap = array_fill_keys($approvedStages, true);
                                                         $maxIdx = -1;
                                                         foreach ($order as $i => $r) {
-                                                            if (isset($approvedMap[$r])) {
-                                                                $maxIdx = max($maxIdx, $i);
-                                                            }
+                                                            if (isset($approvedMap[$r])) { $maxIdx = max($maxIdx, $i); }
                                                         }
                                                         if ($maxIdx >= 0) {
                                                             for ($j = 0; $j <= $maxIdx; $j++) {
                                                                 $approvedMap[$order[$j]] = true;
-                                                                // if earlier stage lacks a timestamp, use the latest approved stage's time
                                                                 if (empty($stageTimes[$order[$j]])) {
-                                                                    // pick time from the furthest approved stage available (search backwards)
                                                                     for ($k = $maxIdx; $k >= 0; $k--) {
                                                                         $candidate = $order[$k];
                                                                         if (!empty($stageTimes[$candidate])) {
@@ -577,173 +792,120 @@ if ($dbError === '' && count($rows) > 0) {
                                                     }
                                                 ?>
                                                 <div class="stepper-simple" data-status="<?php echo $progressStatus; ?>" data-approval="<?php echo htmlspecialchars($approvalStatus, ENT_QUOTES, 'UTF-8'); ?>" data-stage="<?php echo htmlspecialchars($approvalStage, ENT_QUOTES, 'UTF-8'); ?>" data-approved="<?php echo htmlspecialchars(implode(',', $approvedStages), ENT_QUOTES, 'UTF-8'); ?>" data-rejected="<?php echo htmlspecialchars(implode(',', $rejectedStages), ENT_QUOTES, 'UTF-8'); ?>">
-                                                    <div class="stepper-track">
-                                                        <div class="stepper-step" data-step="1">
-                                                            <div class="stepper-dot"></div>
-                                                            <div class="stepper-time">
-                                                                <span class="stepper-text">申請送出</span>
-                                                                <span class="stepper-timestamp"><?php echo htmlspecialchars((string)$row['submitted_at'], ENT_QUOTES, 'UTF-8'); ?></span>
-                                                            </div>
+                                                    <div class="stepper-track flex items-center justify-between border-t border-b border-slate-200 py-4 bg-white rounded-lg p-4 shadow-inner">
+                                                        <div class="stepper-step text-center text-xs" data-step="1">
+                                                            <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
+                                                            <span class="stepper-text block font-medium">申請送出</span>
+                                                            <span class="stepper-timestamp text-[10px] text-slate-400"><?php echo htmlspecialchars((string)$row['submitted_at'], ENT_QUOTES, 'UTF-8'); ?></span>
                                                         </div>
-                                                        <div class="stepper-line"></div>
 
-                                                        <div class="stepper-step" data-step="2" data-role="a">
-                                                            <div class="stepper-dot"></div>
-                                                            <div class="stepper-time">
-                                                                <span class="stepper-text">學務長審核</span>
-                                                                <span class="stepper-subtext approval-text">
-                                                                    <?php
-                                                                        $t = $stageTimes['a'] ?? null;
-                                                                        $res = in_array('a', $approvedStages, true) ? 'approved' : (in_array('a', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['a'] ?? null));
-                                                                        if ($res === 'approved') {
-                                                                            echo '審核通過';
-                                                                        } elseif ($res === 'rejected') {
-                                                                            echo '審核未通過';
-                                                                        } elseif ($approvalStage === 'a' && $approvalStatus === 'pending') {
-                                                                            echo '審核中';
-                                                                        }
-                                                                    ?>
-                                                                </span>
-                                                                <span class="stepper-timestamp"><?php echo $t ? htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8') : htmlspecialchars((string)$row['submitted_at'], ENT_QUOTES, 'UTF-8'); ?></span>
-                                                            </div>
+                                                        <div class="stepper-step text-center text-xs" data-step="2" data-role="a">
+                                                            <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
+                                                            <span class="stepper-text block font-medium">學務長審核</span>
+                                                            <span class="stepper-subtext approval-text text-[11px] block">
+                                                                <?php
+                                                                    $t = $stageTimes['a'] ?? null;
+                                                                    $res = in_array('a', $approvedStages, true) ? 'approved' : (in_array('a', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['a'] ?? null));
+                                                                    if ($res === 'approved') echo '審核通過';
+                                                                    elseif ($res === 'rejected') echo '審核未通過';
+                                                                    elseif ($approvalStage === 'a' && $approvalStatus === 'pending') echo '審核中';
+                                                                ?>
+                                                            </span>
+                                                            <span class="stepper-timestamp text-[10px] text-slate-400"><?php echo $t ? htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8') : htmlspecialchars((string)$row['submitted_at'], ENT_QUOTES, 'UTF-8'); ?></span>
                                                         </div>
-                                                        <div class="stepper-line"></div>
 
-                                                        <div class="stepper-step" data-step="3" data-role="b">
-                                                            <div class="stepper-dot"></div>
-                                                            <div class="stepper-time">
-                                                                <span class="stepper-text">軍訓室審核</span>
-                                                                <span class="stepper-subtext">
-                                                                    <?php
-                                                                        $t = $stageTimes['b'] ?? null;
-                                                                        $res = in_array('b', $approvedStages, true) ? 'approved' : (in_array('b', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['b'] ?? null));
-                                                                        if ($res === 'approved') {
-                                                                            echo '審核通過';
-                                                                        } elseif ($res === 'rejected') {
-                                                                            echo '審核未通過';
-                                                                        } elseif ($approvalStage === 'b' && $approvalStatus === 'pending') {
-                                                                            echo '審核中';
-                                                                        }
-                                                                    ?>
-                                                                </span>
-                                                                <span class="stepper-timestamp"><?php echo $t ? htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8') : '-'; ?></span>
-                                                            </div>
+                                                        <div class="stepper-step text-center text-xs" data-step="3" data-role="b">
+                                                            <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
+                                                            <span class="stepper-text block font-medium">軍訓室審核</span>
+                                                            <span class="stepper-subtext text-[11px] block">
+                                                                <?php
+                                                                    $t = $stageTimes['b'] ?? null;
+                                                                    $res = in_array('b', $approvedStages, true) ? 'approved' : (in_array('b', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['b'] ?? null));
+                                                                    if ($res === 'approved') echo '審核通過';
+                                                                    elseif ($res === 'rejected') echo '審核未通過';
+                                                                    elseif ($approvalStage === 'b' && $approvalStatus === 'pending') echo '審核中';
+                                                                ?>
+                                                            </span>
+                                                            <span class="stepper-timestamp text-[10px] text-slate-400"><?php echo $t ? htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8') : '-'; ?></span>
                                                         </div>
-                                                        <div class="stepper-line"></div>
 
-                                                        <div class="stepper-step" data-step="4" data-role="c">
-                                                            <div class="stepper-dot"></div>
-                                                            <div class="stepper-time">
-                                                                <span class="stepper-text">輔導人員審核</span>
-                                                                <span class="stepper-subtext">
-                                                                    <?php
-                                                                        $t = $stageTimes['c'] ?? null;
-                                                                        $res = in_array('c', $approvedStages, true) ? 'approved' : (in_array('c', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['c'] ?? null));
-                                                                        if ($res === 'approved') {
-                                                                            echo '審核通過';
-                                                                        } elseif ($res === 'rejected') {
-                                                                            echo '審核未通過';
-                                                                        } elseif ($approvalStage === 'c' && $approvalStatus === 'pending') {
-                                                                            echo '審核中';
-                                                                        }
-                                                                    ?>
-                                                                </span>
-                                                                <span class="stepper-timestamp"><?php echo $t ? htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8') : '-'; ?></span>
-                                                            </div>
+                                                        <div class="stepper-step text-center text-xs" data-step="4" data-role="c">
+                                                            <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
+                                                            <span class="stepper-text block font-medium">輔導人員審核</span>
+                                                            <span class="stepper-subtext text-[11px] block">
+                                                                <?php
+                                                                    $t = $stageTimes['c'] ?? null;
+                                                                    $res = in_array('c', $approvedStages, true) ? 'approved' : (in_array('c', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['c'] ?? null));
+                                                                    if ($res === 'approved') echo '審核通過';
+                                                                    elseif ($res === 'rejected') echo '審核未通過';
+                                                                    elseif ($approvalStage === 'c' && $approvalStatus === 'pending') echo '審核中';
+                                                                ?>
+                                                            </span>
+                                                            <span class="stepper-timestamp text-[10px] text-slate-400"><?php echo $t ? htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8') : '-'; ?></span>
                                                         </div>
-                                                        <div class="stepper-line"></div>
 
-                                                        <div class="stepper-step" data-step="5" data-role="d">
-                                                            <div class="stepper-dot"></div>
-                                                            <div class="stepper-time">
-                                                                <span class="stepper-text">課指組審核</span>
-                                                                <span class="stepper-subtext">
-                                                                    <?php
-                                                                        $t = $stageTimes['d'] ?? null;
-                                                                        $res = in_array('d', $approvedStages, true) ? 'approved' : (in_array('d', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['d'] ?? null));
-                                                                        if ($res === 'approved') {
-                                                                            echo '審核通過';
-                                                                        } elseif ($res === 'rejected') {
-                                                                            echo '審核未通過';
-                                                                        } elseif ($approvalStage === 'd' && $approvalStatus === 'pending') {
-                                                                            echo '審核中';
-                                                                        }
-                                                                    ?>
-                                                                </span>
-                                                                <span class="stepper-timestamp"><?php echo $t ? htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8') : '-'; ?></span>
-                                                            </div>
+                                                        <div class="stepper-step text-center text-xs" data-step="5" data-role="d">
+                                                            <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
+                                                            <span class="stepper-text block font-medium">課指組審核</span>
+                                                            <span class="stepper-subtext text-[11px] block">
+                                                                <?php
+                                                                    $t = $stageTimes['d'] ?? null;
+                                                                    $res = in_array('d', $approvedStages, true) ? 'approved' : (in_array('d', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['d'] ?? null));
+                                                                    if ($res === 'approved') echo '審核通過';
+                                                                    elseif ($res === 'rejected') echo '審核未通過';
+                                                                    elseif ($approvalStage === 'd' && $approvalStatus === 'pending') echo '審核中';
+                                                                ?>
+                                                            </span>
+                                                            <span class="stepper-timestamp text-[10px] text-slate-400"><?php echo $t ? htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8') : '-'; ?></span>
                                                         </div>
-                                                        <div class="stepper-line"></div>
 
-                                                        <!-- role 3 final approval removed;課指組(d) is final -->
-
-                                                        <div class="stepper-step" data-step="6">
-                                                            <div class="stepper-dot"></div>
-                                                            <div class="stepper-time">
-                                                                <span class="stepper-text">使用狀態</span>
-                                                                <span class="stepper-subtext">
-                                                                    <?php
-                                                                        $allApprovalsDone = in_array('d', $approvedStages, true) || $approvalStatus === 'approved';
-                                                                        if (! $allApprovalsDone) {
-                                                                            echo '審核尚未結束';
-                                                                        } else {
-                                                                            if ($approvalStatus === 'approved' && $isReturned) {
-                                                                                echo '已歸還';
-                                                                            } elseif ($approvalStatus === 'approved') {
-                                                                                echo '審核完成';
-                                                                            } else {
-                                                                                echo '審核完成';
-                                                                            }
-                                                                        }
-                                                                    ?>
-                                                                </span>
-                                                                <span class="stepper-timestamp">-</span>
-                                                            </div>
+                                                        <div class="stepper-step text-center text-xs" data-step="6">
+                                                            <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
+                                                            <span class="stepper-text block font-medium">使用狀態</span>
+                                                            <span class="stepper-subtext text-[11px] block">
+                                                                <?php
+                                                                    $allApprovalsDone = in_array('d', $approvedStages, true) || $approvalStatus === 'approved';
+                                                                    if (!$allApprovalsDone) {
+                                                                        echo '審核尚未結束';
+                                                                    } else {
+                                                                        if ($approvalStatus === 'approved' && $isReturned) echo '已歸還';
+                                                                        else echo '審核完成';
+                                                                    }
+                                                                ?>
+                                                            </span>
+                                                            <span class="stepper-timestamp text-[10px] text-slate-400">-</span>
                                                         </div>
-                                                        <div class="stepper-line"></div>
 
-                                                        <div class="stepper-step" data-step="7">
-                                                            <div class="stepper-dot"></div>
-                                                            <div class="stepper-time">
-                                                                <span class="stepper-text">已歸還</span>
-                                                                <?php if ($approvalStatus === 'approved' && $isReturned) { ?>
-                                                                    <span class="stepper-timestamp"><?php echo htmlspecialchars((string)$row['return_confirmed_at'], ENT_QUOTES, 'UTF-8'); ?></span>
-                                                                <?php } else { ?>
-                                                                    <span class="stepper-timestamp">-</span>
-                                                                <?php } ?>
-                                                            </div>
+                                                        <div class="stepper-step text-center text-xs" data-step="7">
+                                                            <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
+                                                            <span class="stepper-text block font-medium">已歸還</span>
+                                                            <?php if ($approvalStatus === 'approved' && $isReturned) { ?>
+                                                                <span class="stepper-timestamp text-[10px] text-slate-400 block"><?php echo htmlspecialchars((string)$row['return_confirmed_at'], ENT_QUOTES, 'UTF-8'); ?></span>
+                                                            <?php } else { ?>
+                                                                <span class="stepper-timestamp text-[10px] text-slate-400 block">-</span>
+                                                            <?php } ?>
                                                         </div>
                                                     </div>
                                                 </div>
                                                 
                                                 <?php if ($approvalStatus === 'rejected' && !empty($row['rejection_reason'])) { ?>
-                                                    <div class="rejection-alert">
-                                                        <div class="rejection-alert-header">
-                                                            <span class="rejection-icon">⚠</span>
-                                                            <strong>拒絕原因</strong>
+                                                    <div class="rejection-alert bg-rose-50 text-rose-700 border-l-4 border-rose-500 p-3 mt-3 text-sm rounded">
+                                                        <strong><i class="fa-solid fa-triangle-exclamation mr-1"></i> 拒絕原因：</strong>
+                                                        <?php echo htmlspecialchars($row['rejection_reason'], ENT_QUOTES, 'UTF-8'); ?>
+                                                    </div>
+                                                <?php } elseif ($approvalStatus === 'need_revision') { ?>
+                                                    <div class="rejection-alert bg-yellow-50 text-yellow-800 border-l-4 border-yellow-500 p-3 mt-3 text-sm rounded">
+                                                        <strong><i class="fa-solid fa-circle-exclamation mr-1"></i> 補件說明：</strong>
+                                                        請盡快繳交缺件或重新上傳企劃書。
+                                                        <?php if (!empty($row['rejection_reason'])) { ?>
+                                                            <br/><strong>備註：</strong><?php echo htmlspecialchars($row['rejection_reason'], ENT_QUOTES, 'UTF-8'); ?>
+                                                        <?php } ?>
+                                                        <br/><strong>補件期限：</strong><?php echo htmlspecialchars((string)$row['revision_deadline'], ENT_QUOTES, 'UTF-8'); ?>
+                                                        <div class="mt-2">
+                                                            <a href="amend_application.php?reservation_id=<?php echo (int)$row['reservation_id']; ?>" class="bg-amber-600 text-white px-3 py-1 rounded text-xs inline-block font-medium hover:bg-amber-700 transition">修改補件</a>
                                                         </div>
-                                                        <div class="rejection-alert-content">
-                                                            <?php echo htmlspecialchars($row['rejection_reason'], ENT_QUOTES, 'UTF-8'); ?>
-                                                        </div>
-                                                    </div>                                                <?php } elseif ($approvalStatus === 'need_revision') {
-                                                    // 顯示補件相關的原因或審核備註給使用者看（使用現有的 rejection_reason 或如果未來有新增 review_comment 此處可調）
-                                                ?>
-                                                    <div class="rejection-alert" style="border-left-color: #ffc107; background-color: #fffdf5;">
-                                                        <div class="rejection-alert-header" style="color: #d39e00;">
-                                                            <span class="rejection-icon">⚠</span>
-                                                            <strong>補件說明</strong>
-                                                        </div>
-                                                        <div class="rejection-alert-content">
-                                                            請盡快繳交缺件或重新上傳企劃書，以利後續審核。
-                                                            <?php if (!empty($row['rejection_reason'])) { ?>
-                                                                <br/><strong>備註：</strong><?php echo htmlspecialchars($row['rejection_reason'], ENT_QUOTES, 'UTF-8'); ?>
-                                                            <?php } ?>
-                                                            <br/><strong>補件期限：</strong><?php echo htmlspecialchars((string)$row['revision_deadline'], ENT_QUOTES, 'UTF-8'); ?>
-                                                        </div>
-                                                        <div style="margin-top: 12px; display: flex; gap: 10px;">
-                                                            <a href="amend_application.php?reservation_id=<?php echo (int)$row['reservation_id']; ?>" class="btn-primary" style="display: inline-block; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-size: 14px;">修改補件</a>
-                                                        </div>
-                                                    </div>                                                <?php } ?>
+                                                    </div>
+                                                <?php } ?>
                                             </td>
                                         </tr>
                                     <?php } ?>
@@ -751,48 +913,146 @@ if ($dbError === '' && count($rows) > 0) {
                             </tbody>
                         </table>
                     </div>
+
                 <?php } ?>
             </section>
         </main>
     </div>
 
+    <div id="drawer-overlay" class="fixed inset-0 bg-slate-900/40 z-40 hidden backdrop-blur-xs transition-opacity duration-300 opacity-0" onclick="closeDrawer()"></div>
+    <div id="detail-drawer" class="fixed right-0 top-0 bottom-0 w-[550px] max-w-[90vw] bg-white border-l border-slate-200 z-50 p-8 shadow-2xl overflow-y-auto translate-x-full transition-transform duration-300 ease-out">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-5 mb-6">
+            <div class="flex items-center gap-2">
+                <span class="px-2.5 py-1 rounded text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">租借紀錄詳情</span>
+                <span class="text-xs text-slate-400 font-mono" id="drawer-record-id">單號: -</span>
+            </div>
+            <button onclick="closeDrawer()" class="text-slate-400 hover:text-slate-800 transition p-1.5 hover:bg-slate-100 rounded-lg">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+        </div>
+        <div class="space-y-6">
+            <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">申請人帳戶資訊</h4>
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 text-lg font-bold">
+                        <i class="fa-solid fa-id-card"></i>
+                    </div>
+                    <div>
+                        <p class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                            <span id="drawer-borrower-name">-</span>
+                            <span class="text-xs bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-mono" id="drawer-borrower-id">-</span>
+                        </p>
+                        <p class="text-xs text-slate-500 font-mono mt-0.5" id="drawer-borrower-email">-</p>
+                        <div class="mt-2">
+                            <p class="text-xs text-slate-400 mb-1">單位名稱 / 主辦社團</p>
+                            <p class="text-sm text-slate-800 font-medium mb-3" id="drawer-organization-name">-</p>
+
+                            <p class="text-xs text-slate-400 mb-1">活動名稱</p>
+                            <p class="text-sm text-slate-800 font-medium mb-3" id="drawer-activity-name">-</p>
+
+                            <p class="text-xs text-slate-500 font-mono mt-1"><span class="text-slate-400">聯絡電話：</span> <span id="drawer-borrower-phone">-</span></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="space-y-3">
+                <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">申借之資源項目</h4>
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs space-y-3" id="drawer-resources-list">
+                    <p class="text-slate-400 text-xs text-center py-2">-</p>
+                </div>
+            </div>
+
+            <div class="space-y-3">
+                <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">借用時序追蹤</h4>
+                <div class="relative pl-6 border-l border-slate-200 space-y-4 text-xs">
+                    <div class="relative">
+                        <div class="absolute -left-[30px] top-0.5 w-4 h-4 rounded-full bg-slate-100 border-2 border-slate-400 flex items-center justify-center text-[8px] text-slate-500"><i class="fa-solid fa-paper-plane"></i></div>
+                        <p class="font-medium text-slate-700">申請送出時間</p>
+                        <p class="text-slate-500 mt-0.5" id="drawer-submitted-time">-</p>
+                    </div>
+                    <div id="drawer-stage-inline-wrap" style="display:none;">
+                        <p class="mt-1 text-sm">
+                            <span id="drawer-stage-inline-label" class="text-xs text-slate-500 mr-2" style="display:inline;">目前審核階段：</span>
+                            <span id="drawer-stage-inline" class="inline-block text-[11px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-full">-</span>
+                        </p>
+                    </div>
+                    <div class="relative">
+                        <div class="absolute -left-[30px] top-0.5 w-4 h-4 rounded-full bg-emerald-50 border-2 border-emerald-500 flex items-center justify-center text-[8px] text-emerald-600"><i class="fa-solid fa-play"></i></div>
+                        <p class="font-medium text-slate-700">借用起算時段</p>
+                        <p class="text-slate-500 mt-0.5" id="drawer-start-time">-</p>
+                    </div>
+                    <div class="relative">
+                        <div class="absolute -left-[30px] top-0.5 w-4 h-4 rounded-full bg-rose-50 border-2 border-rose-500 flex items-center justify-center text-[8px] text-rose-600"><i class="fa-solid fa-flag"></i></div>
+                        <p class="font-medium text-slate-700">預計歸還截止</p>
+                        <p class="text-slate-500 mt-0.5" id="drawer-end-time">-</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
+                    <span class="text-slate-400 block mb-1">現場報到登記</span>
+                    <p class="font-semibold text-slate-700 flex items-center gap-1.5" id="drawer-checkin-status">-</p>
+                </div>
+                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
+                    <span class="text-slate-400 block mb-1">歸還點收清點</span>
+                    <p class="font-semibold text-slate-700 flex items-center gap-1.5" id="drawer-return-status">-</p>
+                </div>
+            </div>
+
+            <div class="border-t border-slate-150 pt-5 space-y-3">
+                <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">系統工作紀錄</h4>
+                <div class="bg-slate-50 p-3.5 rounded-lg border border-slate-200 text-xs space-y-2 text-slate-600">
+                    <div class="flex justify-between"><span class="font-medium text-slate-500">當前審核階段 (Stage)：</span><span class="text-slate-800 font-mono" id="drawer-stage">-</span></div>
+                    <div class="flex justify-between"><span class="font-medium text-slate-500">案件審核狀態：</span><span class="text-slate-800 font-semibold" id="drawer-status-label">-</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         /**
-         * 展開/收起 Accordion 進度條
+         * 點擊整列或左側箭頭展開/收起 Accordion 進度條
          */
         function toggleAccordion(row, reservationId) {
             const accordion = document.getElementById(`accordion-${reservationId}`);
             const icon = row.querySelector('.accordion-icon');
-            
+
+            if (!accordion) return;
+
             // 關閉其他已開啟的 accordion
             document.querySelectorAll('.accordion-content').forEach(item => {
                 if (item.id !== `accordion-${reservationId}`) {
                     item.style.display = 'none';
+                    item.classList.remove('show');
+
                     const otherRow = item.previousElementSibling;
                     if (otherRow && otherRow.querySelector('.accordion-icon')) {
                         otherRow.querySelector('.accordion-icon').textContent = '▶';
                     }
                 }
             });
-            
-            // 切換當前 accordion
-            if (accordion.style.display === 'none') {
+
+            // 切換當前 accordion 的開啟與圖示
+            const isHidden = accordion.style.display === 'none' || accordion.style.display === '';
+
+            if (isHidden) {
                 accordion.style.display = 'table-row';
-                icon.textContent = '▼';
+                if (icon) icon.textContent = '▼';
                 accordion.classList.add('show');
             } else {
                 accordion.style.display = 'none';
-                icon.textContent = '▶';
+                if (icon) icon.textContent = '▶';
                 accordion.classList.remove('show');
             }
-            
-            // 初始化進度條
+
             const stepper = accordion.querySelector('.stepper-simple');
             if (stepper) {
                 updateStepper(stepper);
             }
         }
-        
+
         /**
          * 更新進度條視覺狀態
          */
@@ -801,82 +1061,149 @@ if ($dbError === '' && count($rows) > 0) {
             const approval = stepper.getAttribute('data-approval');
             const stage = (stepper.getAttribute('data-stage') || 'a');
             const dots = stepper.querySelectorAll('.stepper-dot');
-            const lines = stepper.querySelectorAll('.stepper-line');
-            const approvalText = stepper.querySelector('.approval-text');
 
-            // parse per-stage approved/rejected lists from data attributes
             const approvedRaw = (stepper.getAttribute('data-approved') || '').trim();
             const rejectedRaw = (stepper.getAttribute('data-rejected') || '').trim();
             const approvedStages = approvedRaw ? approvedRaw.split(',').map(s=>s.trim()).filter(Boolean) : [];
             const rejectedStages = rejectedRaw ? rejectedRaw.split(',').map(s=>s.trim()).filter(Boolean) : [];
             
-            // 先清除所有樣式
             dots.forEach(dot => {
-                dot.classList.remove('active', 'rejected', 'pending', 'approved', 'overdue');
-            });
-            lines.forEach(line => {
-                line.classList.remove('active', 'rejected', 'overdue');
+                dot.className = 'stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1';
+                dot.style = ''; 
             });
             
-            // 第1步：始終完成（藍色✓ - 申請送出）
-            if (dots[0]) dots[0].classList.add('active');
+            if (dots[0]) dots[0].className = 'stepper-dot w-3 h-3 rounded-full bg-indigo-600 mx-auto mb-1';
 
-            // Apply per-stage approved/rejected markers first
             const roleIndexMap = { 'a':1, 'b':2, 'c':3, 'd':4 };
             approvedStages.forEach(r => {
                 const idx = roleIndexMap[r];
                 if (idx !== undefined && dots[idx]) {
-                    dots[idx].classList.add('approved');
-                    if (lines[idx - 1]) lines[idx - 1].classList.add('approved');
+                    dots[idx].className = 'stepper-dot w-3 h-3 rounded-full bg-emerald-500 mx-auto mb-1';
                 }
             });
             rejectedStages.forEach(r => {
                 const idx = roleIndexMap[r];
                 if (idx !== undefined && dots[idx]) {
-                    dots[idx].classList.add('rejected');
-                    if (lines[idx - 1]) lines[idx - 1].classList.add('rejected');
+                    dots[idx].className = 'stepper-dot w-3 h-3 rounded-full bg-rose-500 mx-auto mb-1';
                 }
             });
 
-            // map stage to dot index (dots: 0..7 for steps 1..8)
             const stageIndexMap = { 'a': 1, 'b': 2, 'c': 3, 'd': 4 };
             const currentStageIndex = stageIndexMap[stage] !== undefined ? stageIndexMap[stage] : 1;
 
             if (approval === 'pending') {
-                // 顯示目前階段為待審
-                if (dots[currentStageIndex]) dots[currentStageIndex].classList.add('pending');
-                if (lines[0]) lines[0].classList.add('active');
+                if (dots[currentStageIndex]) dots[currentStageIndex].className = 'stepper-dot w-3 h-3 rounded-full bg-amber-500 mx-auto mb-1';
             } else if (approval === 'need_revision') {
-                // 停在目前階段，標示補件（黃色）
                 if (dots[currentStageIndex]) {
-                    dots[currentStageIndex].classList.add('pending');
                     dots[currentStageIndex].style.borderColor = '#ffc107';
                     dots[currentStageIndex].style.backgroundColor = '#fff3cd';
                 }
-                if (lines[0]) lines[0].classList.add('active');
             } else if (approval === 'approved') {
-                // 已通過（final）: already handled per-stage above; ensure usage/returned reflect status
-                if (status >= 6) {
-                    if (dots[5]) dots[5].classList.add('active');
-                    if (lines[4]) lines[4].classList.add('active');
-                }
-                if (status >= 7) {
-                    if (dots[6]) dots[6].classList.add('active');
-                    if (lines[5]) lines[5].classList.add('active');
-                }
-
-                // keep subtext color default; per-step dot/line indicate approval
+                if (status >= 6 && dots[5]) dots[5].className = 'stepper-dot w-3 h-3 rounded-full bg-indigo-600 mx-auto mb-1';
+                if (status >= 7 && dots[6]) dots[6].className = 'stepper-dot w-3 h-3 rounded-full bg-emerald-500 mx-auto mb-1';
             } else if (approval === 'rejected') {
-                // 在拒絕的階段顯示紅色
-                if (dots[currentStageIndex]) dots[currentStageIndex].classList.add('rejected');
-                if (lines[currentStageIndex - 1]) lines[currentStageIndex - 1].classList.add('rejected');
-                // keep subtext color default for rejected status
+                if (dots[currentStageIndex]) dots[currentStageIndex].className = 'stepper-dot w-3 h-3 rounded-full bg-rose-500 mx-auto mb-1';
             } else if (approval === 'revision_overdue') {
-                if (dots[currentStageIndex]) dots[currentStageIndex].classList.add('overdue');
-                if (lines[currentStageIndex - 1]) lines[currentStageIndex - 1].classList.add('overdue');
-                // keep subtext color default for overdue
+                if (dots[currentStageIndex]) dots[currentStageIndex].className = 'stepper-dot w-3 h-3 rounded-full bg-slate-500 mx-auto mb-1';
             }
         }
+        
+        /**
+         * 只有點擊「查看詳情」按鈕才會觸發此開窗函式
+         */
+        function openDrawer(element) {
+            const id = element.getAttribute('data-id');
+            const name = element.getAttribute('data-borrower-name') || '-';
+            const bId = element.getAttribute('data-borrower-id') || '-';
+            const email = element.getAttribute('data-borrower-email') || '-';
+            const start = element.getAttribute('data-start') || '-';
+            const end = element.getAttribute('data-end') || '-';
+            const submitted = element.getAttribute('data-submitted') || '-';
+            const status = element.getAttribute('data-status') || '-';
+            const checkin = element.getAttribute('data-checkin') || '';
+            const returned = element.getAttribute('data-return') || '';
+            const resources = element.getAttribute('data-resources') || '';
+            const phone = element.getAttribute('data-coordinator-phone') || '';
+            const orgName = element.getAttribute('data-organization-name') || '';
+            const activityName = element.getAttribute('data-activity-name') || '';
+
+            const setText = (id, text) => { const el = document.getElementById(id); if (el) el.innerText = text; };
+            setText('drawer-record-id', '單號: #' + id);
+            setText('drawer-borrower-name', name);
+            setText('drawer-borrower-id', bId);
+            setText('drawer-borrower-email', email);
+            setText('drawer-submitted-time', submitted);
+            setText('drawer-start-time', start);
+            setText('drawer-end-time', end);
+            const stage = element.getAttribute('data-stage') || 'N/A';
+            setText('drawer-stage', stage === 'N/A' ? '-' : stage);
+            setText('drawer-status-label', status);
+
+            const stageInlineWrap = document.getElementById('drawer-stage-inline-wrap');
+            const stageInlineEl = document.getElementById('drawer-stage-inline');
+            const stageInlineLabel = document.getElementById('drawer-stage-inline-label');
+            if (stageInlineWrap && stageInlineEl) {
+                if (stage && stage !== 'N/A' && stage !== '') {
+                    if (stageInlineLabel) stageInlineLabel.style.display = 'inline';
+                    stageInlineEl.textContent = stage;
+                    stageInlineWrap.style.display = 'block';
+                } else {
+                    stageInlineWrap.style.display = 'none';
+                }
+            }
+
+            document.getElementById('drawer-organization-name').innerText = orgName && orgName.trim() !== '' ? orgName : '-';
+            document.getElementById('drawer-activity-name').innerText = activityName && activityName.trim() !== '' ? activityName : '-';
+
+            const phoneEl = document.getElementById('drawer-borrower-phone');
+            if (phoneEl) phoneEl.innerHTML = phone && phone.trim() !== '' ? ('<a href="tel:' + encodeURIComponent(phone) + '" class="text-indigo-600 font-medium">' + phone + '</a>') : '-';
+
+            const resourcesContainer = document.getElementById('drawer-resources-list');
+            if (resources && resources.trim() !== '') {
+                resourcesContainer.innerHTML = '<p class="font-bold text-slate-800 text-xs">' + resources + '</p>';
+            } else {
+                resourcesContainer.innerHTML = '<p class="text-slate-400 text-xs text-center py-2">-</p>';
+            }
+
+            const checkinStatusEl = document.getElementById('drawer-checkin-status');
+            if (checkin && checkin !== '0' && checkin !== '') {
+                checkinStatusEl.innerHTML = '<i class="fa-solid fa-circle-check text-emerald-500 mr-1.5"></i> 已簽到 (' + checkin + ')';
+            } else {
+                checkinStatusEl.innerHTML = '<i class="fa-solid fa-circle-minus text-slate-300 mr-1.5"></i> 尚未現場簽到';
+            }
+
+            const returnStatusEl = document.getElementById('drawer-return-status');
+            if (returned && returned.trim() !== '') {
+                returnStatusEl.innerHTML = '<i class="fa-solid fa-circle-check text-emerald-500 mr-1.5"></i> 已點收歸還 (' + returned + ')';
+            } else {
+                returnStatusEl.innerHTML = '<i class="fa-solid fa-hourglass-start text-amber-500 mr-1.5"></i> 尚未點收歸還';
+            }
+
+            const overlay = document.getElementById('drawer-overlay');
+            const drawer = document.getElementById('detail-drawer');
+            if (overlay && drawer) {
+                overlay.classList.remove('hidden');
+                setTimeout(() => { overlay.classList.remove('opacity-0'); drawer.classList.remove('translate-x-full'); }, 10);
+            }
+        }
+
+        function closeDrawer() {
+            const overlay = document.getElementById('drawer-overlay');
+            const drawer = document.getElementById('detail-drawer');
+            if (overlay && drawer) {
+                overlay.classList.add('opacity-0');
+                drawer.classList.add('translate-x-full');
+                setTimeout(() => { overlay.classList.add('hidden'); }, 300);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            try { closeDrawer(); } catch (e) { /* ignore */ }
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') closeDrawer();
+        });
     </script>
 </body>
 </html>

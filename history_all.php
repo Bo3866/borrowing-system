@@ -46,13 +46,13 @@ if ($dbError === '') {
     $overdueCount = 0;
     $todayCheckedIn = 0;
 
-    $cRes = mysqli_query($link, 'SELECT COUNT(*) AS c FROM reservations');
+    $cRes = mysqli_query($link, "SELECT COUNT(*) AS c FROM reservations WHERE approval_status <> 'pending'");
     if ($cRes) { $totalCount = (int)mysqli_fetch_assoc($cRes)['c']; mysqli_free_result($cRes); }
     $nrRes = mysqli_query($link, "SELECT COUNT(*) AS c FROM reservations WHERE approval_status = 'need_revision'");
     if ($nrRes) { $needRevisionCount = (int)mysqli_fetch_assoc($nrRes)['c']; mysqli_free_result($nrRes); }
-    $odRes = mysqli_query($link, "SELECT COUNT(*) AS c FROM reservations WHERE borrow_end_at < NOW() AND returned_at IS NULL");
+    $odRes = mysqli_query($link, "SELECT COUNT(*) AS c FROM reservations WHERE approval_status <> 'pending' AND borrow_end_at < NOW() AND returned_at IS NULL");
     if ($odRes) { $overdueCount = (int)mysqli_fetch_assoc($odRes)['c']; mysqli_free_result($odRes); }
-    $ciRes = mysqli_query($link, "SELECT COUNT(*) AS c FROM reservations WHERE DATE(checked_in_at) = CURDATE()");
+    $ciRes = mysqli_query($link, "SELECT COUNT(*) AS c FROM reservations WHERE approval_status <> 'pending' AND DATE(checked_in_at) = CURDATE()");
     if ($ciRes) { $todayCheckedIn = (int)mysqli_fetch_assoc($ciRes)['c']; mysqli_free_result($ciRes); }
 
     // read filters from GET
@@ -60,7 +60,7 @@ if ($dbError === '') {
     $statusFilter = (string)($_GET['status'] ?? 'all');
     $typeFilter = (string)($_GET['type'] ?? 'all');
 
-    $where = [ '1=1' ];
+    $where = [ "r.approval_status <> 'pending'" ];
     if ($statusFilter !== 'all' && $statusFilter !== '') {
         $where[] = "r.approval_status = '" . mysqli_real_escape_string($link, $statusFilter) . "'";
     }
@@ -71,7 +71,7 @@ if ($dbError === '') {
     }
     if ($q !== '') {
         $esc = mysqli_real_escape_string($link, $q);
-        $where[] = "(u.full_name LIKE '%{$esc}%' OR r.user_id LIKE '%{$esc}%' OR u.email LIKE '%{$esc}%' OR EXISTS (SELECT 1 FROM equipment_reservation_items eri JOIN equipments e ON e.equipment_id = eri.equipment_id JOIN equipment_categories ec ON ec.equipment_code = e.equipment_code WHERE eri.reservation_id = r.reservation_id AND ec.equipment_name LIKE '%{$esc}%') OR EXISTS (SELECT 1 FROM space_reservation_items sri JOIN spaces s ON s.space_id = sri.space_id WHERE sri.reservation_id = r.reservation_id AND s.space_name LIKE '%{$esc}%'))";
+        $where[] = "(u.full_name LIKE '%{$esc}%' OR r.user_id LIKE '%{$esc}%' OR u.email LIKE '%{$esc}%' OR r.coordinator_phone LIKE '%{$esc}%' OR r.organization_name LIKE '%{$esc}%' OR r.activity_name LIKE '%{$esc}%' OR EXISTS (SELECT 1 FROM equipment_reservation_items eri JOIN equipments e ON e.equipment_id = eri.equipment_id JOIN equipment_categories ec ON ec.equipment_code = e.equipment_code WHERE eri.reservation_id = r.reservation_id AND ec.equipment_name LIKE '%{$esc}%') OR EXISTS (SELECT 1 FROM space_reservation_items sri JOIN spaces s ON s.space_id = sri.space_id WHERE sri.reservation_id = r.reservation_id AND s.space_name LIKE '%{$esc}%'))";
     }
 
     $whereSql = implode(' AND ', $where);
@@ -88,6 +88,9 @@ if ($dbError === '') {
                 r.submitted_at,
                 r.checked_in_at,
                 r.returned_at,
+                r.coordinator_phone,
+                r.organization_name,
+                r.activity_name,
                 (SELECT GROUP_CONCAT(CONCAT(ec.equipment_name, ' (', e.equipment_id, ')') SEPARATOR ', ') FROM equipment_reservation_items eri JOIN equipments e ON e.equipment_id = eri.equipment_id LEFT JOIN equipment_categories ec ON ec.equipment_code = e.equipment_code WHERE eri.reservation_id = r.reservation_id) AS equipment_names,
                 (SELECT GROUP_CONCAT(CONCAT(s.space_name, ' (', sri.space_id, ')') SEPARATOR ', ') FROM space_reservation_items sri JOIN spaces s ON s.space_id = sri.space_id WHERE sri.reservation_id = r.reservation_id) AS space_names
             FROM reservations r
@@ -209,6 +212,95 @@ $stageMap = [
             display: inline-block;
             text-align: center;
         }
+
+        .history-list-header,
+        .history-list-row {
+            display: grid;
+            grid-template-columns: 140px minmax(220px, 1.1fr) minmax(320px, 1.5fr) 150px;
+            gap: 1rem;
+            align-items: center;
+        }
+        .history-list-header {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 1rem 1.5rem;
+            border-radius: 1rem 1rem 0 0;
+            font-size: 0.95rem;
+            font-weight: 700;
+            letter-spacing: .02em;
+        }
+        .history-list-row {
+            background: #ffffff;
+            padding: 1rem 1.5rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 1rem;
+            cursor: pointer;
+            transition: .18s ease;
+        }
+        .history-list-row:hover {
+            border-color: #a5b4fc;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, .08);
+            transform: translateY(-1px);
+        }
+        .record-id-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: .35rem;
+            padding: .45rem .75rem;
+            border-radius: 999px;
+            background: #eef2ff;
+            color: #4f46e5;
+            border: 1px solid #c7d2fe;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+            font-weight: 800;
+            width: fit-content;
+        }
+        .borrower-name-line {
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+            min-width: 0;
+        }
+        .time-range-box {
+            display: flex;
+            flex-direction: column;
+            gap: .35rem;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+            color: #475569;
+        }
+        .time-range-box .end-time {
+            color: #94a3b8;
+            padding-left: 1.35rem;
+        }
+        .detail-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: .45rem;
+            padding: .55rem .85rem;
+            border-radius: .8rem;
+            background: #f8fafc;
+            color: #475569;
+            border: 1px solid #e2e8f0;
+            font-size: .95rem;
+            font-weight: 700;
+            transition: .18s ease;
+            white-space: nowrap;
+        }
+        .history-list-row:hover .detail-button {
+            background: #4f46e5;
+            color: #ffffff;
+            border-color: #4f46e5;
+        }
+        @media (max-width: 900px) {
+            .history-list-header { display: none; }
+            .history-list-row {
+                grid-template-columns: 1fr;
+                gap: .75rem;
+            }
+            .detail-button { width: 100%; }
+        }
+
         /* Increase small helper text (timestamps, small meta) for readability */
         .container.main-content .text-xs,
         .container.main-content .text-[10px],
@@ -247,7 +339,7 @@ $stageMap = [
                     <div>
                         <p style="color:#64748b;margin:0;font-weight:600;">總借用次數</p>
                         <h3 style="font-size:1.5rem;margin:6px 0;color:var(--text-color);font-weight:700;"><?php echo number_format($totalCount); ?></h3>
-                        <p style="font-size:0.85rem;color:#94a3b8;margin:0;">最多 2000 筆</p>
+                        <p style="font-size:0.85rem;color:#94a3b8;margin:0;">不含待審核資料</p>
                     </div>
                     <div style="width:44px;height:44px;border-radius:10px;background:#f8fafc;display:flex;align-items:center;justify-content:center;color:#64748b;border:1px solid rgba(44,62,80,0.06);">
                         <i class="fa-solid fa-list-ol"></i>
@@ -318,20 +410,20 @@ $stageMap = [
                 </div>
                 <select id="statusFilter" class="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-lg px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:bg-white cursor-pointer shrink-0">
                     <option value="all" <?php echo ($statusFilter==='all')? 'selected':''; ?>>所有審核狀態</option>
-                    <option value="pending" <?php echo ($statusFilter==='pending')? 'selected':''; ?>>待審核</option>
                     <option value="approved" <?php echo ($statusFilter==='approved')? 'selected':''; ?>>審核完成</option>
                     <option value="need_revision" <?php echo ($statusFilter==='need_revision')? 'selected':''; ?>>需要補件</option>
+                    <option value="revision_overdue" <?php echo ($statusFilter==='revision_overdue')? 'selected':''; ?>>補件逾期</option>
                     <option value="rejected" <?php echo ($statusFilter==='rejected')? 'selected':''; ?>>審核未通過</option>
                 </select>
             </div>
         </div>
 
-        <!-- 表格表頭設計（重新計算比例，移除編號欄，完美對齊） -->
-        <div class="bg-slate-800 text-slate-200 px-6 py-4 rounded-t-xl text-xs font-semibold grid grid-cols-12 gap-4 items-center shadow-xs">
-            <div class="col-span-3 pl-2">申請人</div>
-            <div class="col-span-4">借用時段</div>
-            <div class="col-span-3">資源內容</div>
-            <div class="col-span-2 text-center">審核狀態</div>
+        <!-- 清單表頭：外層只顯示查詢需要的重點，詳細資料點進右側面板查看 -->
+        <div class="history-list-header mt-4">
+            <div>單號</div>
+            <div>申請人</div>
+            <div>借用時段</div>
+            <div class="text-center">操作</div>
         </div>
 
         <!-- 歷史紀錄列表容器 (Record List PHP loop) -->
@@ -354,8 +446,8 @@ $stageMap = [
                         'class' => 'bg-slate-50 text-slate-700 border-slate-200'
                     ];
                 ?>
-                    <div onclick="openDrawer(this)" 
-                         class="bg-white px-6 py-4.5 rounded-xl border border-slate-200 hover:border-indigo-300 transition-all hover:shadow-xs cursor-pointer grid grid-cols-12 gap-4 items-center group"
+                    <div 
+                         class="history-list-row group"
                          data-id="<?php echo (int)$r['reservation_id']; ?>"
                          data-borrower-name="<?php echo htmlspecialchars($r['full_name'], ENT_QUOTES, 'UTF-8'); ?>"
                          data-borrower-id="<?php echo htmlspecialchars($r['applicant_user_id'], ENT_QUOTES, 'UTF-8'); ?>"
@@ -363,6 +455,9 @@ $stageMap = [
                          data-start="<?php echo htmlspecialchars((string)$r['borrow_start_at'], ENT_QUOTES, 'UTF-8'); ?>"
                          data-end="<?php echo htmlspecialchars((string)$r['borrow_end_at'], ENT_QUOTES, 'UTF-8'); ?>"
                          data-submitted="<?php echo htmlspecialchars((string)$r['submitted_at'], ENT_QUOTES, 'UTF-8'); ?>"
+                         data-coordinator-phone="<?php echo htmlspecialchars((string)($r['coordinator_phone'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                         data-organization-name="<?php echo htmlspecialchars((string)($r['organization_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                         data-activity-name="<?php echo htmlspecialchars((string)($r['activity_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
                          data-status="<?php echo htmlspecialchars($statusKey, ENT_QUOTES, 'UTF-8'); ?>"
                          data-status-label="<?php echo htmlspecialchars($statusConf['label'], ENT_QUOTES, 'UTF-8'); ?>"
                          data-checkin="<?php echo $r['checked_in_at'] ? htmlspecialchars((string)$r['checked_in_at'], ENT_QUOTES, 'UTF-8') : '—'; ?>"
@@ -371,61 +466,37 @@ $stageMap = [
                          data-spaces="<?php echo htmlspecialchars((string)$r['space_names'], ENT_QUOTES, 'UTF-8'); ?>"
                          data-stage="<?php echo htmlspecialchars((string)(isset($r['approval_status']) && $r['approval_status'] === 'approved' ? '已完成' : ($stageMap[$r['approval_stage'] ?? ''] ?? ($r['approval_stage'] ?? ''))), ENT_QUOTES, 'UTF-8'); ?>">
                         
-                        <!-- 1. 申請人 (佔 3 格極寬裕) -->
-                        <div class="col-span-3 min-w-0 pl-2">
-                            <h5 class="font-bold text-slate-800 text-sm truncate group-hover:text-indigo-600 transition flex items-center gap-1.5">
-                                <?php echo htmlspecialchars($r['full_name'], ENT_QUOTES, 'UTF-8'); ?>
-                                <span class="applicant-badge text-[10px] bg-slate-100 text-slate-500 font-mono px-1.5 py-0.5 rounded">
-                                    <?php echo htmlspecialchars($r['applicant_user_id'], ENT_QUOTES, 'UTF-8'); ?>
-                                </span>
-                            </h5>
-                            
-                        </div>
-
-                        <!-- 2. 借用時段 (佔 4 格) -->
-                        <div class="col-span-4 font-mono text-xs text-slate-600 leading-tight">
-                            <div class="flex items-center gap-1.5"><i class="fa-regular fa-clock text-[10px] text-slate-400"></i> <?php echo htmlspecialchars((string)$r['borrow_start_at'], ENT_QUOTES, 'UTF-8'); ?></div>
-                            <div class="flex items-center gap-1.5 mt-1 text-slate-400">至 <?php echo htmlspecialchars((string)$r['borrow_end_at'], ENT_QUOTES, 'UTF-8'); ?></div>
-                        </div>
-
-                        <!-- 3. 資源內容標籤群 (佔 3 格) -->
-                        <div class="col-span-3">
-                            <div class="flex flex-col gap-1.5 max-w-full">
-                                <?php if (empty($equipments) && empty($spaces)) { ?>
-                                    <span class="text-slate-400 text-xs">-</span>
-                                <?php } ?>
-                                
-                                <!-- 渲染器材 Tag -->
-                                <?php foreach ($equipments as $eq) { if (trim($eq) === '') continue; ?>
-                                    <div class="flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium border bg-blue-50 text-blue-800 border-blue-200/60 truncate">
-                                        <i class="fa-solid fa-box text-[10px] text-blue-500"></i>
-                                        <span class="truncate"><?php echo htmlspecialchars($eq, ENT_QUOTES, 'UTF-8'); ?></span>
-                                    </div>
-                                <?php } ?>
-
-                                <!-- 渲染場地 Tag -->
-                                <?php foreach ($spaces as $sp) { if (trim($sp) === '') continue; ?>
-                                    <div class="flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium border bg-emerald-50 text-emerald-800 border-emerald-200/60 truncate">
-                                        <i class="fa-solid fa-map-pin text-[10px] text-emerald-500"></i>
-                                        <span class="truncate"><?php echo htmlspecialchars($sp, ENT_QUOTES, 'UTF-8'); ?></span>
-                                    </div>
-                                <?php } ?>
-                            </div>
-                        </div>
-
-                        <!-- 4. 審核狀態 -->
-                        <div class="col-span-2 text-center">
-                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold border <?php echo $statusConf['class']; ?>">
-                                <?php if ($statusKey === 'need_revision') { ?>
-                                    <span class="w-1.5 h-1.5 rounded-full bg-orange-500 animate-ping"></span>
-                                <?php } ?>
-                                <?php echo htmlspecialchars($statusConf['label'], ENT_QUOTES, 'UTF-8'); ?>
+                        <!-- 1. 單號 -->
+                        <div>
+                            <span class="record-id-pill">
+                                <i class="fa-solid fa-hashtag text-xs"></i><?php echo (int)$r['reservation_id']; ?>
                             </span>
                         </div>
 
-                        <!-- 報到 / 歸還 欄已移除 -->
+                        <!-- 2. 申請人 -->
+                        <div class="min-w-0">
+                            <div class="borrower-name-line">
+                                <h5 class="font-bold text-slate-800 text-sm truncate group-hover:text-indigo-600 transition">
+                                    <?php echo htmlspecialchars($r['full_name'], ENT_QUOTES, 'UTF-8'); ?>
+                                </h5>
+                                <span class="applicant-badge text-[10px] bg-slate-100 text-slate-500 font-mono px-1.5 py-0.5 rounded">
+                                    <?php echo htmlspecialchars($r['applicant_user_id'], ENT_QUOTES, 'UTF-8'); ?>
+                                </span>
+                            </div>
+                        </div>
 
-                        <!-- 6. 送出時間欄已移除 -->
+                        <!-- 3. 借用時段 -->
+                        <div class="time-range-box text-xs leading-tight">
+                            <div><i class="fa-regular fa-clock text-[10px] text-slate-400 mr-1.5"></i><?php echo htmlspecialchars((string)$r['borrow_start_at'], ENT_QUOTES, 'UTF-8'); ?></div>
+                            <div class="end-time">至 <?php echo htmlspecialchars((string)$r['borrow_end_at'], ENT_QUOTES, 'UTF-8'); ?></div>
+                        </div>
+
+                        <!-- 4. 操作提示 -->
+                        <div class="text-center">
+                            <button class="detail-button" onclick="event.stopPropagation(); openDrawer(event, this.closest('.history-list-row'))">查看詳情 <i class="fa-solid fa-chevron-right text-xs"></i></button>
+                        </div>
+
+                        <!-- 資源內容與審核狀態不在列表外層顯示，保留於右側詳情抽屜中 -->
 
                     </div>
                 <?php } ?>
@@ -436,7 +507,7 @@ $stageMap = [
 
     <!-- 3. 右側滑出詳細資訊面板 (Inspection Drawer Modal) -->
     <div id="drawer-overlay" class="fixed inset-0 bg-slate-900/40 z-40 hidden backdrop-blur-xs transition-opacity duration-300 opacity-0" onclick="closeDrawer()"></div>
-    <div id="detail-drawer" class="fixed right-0 top-0 bottom-0 w-[550px] bg-white border-l border-slate-200 z-50 p-8 shadow-2xl overflow-y-auto translate-x-full transition-transform duration-300 ease-out">
+    <div id="detail-drawer" style="display:none;" class="fixed right-0 top-0 bottom-0 w-[550px] bg-white border-l border-slate-200 z-50 p-8 shadow-2xl overflow-y-auto translate-x-full transition-transform duration-300 ease-out">
         <!-- Drawer Header -->
         <div class="flex items-center justify-between border-b border-slate-100 pb-5 mb-6">
             <div class="flex items-center gap-2">
@@ -468,6 +539,15 @@ $stageMap = [
                             <span class="text-xs bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-mono" id="drawer-borrower-id">-</span>
                         </p>
                         <p class="text-xs text-slate-500 font-mono mt-0.5" id="drawer-borrower-email">-</p>
+                        <div class="mt-2">
+                            <p class="text-xs text-slate-400 mb-1">單位名稱 / 主辦社團</p>
+                            <p class="text-sm text-slate-800 font-medium mb-3" id="drawer-organization-name">-</p>
+
+                            <p class="text-xs text-slate-400 mb-1">活動名稱</p>
+                            <p class="text-sm text-slate-800 font-medium mb-3" id="drawer-activity-name">-</p>
+
+                            <p class="text-xs text-slate-500 font-mono mt-1"><span class="text-slate-400">聯絡電話：</span> <span id="drawer-borrower-phone">-</span></p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -572,7 +652,12 @@ $stageMap = [
         });
 
         // 控制右側側邊抽屜滑出與資訊塞入
-        function openDrawer(element) {
+        function openDrawer(evt, element) {
+            // debug: log caller and event to help trace unexpected triggers
+            try { console.log('openDrawer called', evt, element); console.trace(); } catch(e) {}
+            // only respond to real user clicks (prevent programmatic or synthetic triggers)
+            if (!evt || !evt.isTrusted) return;
+            if (!element) return;
             const id = element.getAttribute('data-id');
             const name = element.getAttribute('data-borrower-name');
             const bId = element.getAttribute('data-borrower-id');
@@ -587,6 +672,9 @@ $stageMap = [
             const equipmentsStr = element.getAttribute('data-equipments');
             const spacesStr = element.getAttribute('data-spaces');
             const stage = element.getAttribute('data-stage') || 'N/A';
+            const phone = element.getAttribute('data-coordinator-phone') || '';
+            const orgName = element.getAttribute('data-organization-name') || '';
+            const activityName = element.getAttribute('data-activity-name') || '';
 
             // 塞入基本文字
             document.getElementById('drawer-record-id').innerText = '單號: #' + id;
@@ -598,6 +686,23 @@ $stageMap = [
             document.getElementById('drawer-end-time').innerText = end;
             document.getElementById('drawer-stage').innerText = stage;
             document.getElementById('drawer-status-label').innerText = statusLabel;
+            // contact / organization fields
+            const phoneEl = document.getElementById('drawer-borrower-phone');
+            const orgEl = document.getElementById('drawer-organization-name');
+            const actEl = document.getElementById('drawer-activity-name');
+            if (phoneEl) {
+                if (phone && phone.trim() !== '') {
+                    phoneEl.innerHTML = '<a href="tel:' + encodeURIComponent(phone) + '" class="text-indigo-600 font-medium">' + phone + '</a>';
+                } else {
+                    phoneEl.innerText = '-';
+                }
+            }
+            if (orgEl) {
+                orgEl.innerText = orgName && orgName.trim() !== '' ? orgName : '-';
+            }
+            if (actEl) {
+                actEl.innerText = activityName && activityName.trim() !== '' ? activityName : '-';
+            }
             // populate inline stage badge in the timeline (visible at top of drawer)
             const stageInlineWrap = document.getElementById('drawer-stage-inline-wrap');
             const stageInlineEl = document.getElementById('drawer-stage-inline');
@@ -682,11 +787,17 @@ $stageMap = [
             const overlay = document.getElementById('drawer-overlay');
             const drawer = document.getElementById('detail-drawer');
             
+            // ensure drawer element is visible (use display to avoid CSS utility mismatch)
+            drawer.style.display = 'block';
+            overlay.style.display = 'block';
+            overlay.style.pointerEvents = 'auto';
             overlay.classList.remove('hidden');
-            setTimeout(() => {
+            // kick off CSS transitions on next frame for smooth animation
+            requestAnimationFrame(() => {
                 overlay.classList.remove('opacity-0');
-                drawer.classList.remove('translate-x-full');
-            }, 10);
+                // remove translate on next frame so transition runs
+                requestAnimationFrame(() => drawer.classList.remove('translate-x-full'));
+            });
         }
 
         function closeDrawer() {
@@ -698,7 +809,9 @@ $stageMap = [
 
             setTimeout(() => {
                 overlay.classList.add('hidden');
-            }, 300);
+                // hide from layout to prevent it showing due to CSS overrides
+                try { drawer.style.display = 'none'; overlay.style.display = 'none'; overlay.style.pointerEvents = 'none'; } catch (e) {}
+            }, 320);
         }
     </script>
     <script>
@@ -722,6 +835,7 @@ $stageMap = [
             } catch (e) {
                 console.warn('Font adjust script error', e);
             }
+            try { closeDrawer(); } catch (e) { /* ignore */ }
         });
     </script>
 </body>

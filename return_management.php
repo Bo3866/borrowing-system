@@ -969,6 +969,8 @@ if ($dbError === '' && count($rows) > 0) {
                 </div>
             </div>
 
+            <!-- 申請時填寫資料區塊已移除 -->
+
             <div class="space-y-3">
                 <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">借用時序追蹤</h4>
                 <div class="relative pl-6 border-l border-slate-200 space-y-4 text-xs">
@@ -977,12 +979,7 @@ if ($dbError === '' && count($rows) > 0) {
                         <p class="font-medium text-slate-700">申請送出時間</p>
                         <p class="text-slate-500 mt-0.5" id="drawer-submitted-time">-</p>
                     </div>
-                    <div id="drawer-stage-inline-wrap" style="display:none;">
-                        <p class="mt-1 text-sm">
-                            <span id="drawer-stage-inline-label" class="text-xs text-slate-500 mr-2" style="display:inline;">目前審核階段：</span>
-                            <span id="drawer-stage-inline" class="inline-block text-[11px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-full">-</span>
-                        </p>
-                    </div>
+                    <!-- 目前不顯示審核階段資訊 -->
                     <div class="relative">
                         <div class="absolute -left-[30px] top-0.5 w-4 h-4 rounded-full bg-emerald-50 border-2 border-emerald-500 flex items-center justify-center text-[8px] text-emerald-600"><i class="fa-solid fa-play"></i></div>
                         <p class="font-medium text-slate-700">借用起算時段</p>
@@ -1007,13 +1004,7 @@ if ($dbError === '' && count($rows) > 0) {
                 </div>
             </div>
 
-            <div class="border-t border-slate-150 pt-5 space-y-3">
-                <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">系統工作紀錄</h4>
-                <div class="bg-slate-50 p-3.5 rounded-lg border border-slate-200 text-xs space-y-2 text-slate-600">
-                    <div class="flex justify-between"><span class="font-medium text-slate-500">當前審核階段 (Stage)：</span><span class="text-slate-800 font-mono" id="drawer-stage">-</span></div>
-                    <div class="flex justify-between"><span class="font-medium text-slate-500">案件審核狀態：</span><span class="text-slate-800 font-semibold" id="drawer-status-label">-</span></div>
-                </div>
-            </div>
+            <!-- 系統工作紀錄已移除 -->
         </div>
     </div>
 
@@ -1172,8 +1163,7 @@ if ($dbError === '' && count($rows) > 0) {
             setText('drawer-start-time', start);
             setText('drawer-end-time', end);
             const stage = element.getAttribute('data-stage') || '';
-            setText('drawer-stage', stage ? mapStageName(stage) : '-');
-            setText('drawer-status-label', mapStatusToChinese(status));
+            // 不在抽屜顯示審核階段與狀態（留作內部使用）
 
             const stageInlineWrap = document.getElementById('drawer-stage-inline-wrap');
             const stageInlineEl = document.getElementById('drawer-stage-inline');
@@ -1200,6 +1190,8 @@ if ($dbError === '' && count($rows) > 0) {
             } else {
                 resourcesContainer.innerHTML = '<p class="text-slate-400 text-xs text-center py-2">-</p>';
             }
+
+            // 原始申請資料顯示功能已移除
 
             const checkinStatusEl = document.getElementById('drawer-checkin-status');
             if (checkin && checkin !== '0' && checkin !== '') {

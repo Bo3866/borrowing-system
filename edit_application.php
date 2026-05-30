@@ -2,6 +2,30 @@
 declare(strict_types=1);
 
 session_start();
+
+function getEquipmentIcon($name) {
+    if (mb_strpos($name, '麥克風') !== false) return '🎤';
+    if (mb_strpos($name, '擴音') !== false || mb_strpos($name, '音響') !== false || mb_strpos($name, '喊話器') !== false) return '🔊';
+    if (mb_strpos($name, '相機') !== false || mb_strpos($name, '攝影機') !== false) return '📷';
+    if (mb_strpos($name, '腳架') !== false) return '🔭';
+    if (mb_strpos($name, '布幕') !== false || mb_strpos($name, '投影') !== false) return '📽️';
+    if (mb_strpos($name, '鋼琴') !== false) return '🎹';
+    if (mb_strpos($name, '看板') !== false) return '📋';
+    if (mb_strpos($name, '桌') !== false) return '🪚';
+    if (mb_strpos($name, '椅') !== false) return '🪑';
+    if (mb_strpos($name, '帳') !== false) return '⛺';
+    if (mb_strpos($name, '警示') !== false || mb_strpos($name, '交通') !== false) return '🚧';
+    if (mb_strpos($name, '旗') !== false) return '🚩';
+    if (mb_strpos($name, '燈') !== false) return '💡';
+    if (mb_strpos($name, '對講機') !== false) return '📻';
+    if (mb_strpos($name, '電') !== false || mb_strpos($name, '線') !== false) return '🔌';
+    if (mb_strpos($name, '睡袋') !== false) return '🛌';
+    if (mb_strpos($name, '茶桶') !== false) return '🫖';
+    return '📦';
+}
+
+function getSpaceIcon($name) { return '📍'; }
+
 require_once __DIR__ . '/config/database.php';
 
 if (!isset($_SESSION['user_id'])) {
@@ -9,8 +33,9 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-$currentUserId = (string)$_SESSION['user_id'];
+$userId = (string)$_SESSION['user_id'];
 $displayName = (string)($_SESSION['full_name'] ?? $_SESSION['user_id']);
+$roleName = (string)($_SESSION['role_name'] ?? '');
 $reservationId = (int)($_GET['reservation_id'] ?? $_POST['reservation_id'] ?? 0);
 
 if ($reservationId <= 0) {
@@ -18,367 +43,374 @@ if ($reservationId <= 0) {
     exit;
 }
 
+$periodSlots = [
+    'D0' => ['label' => '日間第0節', 'start' => '07:10:00', 'end' => '08:00:00'],
+    'D1' => ['label' => '日間第1節', 'start' => '08:10:00', 'end' => '09:00:00'],
+    'D2' => ['label' => '日間第2節', 'start' => '09:10:00', 'end' => '10:00:00'],
+    'D3' => ['label' => '日間第3節', 'start' => '10:10:00', 'end' => '11:00:00'],
+    'D4' => ['label' => '日間第4節', 'start' => '11:10:00', 'end' => '12:00:00'],
+    'DN' => ['label' => '日間第5節', 'start' => '12:40:00', 'end' => '13:30:00'],
+    'D5' => ['label' => '日間第6節', 'start' => '13:40:00', 'end' => '14:30:00'],
+    'D6' => ['label' => '日間第7節', 'start' => '14:40:00', 'end' => '15:30:00'],
+    'D7' => ['label' => '日間第8節', 'start' => '15:40:00', 'end' => '16:30:00'],
+    'D8' => ['label' => '夜間第1節', 'start' => '16:40:00', 'end' => '17:30:00'],
+    'E0' => ['label' => '夜間第2節', 'start' => '17:40:00', 'end' => '18:30:00'],
+    'E1' => ['label' => '夜間第3節', 'start' => '18:40:00', 'end' => '19:30:00'],
+    'E2' => ['label' => '夜間第4節', 'start' => '19:35:00', 'end' => '20:20:00'],
+    'E3' => ['label' => '夜間第5節', 'start' => '20:30:00', 'end' => '21:20:00'],
+    'E4' => ['label' => '夜間第6節', 'start' => '21:25:00', 'end' => '22:10:00'],
+];
+$periodOrder = array_keys($periodSlots);
+
 $dbError = '';
 $link = getMysqliConnection($dbError);
+$borrowError = '';
+$borrowSuccess = '';
+$targetStep = (isset($_POST['current_step']) ? (int)$_POST['current_step'] : 1);
 
-$editError = '';
-$editSuccess = '';
+$formData = [
+    'organization_name' => '', 'activity_name' => '', 'participant_count' => '', 'staff_count' => '',
+    'club_president' => '', 'activity_coordinator' => '', 'coordinator_department' => '',
+    'coordinator_phone' => '', 'coordinator_other_contact' => '', 'vehicle_entry' => 'no',
+    'has_alcohol' => '', 'has_fire' => '', 'has_sales' => '', 'setup_flags' => 'no',
+    'flag_count' => 1, 'flag_agreement' => '', 'resource_type' => 'both', 'equipment_code' => '',
+    'space_id' => '', 'borrow_start_date' => '', 'borrow_start_time' => '',
+    'borrow_end_date' => '', 'borrow_end_time' => '', 'purpose' => '', 'phone' => '',
+    'draft_proposal_file' => '', 'draft_proposal_uploaded_at' => '', 'alcohol_coordinator' => '',
+    'alcohol_president' => '', 'fire_activity_name' => '', 'fire_date' => '', 'fire_location' => '',
+    'fire_start_time' => '', 'fire_end_time' => '', 'fire_staff_json' => '',
+];
+
+$equipmentMap = [];
+$spaceMap = [];
+$existingSpaceReservations = [];
+$existingEquipmentReservations = [];
+$currentCartItems = [];
 $reservationRow = null;
-$equipment_items = [];
-$space_items = [];
+$availableCols = [];
+
+function tableColumns(mysqli $link, string $table): array {
+    $cols = [];
+    $res = mysqli_query($link, 'SHOW COLUMNS FROM `' . mysqli_real_escape_string($link, $table) . '`');
+    if ($res) {
+        while ($row = mysqli_fetch_assoc($res)) { $cols[] = (string)$row['Field']; }
+        mysqli_free_result($res);
+    }
+    return $cols;
+}
+
+function colExists(array $cols, string $col): bool { return in_array($col, $cols, true); }
 
 if ($dbError === '') {
-    // load reservation and available columns
-    $availableCols = [];
-    $colRes = mysqli_query($link, 'SHOW COLUMNS FROM reservations');
-    if ($colRes) {
-        while ($crow = mysqli_fetch_assoc($colRes)) {
-            $availableCols[] = (string)$crow['Field'];
-        }
-        mysqli_free_result($colRes);
-    }
+    $availableCols = tableColumns($link, 'reservations');
 
-    $selectCols = ['r.reservation_id', 'r.user_id', 'r.approval_status', 'r.borrow_start_at', 'r.borrow_end_at', 'r.organization_name', 'r.activity_name', 'r.participant_count', 'r.staff_count', 'r.club_president', 'r.activity_coordinator', 'r.coordinator_department', 'r.coordinator_phone', 'r.coordinator_other_contact', 'r.setup_flags', 'r.flag_count', 'r.purpose', 'r.proposal_file', 'r.proposal_uploaded_at', 'r.phone'];
-    // filter by available
-    $finalCols = [];
-    foreach ($selectCols as $c) {
-        // extract column name
-        $m = null;
-        if (preg_match('/\.([a-zA-Z0-9_]+)$/', $c, $m)) {
-            $colName = $m[1];
-            if (in_array($colName, $availableCols, true)) {
-                $finalCols[] = 'r.' . $colName;
-            }
-        }
-    }
-
-    if (empty($finalCols)) {
-        $dbError = '資料表欄位不足，無法讀取申請資料。';
+    $selectCols = ['reservation_id','user_id','approval_status','borrow_start_at','borrow_end_at','organization_name','activity_name','participant_count','staff_count','club_president','activity_coordinator','coordinator_department','coordinator_phone','coordinator_other_contact','vehicle_entry','has_alcohol','has_fire','has_sales','setup_flags','flag_count','purpose','proposal_file','proposal_uploaded_at','phone','alcohol_coordinator','alcohol_president','fire_activity_name','fire_date','fire_location','fire_start_time','fire_end_time','fire_staff_json'];
+    $existingSelect = [];
+    foreach ($selectCols as $c) { if (colExists($availableCols, $c)) $existingSelect[] = 'r.`' . $c . '`'; }
+    if (empty($existingSelect)) {
+        $borrowError = '資料表欄位不足，無法讀取申請資料。';
     } else {
-        $checkSql = 'SELECT ' . implode(', ', $finalCols) . ' FROM reservations r WHERE r.reservation_id = ? AND r.user_id = ? LIMIT 1';
-        $checkStmt = mysqli_prepare($link, $checkSql);
-        if ($checkStmt) {
-            mysqli_stmt_bind_param($checkStmt, 'is', $reservationId, $currentUserId);
-            mysqli_stmt_execute($checkStmt);
-            $res = mysqli_stmt_get_result($checkStmt);
+        $sql = 'SELECT ' . implode(',', $existingSelect) . ' FROM reservations r WHERE r.reservation_id = ? AND r.user_id = ? LIMIT 1';
+        $stmt = mysqli_prepare($link, $sql);
+        if ($stmt) {
+            mysqli_stmt_bind_param($stmt, 'is', $reservationId, $userId);
+            mysqli_stmt_execute($stmt);
+            $res = mysqli_stmt_get_result($stmt);
             $reservationRow = $res ? mysqli_fetch_assoc($res) : null;
-            mysqli_stmt_close($checkStmt);
+            mysqli_stmt_close($stmt);
         }
         if (!$reservationRow) {
-            $editError = '找不到該申請或無權限修改。';
-        } elseif ($reservationRow['approval_status'] !== 'pending') {
-            $editError = '此申請已進入審核流程，無法修改。';
+            $borrowError = '找不到該申請或無權限修改。';
+        } elseif (($reservationRow['approval_status'] ?? '') !== 'pending') {
+            $borrowError = '此申請已進入審核流程，無法修改。';
         }
     }
 
-    // load equipment items
-    $equipment_items = [];
-    $equipStmt = mysqli_prepare($link, 'SELECT eri.equipment_id, e.equipment_code, ec.equipment_name FROM equipment_reservation_items eri JOIN equipments e ON e.equipment_id = eri.equipment_id JOIN equipment_categories ec ON ec.equipment_code = e.equipment_code WHERE eri.reservation_id = ? ORDER BY ec.equipment_code ASC');
-    if ($equipStmt) {
-        mysqli_stmt_bind_param($equipStmt, 'i', $reservationId);
-        mysqli_stmt_execute($equipStmt);
-        $eRes = mysqli_stmt_get_result($equipStmt);
-        while ($er = $eRes ? mysqli_fetch_assoc($eRes) : null) {
-            $equipment_items[] = $er;
-        }
-        mysqli_stmt_close($equipStmt);
+    $phoneStmt = mysqli_prepare($link, 'SELECT phone FROM users WHERE user_id = ? LIMIT 1');
+    if ($phoneStmt) {
+        mysqli_stmt_bind_param($phoneStmt, 's', $userId);
+        mysqli_stmt_execute($phoneStmt);
+        $phoneResult = mysqli_stmt_get_result($phoneStmt);
+        $phoneRow = $phoneResult ? mysqli_fetch_assoc($phoneResult) : null;
+        if ($phoneRow && isset($phoneRow['phone'])) $formData['phone'] = trim((string)$phoneRow['phone']);
+        mysqli_stmt_close($phoneStmt);
     }
 
-    // load space items
-    $space_items = [];
-    $spaceStmt = mysqli_prepare($link, 'SELECT sri.space_id, s.space_name FROM space_reservation_items sri JOIN spaces s ON s.space_id = sri.space_id WHERE sri.reservation_id = ? ORDER BY s.space_id ASC');
-    if ($spaceStmt) {
-        mysqli_stmt_bind_param($spaceStmt, 'i', $reservationId);
-        mysqli_stmt_execute($spaceStmt);
-        $sRes = mysqli_stmt_get_result($spaceStmt);
-        while ($sr = $sRes ? mysqli_fetch_assoc($sRes) : null) {
-            $space_items[] = $sr;
+    if ($reservationRow) {
+        foreach ($formData as $key => $value) {
+            if (array_key_exists($key, $reservationRow) && $reservationRow[$key] !== null) {
+                $formData[$key] = (string)$reservationRow[$key];
+            }
         }
-        mysqli_stmt_close($spaceStmt);
+        if (!empty($reservationRow['proposal_file'])) $formData['draft_proposal_file'] = (string)$reservationRow['proposal_file'];
+        if (!empty($reservationRow['proposal_uploaded_at'])) $formData['draft_proposal_uploaded_at'] = (string)$reservationRow['proposal_uploaded_at'];
+        if (!empty($reservationRow['borrow_start_at'])) {
+            $ts = strtotime((string)$reservationRow['borrow_start_at']);
+            if ($ts) { $formData['borrow_start_date'] = date('Y-m-d', $ts); $formData['borrow_start_time'] = date('H:i:s', $ts); }
+        }
+        if (!empty($reservationRow['borrow_end_at'])) {
+            $ts = strtotime((string)$reservationRow['borrow_end_at']);
+            if ($ts) { $formData['borrow_end_date'] = date('Y-m-d', $ts); $formData['borrow_end_time'] = date('H:i:s', $ts); }
+        }
     }
 
-    // handle POST (update)
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && $editError === '') {
-        $updated = [];
-        $updated['organization_name'] = trim((string)($_POST['organization_name'] ?? ''));
-        $updated['activity_name'] = trim((string)($_POST['activity_name'] ?? ''));
-        $updated['participant_count'] = trim((string)($_POST['participant_count'] ?? ''));
-        $updated['staff_count'] = (int)($_POST['staff_count'] ?? 0);
-        $updated['club_president'] = trim((string)($_POST['club_president'] ?? ''));
-        $updated['activity_coordinator'] = trim((string)($_POST['activity_coordinator'] ?? ''));
-        $updated['coordinator_department'] = trim((string)($_POST['coordinator_department'] ?? ''));
-        $updated['coordinator_phone'] = trim((string)($_POST['coordinator_phone'] ?? ''));
-        $updated['coordinator_other_contact'] = trim((string)($_POST['coordinator_other_contact'] ?? ''));
-        $updated['setup_flags'] = trim((string)($_POST['setup_flags'] ?? 'no'));
-        $updated['flag_count'] = (int)($_POST['flag_count'] ?? 0);
-        $updated['purpose'] = trim((string)($_POST['purpose'] ?? ''));
-
-        $borrow_start_date = trim((string)($_POST['borrow_start_date'] ?? ''));
-        $borrow_start_time_h = $_POST['borrow_start_time_h'] ?? '';
-        $borrow_start_time_m = $_POST['borrow_start_time_m'] ?? '';
-        $borrow_end_date = trim((string)($_POST['borrow_end_date'] ?? ''));
-        $borrow_end_time_h = $_POST['borrow_end_time_h'] ?? '';
-        $borrow_end_time_m = $_POST['borrow_end_time_m'] ?? '';
-
-        $borrow_start_at = '';
-        $borrow_end_at = '';
-        if ($borrow_start_date !== '' && $borrow_start_time_h !== '' && $borrow_start_time_m !== '') {
-            $borrow_start_at = sprintf('%s %02d:%02d:00', $borrow_start_date, (int)$borrow_start_time_h, (int)$borrow_start_time_m);
+    $equipmentSql = "
+        SELECT ec.equipment_code, ec.equipment_name, ec.borrow_limit_quantity,
+               COALESCE(SUM(CASE WHEN e.operation_status = 1 THEN 1 ELSE 0 END), 0) AS available_quantity
+        FROM equipment_categories ec
+        LEFT JOIN equipments e ON e.equipment_code = ec.equipment_code
+        GROUP BY ec.equipment_code, ec.equipment_name, ec.borrow_limit_quantity
+        ORDER BY ec.equipment_code ASC";
+    $equipmentResult = mysqli_query($link, $equipmentSql);
+    if ($equipmentResult) {
+        while ($row = mysqli_fetch_assoc($equipmentResult)) {
+            $code = (string)$row['equipment_code'];
+            $equipmentMap[$code] = [
+                'equipment_code' => $code,
+                'equipment_name' => (string)$row['equipment_name'],
+                'borrow_limit_quantity' => $row['borrow_limit_quantity'] !== null ? (int)$row['borrow_limit_quantity'] : null,
+                'available_quantity' => (int)$row['available_quantity'],
+            ];
         }
-        if ($borrow_end_date !== '' && $borrow_end_time_h !== '' && $borrow_end_time_m !== '') {
-            $borrow_end_at = sprintf('%s %02d:%02d:00', $borrow_end_date, (int)$borrow_end_time_h, (int)$borrow_end_time_m);
-        }
+        mysqli_free_result($equipmentResult);
+    }
 
-        // basic validation
-        if ($updated['organization_name'] === '') {
-            $editError = '請填寫單位名稱。';
-        } elseif ($updated['activity_name'] === '') {
-            $editError = '請填寫活動名稱。';
-        } elseif ($updated['purpose'] === '') {
-            $editError = '請填寫用途說明。';
-        } elseif ($borrow_start_at === '' || $borrow_end_at === '') {
-            $editError = '請完整填寫借用起訖日期與時間。';
-        } elseif (strtotime($borrow_end_at) <= strtotime($borrow_start_at)) {
-            $editError = '結束時間不可早於或等於開始時間。';
+    $spaceSql = "SELECT space_id, space_name, capacity, space_status FROM spaces WHERE space_status IN ('available','1','2') ORDER BY space_id ASC";
+    $spaceResult = mysqli_query($link, $spaceSql);
+    if ($spaceResult) {
+        while ($row = mysqli_fetch_assoc($spaceResult)) {
+            $sid = (string)$row['space_id'];
+            $spaceMap[$sid] = [
+                'space_id' => $sid,
+                'space_name' => (string)$row['space_name'],
+                'capacity' => (int)$row['capacity'],
+                'space_status' => (string)$row['space_status'],
+            ];
         }
+        mysqli_free_result($spaceResult);
+    }
 
-        // handle proposal_file upload
-        $uploadedProposalPath = null;
+    $currentEquipSql = "SELECT e.equipment_code, ec.equipment_name, COUNT(*) AS qty
+                        FROM equipment_reservation_items eri
+                        JOIN equipments e ON e.equipment_id = eri.equipment_id
+                        JOIN equipment_categories ec ON ec.equipment_code = e.equipment_code
+                        WHERE eri.reservation_id = ?
+                        GROUP BY e.equipment_code, ec.equipment_name";
+    $stmt = mysqli_prepare($link, $currentEquipSql);
+    if ($stmt) {
+        mysqli_stmt_bind_param($stmt, 'i', $reservationId);
+        mysqli_stmt_execute($stmt);
+        $res = mysqli_stmt_get_result($stmt);
+        while ($row = $res ? mysqli_fetch_assoc($res) : null) {
+            $code = (string)$row['equipment_code'];
+            $qty = (int)$row['qty'];
+            $currentCartItems[] = ['code' => $code, 'name' => (string)$row['equipment_name'], 'quantity' => $qty, 'type' => 'equipment'];
+            if (isset($equipmentMap[$code])) $equipmentMap[$code]['available_quantity'] += $qty;
+        }
+        mysqli_stmt_close($stmt);
+    }
+
+    $currentSpaceSql = "SELECT s.space_id, s.space_name FROM space_reservation_items sri JOIN spaces s ON s.space_id = sri.space_id WHERE sri.reservation_id = ?";
+    $stmt = mysqli_prepare($link, $currentSpaceSql);
+    if ($stmt) {
+        mysqli_stmt_bind_param($stmt, 'i', $reservationId);
+        mysqli_stmt_execute($stmt);
+        $res = mysqli_stmt_get_result($stmt);
+        while ($row = $res ? mysqli_fetch_assoc($res) : null) {
+            $sid = (string)$row['space_id'];
+            $currentCartItems[] = ['code' => $sid, 'name' => (string)$row['space_name'], 'quantity' => 1, 'type' => 'space'];
+            $formData['space_id'] = $sid;
+        }
+        mysqli_stmt_close($stmt);
+    }
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && $borrowError === '') {
+        foreach (['organization_name','activity_name','participant_count','staff_count','club_president','activity_coordinator','coordinator_department','coordinator_phone','coordinator_other_contact','vehicle_entry','setup_flags','purpose','alcohol_coordinator','alcohol_president'] as $k) {
+            $formData[$k] = trim((string)($_POST[$k] ?? $formData[$k] ?? ''));
+        }
+        $formData['flag_count'] = (int)($_POST['flag_count'] ?? 1);
+        $formData['has_alcohol'] = isset($_POST['has_alcohol']) ? '1' : '';
+        $formData['has_fire'] = isset($_POST['has_fire']) ? '1' : '';
+        $formData['has_sales'] = isset($_POST['has_sales']) ? '1' : '';
+        $formData['phone'] = trim((string)($_POST['phone'] ?? $formData['phone']));
+        $formData['draft_proposal_file'] = trim((string)($_POST['draft_proposal_file'] ?? $formData['draft_proposal_file']));
+        $formData['draft_proposal_uploaded_at'] = trim((string)($_POST['draft_proposal_uploaded_at'] ?? $formData['draft_proposal_uploaded_at']));
+
+        $bsh = $_POST['borrow_start_time_h'] ?? '';
+        $bsm = $_POST['borrow_start_time_m'] ?? '';
+        $beh = $_POST['borrow_end_time_h'] ?? '';
+        $bem = $_POST['borrow_end_time_m'] ?? '';
+        $formData['borrow_start_date'] = trim((string)($_POST['borrow_start_date'] ?? ''));
+        $formData['borrow_end_date'] = trim((string)($_POST['borrow_end_date'] ?? ''));
+        $formData['borrow_start_time'] = ($bsh !== '' && $bsm !== '') ? sprintf('%02d:%02d:00', (int)$bsh, (int)$bsm) : '';
+        $formData['borrow_end_time'] = ($beh !== '' && $bem !== '') ? sprintf('%02d:%02d:00', (int)$beh, (int)$bem) : '';
+        $borrowStartAt = $formData['borrow_start_date'] . ' ' . $formData['borrow_start_time'];
+        $borrowEndAt = $formData['borrow_end_date'] . ' ' . $formData['borrow_end_time'];
+
+        $cartRaw = trim((string)($_POST['cart_items'] ?? '[]'));
+        $cartItems = json_decode($cartRaw, true);
+        if (!is_array($cartItems)) $cartItems = [];
+        $currentCartItems = $cartItems;
+
+        if ($formData['organization_name'] === '') $borrowError = '請填寫單位名稱。';
+        elseif ($formData['activity_name'] === '') $borrowError = '請填寫活動名稱。';
+        elseif ($formData['borrow_start_date'] === '' || $formData['borrow_start_time'] === '' || $formData['borrow_end_date'] === '' || $formData['borrow_end_time'] === '') $borrowError = '請完整填寫借用起訖日期與時間。';
+        elseif (strtotime($borrowEndAt) <= strtotime($borrowStartAt)) $borrowError = '活動結束時間必須晚於活動開始時間。';
+        elseif ($formData['purpose'] === '') $borrowError = '請填寫用途說明。';
+        elseif (empty($cartItems)) $borrowError = '請選擇至少一項器材或一個場地。';
+
         $uploadedProposalDbPath = null;
         $uploadedProposalAt = null;
-        if (isset($_FILES['proposal_file']) && $_FILES['proposal_file']['error'] !== UPLOAD_ERR_NO_FILE) {
+        if ($borrowError === '' && isset($_FILES['proposal_file']) && $_FILES['proposal_file']['error'] !== UPLOAD_ERR_NO_FILE) {
             $proposalFile = $_FILES['proposal_file'];
             if ($proposalFile['error'] !== UPLOAD_ERR_OK) {
-                $editError = '企劃書上傳失敗（錯誤碼：' . (int)$proposalFile['error'] . '）。';
+                $borrowError = '企劃書上傳失敗。';
+            } elseif ((int)$proposalFile['size'] > 5 * 1024 * 1024) {
+                $borrowError = '企劃書大小不可超過 5MB。';
             } else {
-                $maxBytes = 5 * 1024 * 1024;
-                if ((int)$proposalFile['size'] > $maxBytes) {
-                    $editError = '企劃書大小不可超過 5MB。';
+                $ext = strtolower(pathinfo((string)$proposalFile['name'], PATHINFO_EXTENSION));
+                if ($ext !== 'pdf') {
+                    $borrowError = '企劃書格式不支援，僅接受 PDF。';
                 } else {
-                    if (class_exists('finfo')) {
-                        $finfo = new finfo(FILEINFO_MIME_TYPE);
-                        $mime = (string)$finfo->file($proposalFile['tmp_name']);
-                    } elseif (function_exists('mime_content_type')) {
-                        $mime = (string)mime_content_type($proposalFile['tmp_name']);
+                    $uploadDir = __DIR__ . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'proposals';
+                    if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
+                    $safeBasename = preg_replace('/[^a-zA-Z0-9_-]/', '_', pathinfo((string)$proposalFile['name'], PATHINFO_FILENAME));
+                    $targetName = time() . '_' . $safeBasename . '.pdf';
+                    $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $targetName;
+                    if (move_uploaded_file($proposalFile['tmp_name'], $targetPath)) {
+                        $uploadedProposalDbPath = 'uploads/proposals/' . $targetName;
+                        $uploadedProposalAt = date('Y-m-d H:i:s');
+                        $formData['draft_proposal_file'] = $uploadedProposalDbPath;
+                        $formData['draft_proposal_uploaded_at'] = $uploadedProposalAt;
                     } else {
-                        $ext = strtolower(pathinfo((string)$proposalFile['name'], PATHINFO_EXTENSION));
-                        $mime = ($ext === 'pdf') ? 'application/pdf' : '';
-                    }
-
-                    if ($mime !== 'application/pdf') {
-                        $editError = '企劃書格式不支援，僅接受 PDF。';
-                    } else {
-                        $uploadDir = __DIR__ . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'proposals';
-                        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
-                            $editError = '建立上傳目錄失敗。';
-                        } else {
-                            $safeBasename = preg_replace('/[^a-zA-Z0-9_-]/', '_', pathinfo((string)$proposalFile['name'], PATHINFO_FILENAME));
-                            $targetName = time() . '_' . $safeBasename . '.pdf';
-                            $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $targetName;
-                            if (!move_uploaded_file($proposalFile['tmp_name'], $targetPath)) {
-                                $editError = '企劃書儲存失敗。';
-                            } else {
-                                $uploadedProposalPath = $targetPath;
-                                $uploadedProposalDbPath = 'uploads/proposals/' . $targetName;
-                                $uploadedProposalAt = date('Y-m-d H:i:s');
-                            }
-                        }
+                        $borrowError = '企劃書儲存失敗。';
                     }
                 }
             }
         }
 
-        if ($editError === '') {
-            // perform update
+        if ($borrowError === '') {
             mysqli_begin_transaction($link);
             try {
-                // build update list based on available cols
-                $updateFields = [];
-                $updateValues = [];
-                $updateTypes = '';
+                if ($formData['phone'] !== '') {
+                    $upPhone = mysqli_prepare($link, 'UPDATE users SET phone = ? WHERE user_id = ?');
+                    if ($upPhone) { mysqli_stmt_bind_param($upPhone, 'ss', $formData['phone'], $userId); mysqli_stmt_execute($upPhone); mysqli_stmt_close($upPhone); }
+                }
 
-                $candidates = [
-                    'organization_name' => $updated['organization_name'],
-                    'activity_name' => $updated['activity_name'],
-                    'participant_count' => $updated['participant_count'],
-                    'staff_count' => $updated['staff_count'],
-                    'club_president' => $updated['club_president'],
-                    'activity_coordinator' => $updated['activity_coordinator'],
-                    'coordinator_department' => $updated['coordinator_department'],
-                    'coordinator_phone' => $updated['coordinator_phone'],
-                    'coordinator_other_contact' => $updated['coordinator_other_contact'],
-                    'setup_flags' => $updated['setup_flags'],
-                    'flag_count' => $updated['flag_count'],
-                    'purpose' => $updated['purpose'],
-                    'borrow_start_at' => $borrow_start_at,
-                    'borrow_end_at' => $borrow_end_at,
+                $candidateUpdates = [
+                    'organization_name' => $formData['organization_name'],
+                    'activity_name' => $formData['activity_name'],
+                    'participant_count' => $formData['participant_count'],
+                    'staff_count' => (int)$formData['staff_count'],
+                    'club_president' => $formData['club_president'],
+                    'activity_coordinator' => $formData['activity_coordinator'],
+                    'coordinator_department' => $formData['coordinator_department'],
+                    'coordinator_phone' => $formData['coordinator_phone'],
+                    'coordinator_other_contact' => $formData['coordinator_other_contact'],
+                    'vehicle_entry' => $formData['vehicle_entry'],
+                    'setup_flags' => $formData['setup_flags'],
+                    'flag_count' => (int)$formData['flag_count'],
+                    'purpose' => $formData['purpose'],
+                    'has_alcohol' => $formData['has_alcohol'],
+                    'has_fire' => $formData['has_fire'],
+                    'has_sales' => $formData['has_sales'],
+                    'alcohol_coordinator' => $formData['alcohol_coordinator'],
+                    'alcohol_president' => $formData['alcohol_president'],
+                    'borrow_start_at' => $borrowStartAt,
+                    'borrow_end_at' => $borrowEndAt,
                 ];
-
-                foreach ($candidates as $k => $v) {
-                    if (in_array($k, $availableCols, true)) {
-                        $updateFields[] = "{$k} = ?";
-                        $updateValues[] = $v;
-                        $updateTypes .= is_int($v) ? 'i' : 's';
+                if ($uploadedProposalDbPath !== null) {
+                    $candidateUpdates['proposal_file'] = $uploadedProposalDbPath;
+                    $candidateUpdates['proposal_uploaded_at'] = $uploadedProposalAt;
+                }
+                $sets = [];
+                $values = [];
+                $types = '';
+                foreach ($candidateUpdates as $col => $val) {
+                    if (colExists($availableCols, $col)) {
+                        $sets[] = '`' . $col . '` = ?';
+                        $values[] = $val;
+                        $types .= is_int($val) ? 'i' : 's';
                     }
                 }
+                if (colExists($availableCols, 'updated_at')) $sets[] = 'updated_at = NOW()';
+                $values[] = $reservationId;
+                $types .= 'i';
+                $updateSql = 'UPDATE reservations SET ' . implode(', ', $sets) . ' WHERE reservation_id = ?';
+                $stmt = mysqli_prepare($link, $updateSql);
+                if (!$stmt) throw new RuntimeException('準備更新申請失敗：' . mysqli_error($link));
+                mysqli_stmt_bind_param($stmt, $types, ...$values);
+                mysqli_stmt_execute($stmt);
+                mysqli_stmt_close($stmt);
 
-                // if proposal file uploaded, update
-                if ($uploadedProposalDbPath !== null && in_array('proposal_file', $availableCols, true) && in_array('proposal_uploaded_at', $availableCols, true)) {
-                    $updateFields[] = 'proposal_file = ?';
-                    $updateValues[] = $uploadedProposalDbPath;
-                    $updateTypes .= 's';
-
-                    $updateFields[] = 'proposal_uploaded_at = ?';
-                    $updateValues[] = $uploadedProposalAt;
-                    $updateTypes .= 's';
-                }
-
-                if (empty($updateFields)) {
-                    throw new RuntimeException('無可更新的欄位。');
-                }
-
-                $updateValues[] = $reservationId;
-                $updateTypes .= 'i';
-
-                $updateSql = 'UPDATE reservations SET ' . implode(', ', $updateFields) . ', updated_at = NOW() WHERE reservation_id = ?';
-                $updateStmt = mysqli_prepare($link, $updateSql);
-                if (!$updateStmt) {
-                    throw new RuntimeException('準備更新語句失敗：' . mysqli_error($link));
-                }
-                mysqli_stmt_bind_param($updateStmt, $updateTypes, ...$updateValues);
-                mysqli_stmt_execute($updateStmt);
-                mysqli_stmt_close($updateStmt);
-
-                // handle equipment/space removals and additions
-                // removals: remove_equipment[] (equipment_id), remove_space[] (space_id)
-                $removeEquipment = $_POST['remove_equipment'] ?? [];
-                $removeSpace = $_POST['remove_space'] ?? [];
-
-                // additions: arrays
-                $addEquipCodes = $_POST['add_equipment_code'] ?? [];
-                $addEquipQtys = $_POST['add_equipment_qty'] ?? [];
-                $addSpaceIds = $_POST['add_space_id'] ?? [];
-
-                // remove equipment: delete rows and free equipment status
-                if (!empty($removeEquipment) && is_array($removeEquipment)) {
-                    $delEquipStmt = mysqli_prepare($link, 'DELETE FROM equipment_reservation_items WHERE reservation_id = ? AND equipment_id = ? LIMIT 1');
-                    $freeEquipStmt = mysqli_prepare($link, 'UPDATE equipments SET operation_status = 1 WHERE equipment_id = ? AND operation_status = 2');
-                    if (!$delEquipStmt || !$freeEquipStmt) {
-                        throw new RuntimeException('準備移除器材失敗：' . mysqli_error($link));
+                $oldEqRes = mysqli_prepare($link, 'SELECT equipment_id FROM equipment_reservation_items WHERE reservation_id = ?');
+                if ($oldEqRes) {
+                    mysqli_stmt_bind_param($oldEqRes, 'i', $reservationId);
+                    mysqli_stmt_execute($oldEqRes);
+                    $res = mysqli_stmt_get_result($oldEqRes);
+                    while ($row = $res ? mysqli_fetch_assoc($res) : null) {
+                        $eid = (int)$row['equipment_id'];
+                        mysqli_query($link, 'UPDATE equipments SET operation_status = 1 WHERE equipment_id = ' . $eid);
                     }
-                    foreach ($removeEquipment as $eid) {
-                        $eid = (int)$eid;
-                        mysqli_stmt_bind_param($delEquipStmt, 'ii', $reservationId, $eid);
-                        mysqli_stmt_execute($delEquipStmt);
-                        mysqli_stmt_bind_param($freeEquipStmt, 'i', $eid);
-                        mysqli_stmt_execute($freeEquipStmt);
-                    }
-                    mysqli_stmt_close($delEquipStmt);
-                    mysqli_stmt_close($freeEquipStmt);
+                    mysqli_stmt_close($oldEqRes);
                 }
+                $del = mysqli_prepare($link, 'DELETE FROM equipment_reservation_items WHERE reservation_id = ?');
+                if ($del) { mysqli_stmt_bind_param($del, 'i', $reservationId); mysqli_stmt_execute($del); mysqli_stmt_close($del); }
+                $del = mysqli_prepare($link, 'DELETE FROM space_reservation_items WHERE reservation_id = ?');
+                if ($del) { mysqli_stmt_bind_param($del, 'i', $reservationId); mysqli_stmt_execute($del); mysqli_stmt_close($del); }
 
-                // remove spaces
-                if (!empty($removeSpace) && is_array($removeSpace)) {
-                    $delSpaceStmt = mysqli_prepare($link, 'DELETE FROM space_reservation_items WHERE reservation_id = ? AND space_id = ? LIMIT 1');
-                    $freeSpaceStmt = mysqli_prepare($link, 'UPDATE spaces SET space_status = "1" WHERE space_id = ? AND space_status = "2"');
-                    if (!$delSpaceStmt || !$freeSpaceStmt) {
-                        throw new RuntimeException('準備移除場地失敗：' . mysqli_error($link));
-                    }
-                    foreach ($removeSpace as $sid) {
-                        $sid = (string)$sid;
-                        mysqli_stmt_bind_param($delSpaceStmt, 'is', $reservationId, $sid);
-                        mysqli_stmt_execute($delSpaceStmt);
-                        mysqli_stmt_bind_param($freeSpaceStmt, 's', $sid);
-                        mysqli_stmt_execute($freeSpaceStmt);
-                    }
-                    mysqli_stmt_close($delSpaceStmt);
-                    mysqli_stmt_close($freeSpaceStmt);
-                }
-
-                // add equipments: for each code/qty, pick available equipment_ids and insert
-                if (!empty($addEquipCodes) && is_array($addEquipCodes)) {
-                    $selectEquipmentStmt = mysqli_prepare($link, 'SELECT e.equipment_id FROM equipments e WHERE e.equipment_code = ? AND e.operation_status = 1 AND e.equipment_id NOT IN (SELECT eri.equipment_id FROM equipment_reservation_items eri JOIN reservations r ON r.reservation_id = eri.reservation_id WHERE r.approval_status IN ("pending", "approved") AND r.borrow_start_at < ? AND r.borrow_end_at > ?) ORDER BY e.equipment_id ASC LIMIT ?');
-                    $insertEquipItemStmt = mysqli_prepare($link, 'INSERT INTO equipment_reservation_items (reservation_id, equipment_id) VALUES (?, ?)');
-                    $markEquipUsedStmt = mysqli_prepare($link, 'UPDATE equipments SET operation_status = 2 WHERE equipment_id = ? AND operation_status = 1');
-                    if (!$selectEquipmentStmt || !$insertEquipItemStmt || !$markEquipUsedStmt) {
-                        throw new RuntimeException('準備新增器材失敗：' . mysqli_error($link));
-                    }
-                    foreach ($addEquipCodes as $i => $code) {
-                        $code = trim((string)$code);
-                        $qty = isset($addEquipQtys[$i]) ? (int)$addEquipQtys[$i] : 0;
-                        if ($code === '' || $qty <= 0) continue;
-
-                        mysqli_stmt_bind_param($selectEquipmentStmt, 'sssi', $code, $borrow_end_at, $borrow_start_at, $qty);
-                        mysqli_stmt_execute($selectEquipmentStmt);
-                        $availRes = mysqli_stmt_get_result($selectEquipmentStmt);
-                        $equipmentIds = [];
-                        while ($rowEq = $availRes ? mysqli_fetch_assoc($availRes) : null) {
-                            $equipmentIds[] = (int)$rowEq['equipment_id'];
-                        }
-                        if (count($equipmentIds) < $qty) {
-                            throw new RuntimeException("器材 {$code} 可取得數量不足。請檢查時段或數量。");
-                        }
-                        foreach (array_slice($equipmentIds, 0, $qty) as $eid) {
-                            mysqli_stmt_bind_param($insertEquipItemStmt, 'ii', $reservationId, $eid);
-                            mysqli_stmt_execute($insertEquipItemStmt);
-                            mysqli_stmt_bind_param($markEquipUsedStmt, 'i', $eid);
-                            mysqli_stmt_execute($markEquipUsedStmt);
+                foreach ($cartItems as $item) {
+                    $type = (string)($item['type'] ?? 'equipment');
+                    $code = trim((string)($item['code'] ?? ''));
+                    $qty = max(1, (int)($item['quantity'] ?? 1));
+                    if ($code === '') continue;
+                    if ($type === 'space') {
+                        $ins = mysqli_prepare($link, 'INSERT INTO space_reservation_items (reservation_id, space_id) VALUES (?, ?)');
+                        if (!$ins) throw new RuntimeException('新增場地失敗：' . mysqli_error($link));
+                        mysqli_stmt_bind_param($ins, 'is', $reservationId, $code);
+                        mysqli_stmt_execute($ins);
+                        mysqli_stmt_close($ins);
+                        $mark = mysqli_prepare($link, 'UPDATE spaces SET space_status = "2" WHERE space_id = ?');
+                        if ($mark) { mysqli_stmt_bind_param($mark, 's', $code); mysqli_stmt_execute($mark); mysqli_stmt_close($mark); }
+                    } else {
+                        $sel = mysqli_prepare($link, 'SELECT equipment_id FROM equipments WHERE equipment_code = ? AND operation_status = 1 ORDER BY equipment_id ASC LIMIT ?');
+                        if (!$sel) throw new RuntimeException('查詢可用器材失敗：' . mysqli_error($link));
+                        mysqli_stmt_bind_param($sel, 'si', $code, $qty);
+                        mysqli_stmt_execute($sel);
+                        $res = mysqli_stmt_get_result($sel);
+                        $ids = [];
+                        while ($row = $res ? mysqli_fetch_assoc($res) : null) $ids[] = (int)$row['equipment_id'];
+                        mysqli_stmt_close($sel);
+                        if (count($ids) < $qty) throw new RuntimeException("器材 {$code} 可取得數量不足。");
+                        foreach ($ids as $eid) {
+                            $ins = mysqli_prepare($link, 'INSERT INTO equipment_reservation_items (reservation_id, equipment_id) VALUES (?, ?)');
+                            if (!$ins) throw new RuntimeException('新增器材失敗：' . mysqli_error($link));
+                            mysqli_stmt_bind_param($ins, 'ii', $reservationId, $eid);
+                            mysqli_stmt_execute($ins);
+                            mysqli_stmt_close($ins);
+                            mysqli_query($link, 'UPDATE equipments SET operation_status = 2 WHERE equipment_id = ' . $eid);
                         }
                     }
-                    mysqli_stmt_close($selectEquipmentStmt);
-                    mysqli_stmt_close($insertEquipItemStmt);
-                    mysqli_stmt_close($markEquipUsedStmt);
-                }
-
-                // add spaces: for each space id, check conflict and insert
-                if (!empty($addSpaceIds) && is_array($addSpaceIds)) {
-                    $spaceConflictStmt = mysqli_prepare($link, 'SELECT COUNT(*) AS conflict_count FROM space_reservation_items sri JOIN reservations r ON r.reservation_id = sri.reservation_id WHERE sri.space_id = ? AND r.approval_status IN ("pending", "approved") AND NOT (r.borrow_end_at < ? OR r.borrow_start_at > ?)');
-                    $insertSpaceItemStmt = mysqli_prepare($link, 'INSERT INTO space_reservation_items (reservation_id, space_id) VALUES (?, ?)');
-                    if (!$spaceConflictStmt || !$insertSpaceItemStmt) {
-                        throw new RuntimeException('準備新增場地失敗：' . mysqli_error($link));
-                    }
-                    foreach ($addSpaceIds as $sid) {
-                        $sid = trim((string)$sid);
-                        if ($sid === '') continue;
-                        mysqli_stmt_bind_param($spaceConflictStmt, 'sss', $sid, $borrow_start_at, $borrow_end_at);
-                        mysqli_stmt_execute($spaceConflictStmt);
-                        $confRes = mysqli_stmt_get_result($spaceConflictStmt);
-                        $crow = $confRes ? mysqli_fetch_assoc($confRes) : null;
-                        if ($crow && (int)$crow['conflict_count'] > 0) {
-                            throw new RuntimeException("場地 {$sid} 時段衝突，無法新增。");
-                        }
-                        mysqli_stmt_bind_param($insertSpaceItemStmt, 'is', $reservationId, $sid);
-                        mysqli_stmt_execute($insertSpaceItemStmt);
-                    }
-                    mysqli_stmt_close($spaceConflictStmt);
-                    mysqli_stmt_close($insertSpaceItemStmt);
                 }
 
                 mysqli_commit($link);
-                $editSuccess = '申請已更新。';
-                // refresh reservationRow values
-                $reservationRow = array_merge($reservationRow, $candidates);
-                if ($uploadedProposalDbPath !== null) {
-                    $reservationRow['proposal_file'] = $uploadedProposalDbPath;
-                    $reservationRow['proposal_uploaded_at'] = $uploadedProposalAt;
-                }
+                $borrowSuccess = '申請已更新。';
             } catch (Throwable $e) {
                 mysqli_rollback($link);
-                if ($uploadedProposalPath !== null && is_file($uploadedProposalPath)) {
-                    @unlink($uploadedProposalPath);
-                }
-                $editError = $e->getMessage();
+                $borrowError = '更新失敗：' . $e->getMessage();
             }
         }
     }
 }
+
+$initialCartItemsJson = json_encode($currentCartItems, JSON_UNESCAPED_UNICODE);
 ?>
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>修改申請｜校園資源租借系統</title>
+    <title>借用申請｜校園資源租借系統</title>
     <link rel="stylesheet" href="styles.css?v=<?php echo time(); ?>">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <style>
@@ -524,6 +556,7 @@ if ($dbError === '') {
         .period-item { padding:12px; border-radius:8px; font-size:13px; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,0.05); transition:transform 0.2s; }
         .period-item:hover { transform:translateY(-2px); }
         .calendar-card { width:100%; border-top:4px solid #3b82f6; }
+
 
                 /* 草稿功能區 */
         .draft-action-row{
@@ -681,12 +714,33 @@ if ($dbError === '') {
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh-tw.js"></script>
 </head>
 <body>
+    <!-- 草稿保存选择模态窗口 -->
+    <div id="draftChoiceModal" class="draft-choice-modal">
+        <div class="draft-choice-content">
+            <div class="draft-choice-title">💾 草稿保存方式</div>
+            <div class="draft-choice-draft-id">草稿編號：<span id="draftIdDisplay">-</span></div>
+            <div class="draft-choice-description">
+                您已有一個正在進行中的草稿，請選擇保存方式：
+            </div>
+            <div class="draft-choice-buttons">
+                <button type="button" class="draft-btn-choice draft-btn-update" id="draftBtnUpdate">
+                    ✓ 覆蓋更新
+                </button>
+                <button type="button" class="draft-btn-choice draft-btn-new" id="draftBtnNew">
+                    ✚ 新建草稿
+                </button>
+            </div>
+        </div>
+    </div>
+
     <div class="container">
         <nav class="navbar">
-            <div class="navbar-brand"><h1>📚 校園資源租借系統</h1></div>
+            <div class="navbar-brand">
+                <h1>📚 校園資源租借系統</h1>
+            </div>
             <div class="navbar-menu">
                 <button class="nav-btn" onclick="location.href='index.php'">回首頁</button>
-                <button class="nav-btn" onclick="location.href='return_management.php'">申請管理</button>
+                <button class="nav-btn" onclick="location.href='report_maintenance.php'">報修</button>
                 <button class="nav-btn" type="button" disabled><?php echo htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8'); ?></button>
                 <button class="nav-btn" onclick="location.href='logout.php'">登出</button>
             </div>
@@ -694,49 +748,52 @@ if ($dbError === '') {
 
         <main class="main-content">
             <section class="borrow-page">
-                <h2>修改申請</h2>
-                <p class="borrow-subtitle">狀態：審核中。僅限尚未審核的申請可修改，調整後請再次送出。</p>
+                <h2>申請</h2>
+                <p class="borrow-subtitle">角色：<?php echo htmlspecialchars($roleName, ENT_QUOTES, 'UTF-8'); ?>。填寫申請後將送出審核。</p>
 
                 <?php if ($dbError !== '') { ?>
                     <div class="login-alert"><?php echo htmlspecialchars($dbError, ENT_QUOTES, 'UTF-8'); ?></div>
                 <?php } ?>
-                <?php if ($editError !== '') { ?>
-                    <div class="login-alert"><?php echo htmlspecialchars($editError, ENT_QUOTES, 'UTF-8'); ?></div>
-                <?php } ?>
-                <?php if ($editSuccess !== '') { ?>
-                    <div class="borrow-success"><?php echo htmlspecialchars($editSuccess, ENT_QUOTES, 'UTF-8'); ?></div>
+
+                <?php if ($borrowError !== '') { ?>
+                    <div class="login-alert"><?php echo htmlspecialchars($borrowError, ENT_QUOTES, 'UTF-8'); ?></div>
                 <?php } ?>
 
-                <?php if ($dbError === '' && $reservationRow && $editError === '') { ?>
-                    <div class="borrow-layout full-width-layout" id="mainBorrowLayout">
-                        <section class="card borrow-form-card">
-                            <div class="stepper-container">
-                                <div class="stepper-item active" id="stepper-1" onclick="goToStep(1)" style="cursor:pointer;">
-                                    <div class="step-circle">1</div>
-                                    <div class="step-label">活動申請(1/2)</div>
-                                </div>
-                                <div class="stepper-line"></div>
-                                <div class="stepper-item" id="stepper-2" onclick="goToStep(2)" style="cursor:pointer;">
-                                    <div class="step-circle">2</div>
-                                    <div class="step-label">活動申請(2/2)</div>
-                                </div>
-                                <div class="stepper-line"></div>
-                                <div class="stepper-item" id="stepper-3" onclick="goToStep(3)" style="cursor:pointer;">
-                                    <div class="step-circle">3</div>
-                                    <div class="step-label">器材與場地 (確認送出)</div>
-                                </div>
+                <?php if ($borrowSuccess !== '') { ?>
+                    <div class="borrow-success"><?php echo htmlspecialchars($borrowSuccess, ENT_QUOTES, 'UTF-8'); ?></div>
+                <?php } ?>
+
+                <div class="borrow-layout full-width-layout" id="mainBorrowLayout">
+                    <section class="card borrow-form-card">
+                        <!-- 進度條 Stepper -->
+                        <div class="stepper-container">
+                            <div class="stepper-item active" id="stepper-1" onclick="goToStep(1)" style="cursor: pointer;">
+                                <div class="step-circle">1</div>
+                                <div class="step-label">活動申請(1/2)</div>
                             </div>
+                            <div class="stepper-line"></div>
+                            <div class="stepper-item" id="stepper-2" onclick="goToStep(2)" style="cursor: pointer;">
+                                <div class="step-circle">2</div>
+                                <div class="step-label">活動申請(2/2)</div>
+                            </div>
+                            <div class="stepper-line"></div>
+                            <div class="stepper-item" id="stepper-3" onclick="goToStep(3)" style="cursor: pointer;">
+                                <div class="step-circle">3</div>
+                                <div class="step-label">器材與場地 (確認送出)</div>
+                            </div>
+                        </div>
 
-                            <form method="post" enctype="multipart/form-data" action="edit_application.php" novalidate class="borrow-form" id="editApplicationForm">
-                                <input type="hidden" name="reservation_id" value="<?php echo (int)$reservationId; ?>">
-                                <input type="hidden" name="current_step" id="current_step" value="1">
-                                <input type="hidden" name="current_draft_id" id="current_draft_id" value="">
-                                <input type="hidden" name="draft_proposal_file" id="draft_proposal_file" value="<?php echo htmlspecialchars($reservationRow['proposal_file'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                <input type="hidden" name="draft_proposal_original_name" id="draft_proposal_original_name" value="<?php echo htmlspecialchars($reservationRow['proposal_original_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                <input type="hidden" name="draft_proposal_uploaded_at" id="draft_proposal_uploaded_at" value="<?php echo htmlspecialchars($reservationRow['proposal_uploaded_at'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                <input type="file" id="proposal_file" name="proposal_file" accept=".pdf,application/pdf" style="opacity: 0; position: absolute; z-index: -1; width: 0; height: 0;" onchange="if (this.files.length > 0) { document.getElementById('proposal_file_name_display').innerText = '已上傳新企劃書：' + this.files[0].name; const f=document.getElementById('draft_proposal_file'); const n=document.getElementById('draft_proposal_original_name'); const t=document.getElementById('draft_proposal_uploaded_at'); if(f)f.value=''; if(n)n.value=''; if(t)t.value=''; } else { document.getElementById('proposal_file_name_display').innerText = ''; }">
-
-                                <div class="step-content active" id="step-content-1">
+                        <form method="post" enctype="multipart/form-data" class="borrow-form" action="edit_application.php?reservation_id=<?php echo (int)$reservationId; ?>" novalidate id="multistep_form">
+                            <input type="hidden" name="reservation_id" value="<?php echo (int)$reservationId; ?>">
+                            <input type="hidden" name="current_step" id="current_step" value="<?php echo htmlspecialchars($_POST['current_step'] ?? '1', ENT_QUOTES, 'UTF-8'); ?>">
+                            <input type="hidden" name="cart_items" id="cart_items" value="<?php echo htmlspecialchars($initialCartItemsJson, ENT_QUOTES, 'UTF-8'); ?>">
+                            <input type="hidden" name="current_draft_id" id="current_draft_id" value="">
+                            <input type="hidden" name="draft_proposal_file" id="draft_proposal_file" value="<?php echo htmlspecialchars((string)($formData['draft_proposal_file'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
+                            <input type="hidden" name="draft_proposal_original_name" id="draft_proposal_original_name" value="">
+                            <input type="hidden" name="draft_proposal_uploaded_at" id="draft_proposal_uploaded_at" value="<?php echo htmlspecialchars((string)($formData['draft_proposal_uploaded_at'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
+                            <input type="file" id="proposal_file" name="proposal_file" accept=".pdf,application/pdf" style="opacity: 0; position: absolute; z-index: -1; width: 0; height: 0;" onchange="if (this.files.length > 0) { document.getElementById('proposal_file_name_display').innerText = '已上傳新企劃書：' + this.files[0].name; const f=document.getElementById('draft_proposal_file'); const n=document.getElementById('draft_proposal_original_name'); const t=document.getElementById('draft_proposal_uploaded_at'); if(f)f.value=''; if(n)n.value=''; if(t)t.value=''; } else { document.getElementById('proposal_file_name_display').innerText = ''; }">
+                            <!-- ========== 步驟 1 內容區 ========== -->
+                            <div class="step-content active" id="step-content-1">
                                 <h3 class="step-title" style="margin-bottom: 10px;">第一步：活動基本資料</h3>
                                 <p class="step-desc" style="color: #7f8c8d; margin-bottom: 20px;">請填寫活動相關資訊與申請日期。</p>
 
@@ -750,58 +807,58 @@ if ($dbError === '') {
 
                                 <div class="form-group" style="margin-top: 10px;">
                                     <label for="organization_name">單位名稱 / 主辦社團 <span style="color:red">*</span></label>
-                                    <input type="text" id="organization_name" name="organization_name" class="" placeholder="請輸入主辦單位名稱" value="<?php echo htmlspecialchars((string)($reservationRow['organization_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" required>
+                                    <input type="text" id="organization_name" name="organization_name" class="" placeholder="請輸入主辦單位名稱" value="<?php echo htmlspecialchars($formData['organization_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
                                 </div>
                                 <div class="form-group">
                                     <label for="activity_name">活動名稱 <span style="color:red">*</span></label>
-                                    <input type="text" id="activity_name" name="activity_name" class="form-control" placeholder="請輸入活動名稱" value="<?php echo htmlspecialchars((string)($reservationRow['activity_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" required>
+                                    <input type="text" id="activity_name" name="activity_name" class="form-control" placeholder="請輸入活動名稱" value="<?php echo htmlspecialchars($formData['activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
                                 </div>
 
                                 <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
                                     <div class="form-group" style="flex: 1; min-width: 150px;">
                                         <label for="participant_count">活動對象人數 (100人以上的活動只能選擇30天後的日期) <span style="color:red">*</span></label>
                                         <select id="participant_count" name="participant_count" class="" required style="padding: 8px;">
-                                            <option value="" <?php echo (($reservationRow['participant_count'] ?? '') === '') ? 'selected' : ''; ?>>請選擇</option>
-                                            <option value="50人以下" <?php echo (($reservationRow['participant_count'] ?? '') === '50人以下') ? 'selected' : ''; ?>>50人以下</option>
-                                            <option value="50~100人" <?php echo (($reservationRow['participant_count'] ?? '') === '50~100人') ? 'selected' : ''; ?>>50~100人</option>
-                                            <option value="100~200人" <?php echo (($reservationRow['participant_count'] ?? '') === '100~200人') ? 'selected' : ''; ?>>100~200人</option>
-                                            <option value="200人以上" <?php echo (($reservationRow['participant_count'] ?? '') === '200人以上') ? 'selected' : ''; ?>>200人以上</option>
+                                            <option value="" <?php echo (($formData['participant_count'] ?? '') === '') ? 'selected' : ''; ?>>請選擇</option>
+                                            <option value="50人以下" <?php echo (($formData['participant_count'] ?? '') === '50人以下') ? 'selected' : ''; ?>>50人以下</option>
+                                            <option value="50~100人" <?php echo (($formData['participant_count'] ?? '') === '50~100人') ? 'selected' : ''; ?>>50~100人</option>
+                                            <option value="100~200人" <?php echo (($formData['participant_count'] ?? '') === '100~200人') ? 'selected' : ''; ?>>100~200人</option>
+                                            <option value="200人以上" <?php echo (($formData['participant_count'] ?? '') === '200人以上') ? 'selected' : ''; ?>>200人以上</option>
                                         </select>
                                     </div>
                                     <div class="form-group" style="flex: 1; min-width: 150px;">
                                         <label for="staff_count">工作人員人數 <span style="color:red">*</span></label>
-                                        <input type="number" id="staff_count" name="staff_count" class="form-control" placeholder="請輸入人數" min="1" required value="<?php echo htmlspecialchars((string)($reservationRow['staff_count'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="number" id="staff_count" name="staff_count" class="form-control" placeholder="請輸入人數" min="1" required>
                                     </div>
                                 </div>
                              
                                 <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
                                     <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                                         <label for="coordinator_department">系級<span style="color:red">*</span></label>
-                                        <input type="text" id="coordinator_department" name="coordinator_department" class="form-control" placeholder="請輸入系級" value="<?php echo htmlspecialchars((string)($reservationRow['coordinator_department'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="text" id="coordinator_department" name="coordinator_department" class="form-control" placeholder="請輸入系級" value="<?php echo htmlspecialchars($formData['coordinator_department'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
                                     <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                                         <label for="coordinator_phone">聯絡電話<span style="color:red">*</span></label>
-                                        <input type="text" id="coordinator_phone" name="coordinator_phone" class="form-control" placeholder="請輸入聯絡電話" value="<?php echo htmlspecialchars((string)($reservationRow['coordinator_phone'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="text" id="coordinator_phone" name="coordinator_phone" class="form-control" placeholder="請輸入聯絡電話" value="<?php echo htmlspecialchars($formData['coordinator_phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
                                 </div>
                                 <div class="form-group">
                                     <label for="coordinator_other_contact">其他聯絡方式</label>
-                                    <input type="text" id="coordinator_other_contact" name="coordinator_other_contact" class="form-control" placeholder="請輸入其他聯絡方式（如 Email）" value="<?php echo htmlspecialchars((string)($reservationRow['coordinator_other_contact'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
+                                    <input type="text" id="coordinator_other_contact" name="coordinator_other_contact" class="form-control" placeholder="請輸入其他聯絡方式（如 Email）" value="<?php echo htmlspecialchars($formData['coordinator_other_contact'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                 </div>
 
                                 <div class="form-group" style="margin-top: 10px;">
                                     <label>活動特殊性質（可複選）- 勾選則下一頁將出現表單</label>
                                     <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-top: 8px;">
                                         <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; white-space: nowrap;">
-                                            <input type="checkbox" name="has_alcohol" value="1" <?php echo (($reservationRow['has_alcohol'] ?? '') === '1') ? 'checked' : ''; ?>>
+                                            <input type="checkbox" name="has_alcohol" value="1" <?php echo ($formData['has_alcohol'] === '1') ? 'checked' : ''; ?>>
                                             <span>有酒精</span>
                                         </label>
                                         <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; white-space: nowrap;">
-                                            <input type="checkbox" name="has_fire" value="1" <?php echo (($reservationRow['has_fire'] ?? '') === '1') ? 'checked' : ''; ?>>
+                                            <input type="checkbox" name="has_fire" value="1" <?php echo ($formData['has_fire'] === '1') ? 'checked' : ''; ?>>
                                             <span>有明火</span>
                                         </label>
                                         <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; white-space: nowrap;">
-                                            <input type="checkbox" name="has_sales" value="1" <?php echo (($reservationRow['has_sales'] ?? '') === '1') ? 'checked' : ''; ?>>
+                                            <input type="checkbox" name="has_sales" value="1" <?php echo ($formData['has_sales'] === '1') ? 'checked' : ''; ?>>
                                             <span>需擺攤販售</span>
                                         </label>
                                     </div>
@@ -810,21 +867,21 @@ if ($dbError === '') {
                                 <div class="form-group" style="margin-top: 20px; border-top: 1px solid #ccc; padding-top: 15px;">
                                     <label>活動開始時間 <span style="color:red">*</span></label>
                                     <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center;">
+                                        <input type="date" id="borrow_start_date" name="borrow_start_date" class="form-control" value="<?php echo htmlspecialchars($formData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
                                         <?php
-                                        $bs = $reservationRow['borrow_start_at'] ?? '';
-                                        $be = $reservationRow['borrow_end_at'] ?? '';
-                                        $bsDate = $bs ? date('Y-m-d', strtotime($bs)) : '';
-                                        $bsH = $bs ? date('H', strtotime($bs)) : '';
-                                        $bsM = $bs ? date('i', strtotime($bs)) : '';
-                                        $beDate = $be ? date('Y-m-d', strtotime($be)) : '';
-                                        $beH = $be ? date('H', strtotime($be)) : '';
-                                        $beM = $be ? date('i', strtotime($be)) : '';
+                                        $curBsh = ''; $curBsm = '';
+                                        if (!empty($formData['borrow_start_time'])) {
+                                            $parts = explode(':', $formData['borrow_start_time']);
+                                            if (count($parts) >= 2) {
+                                                $curBsh = (int)$parts[0];
+                                                $curBsm = (int)$parts[1];
+                                            }
+                                        }
                                         ?>
-                                        <input type="date" id="borrow_start_date" name="borrow_start_date" class="form-control" value="<?php echo htmlspecialchars($bsDate, ENT_QUOTES, 'UTF-8'); ?>" required>
                                         <select name="borrow_start_time_h" class="form-control" required style="padding: 8px; width: 80px;">
                                             <option value="">選擇</option>
                                             <?php for($h=7; $h<=22; $h++) { 
-                                                $selected = ($bsH !== '' && (int)$bsH === $h) ? 'selected' : '';
+                                                $selected = ($curBsh !== '' && $curBsh === $h) ? 'selected' : '';
                                             ?>
                                                 <option value="<?php echo $h; ?>" <?php echo $selected; ?>><?php echo $h; ?></option>
                                             <?php } ?>
@@ -833,23 +890,33 @@ if ($dbError === '') {
                                         
                                         <select name="borrow_start_time_m" class="form-control" required style="padding: 8px; width: 80px;">
                                             <option value="">選擇</option>
-                                            <option value="00" <?php echo ($bsM !== '' && (int)$bsM === 0) ? 'selected' : ''; ?>>00</option>
-                                            <option value="10" <?php echo ($bsM !== '' && (int)$bsM === 10) ? 'selected' : ''; ?>>10</option>
-                                            <option value="20" <?php echo ($bsM !== '' && (int)$bsM === 20) ? 'selected' : ''; ?>>20</option>
-                                            <option value="30" <?php echo ($bsM !== '' && (int)$bsM === 30) ? 'selected' : ''; ?>>30</option>
-                                            <option value="40" <?php echo ($bsM !== '' && (int)$bsM === 40) ? 'selected' : ''; ?>>40</option>
-                                            <option value="50" <?php echo ($bsM !== '' && (int)$bsM === 50) ? 'selected' : ''; ?>>50</option>
+                                            <option value="00" <?php echo ($curBsm !== '' && $curBsm === 0) ? 'selected' : ''; ?>>00</option>
+                                            <option value="10" <?php echo ($curBsm !== '' && $curBsm === 10) ? 'selected' : ''; ?>>10</option>
+                                            <option value="20" <?php echo ($curBsm !== '' && $curBsm === 20) ? 'selected' : ''; ?>>20</option>
+                                            <option value="30" <?php echo ($curBsm !== '' && $curBsm === 30) ? 'selected' : ''; ?>>30</option>
+                                            <option value="40" <?php echo ($curBsm !== '' && $curBsm === 40) ? 'selected' : ''; ?>>40</option>
+                                            <option value="50" <?php echo ($curBsm !== '' && $curBsm === 50) ? 'selected' : ''; ?>>50</option>
                                         </select>
                                         <span>分</span>
                                     </div>
                                     
                                     <label>活動結束時間 <span style="color:red">*</span></label>
                                     <div style="display: flex; gap: 10px; align-items: center;">
-                                        <input type="date" id="borrow_end_date" name="borrow_end_date" class="form-control" value="<?php echo htmlspecialchars($beDate, ENT_QUOTES, 'UTF-8'); ?>" required>
+                                        <input type="date" id="borrow_end_date" name="borrow_end_date" class="form-control" value="<?php echo htmlspecialchars($formData['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
+                                        <?php
+                                        $curBeh = ''; $curBem = '';
+                                        if (!empty($formData['borrow_end_time'])) {
+                                            $parts = explode(':', $formData['borrow_end_time']);
+                                            if (count($parts) >= 2) {
+                                                $curBeh = (int)$parts[0];
+                                                $curBem = (int)$parts[1];
+                                            }
+                                        }
+                                        ?>
                                         <select name="borrow_end_time_h" class="form-control" required style="padding: 8px; width: 80px;">
                                             <option value="">選擇</option>
                                             <?php for($h=7; $h<=22; $h++) { 
-                                                $selected = ($beH !== '' && (int)$beH === $h) ? 'selected' : '';
+                                                $selected = ($curBeh !== '' && $curBeh === $h) ? 'selected' : '';
                                             ?>
                                                 <option value="<?php echo $h; ?>" <?php echo $selected; ?>><?php echo $h; ?></option>
                                             <?php } ?>
@@ -858,54 +925,63 @@ if ($dbError === '') {
                                         
                                         <select name="borrow_end_time_m" class="form-control" required style="padding: 8px; width: 80px;">
                                             <option value="">選擇</option>
-                                            <option value="00" <?php echo ($beM !== '' && (int)$beM === 0) ? 'selected' : ''; ?>>00</option>
-                                            <option value="10" <?php echo ($beM !== '' && (int)$beM === 10) ? 'selected' : ''; ?>>10</option>
-                                            <option value="20" <?php echo ($beM !== '' && (int)$beM === 20) ? 'selected' : ''; ?>>20</option>
-                                            <option value="30" <?php echo ($beM !== '' && (int)$beM === 30) ? 'selected' : ''; ?>>30</option>
-                                            <option value="40" <?php echo ($beM !== '' && (int)$beM === 40) ? 'selected' : ''; ?>>40</option>
-                                            <option value="50" <?php echo ($beM !== '' && (int)$beM === 50) ? 'selected' : ''; ?>>50</option>
+                                            <option value="00" <?php echo ($curBem !== '' && $curBem === 0) ? 'selected' : ''; ?>>00</option>
+                                            <option value="10" <?php echo ($curBem !== '' && $curBem === 10) ? 'selected' : ''; ?>>10</option>
+                                            <option value="20" <?php echo ($curBem !== '' && $curBem === 20) ? 'selected' : ''; ?>>20</option>
+                                            <option value="30" <?php echo ($curBem !== '' && $curBem === 30) ? 'selected' : ''; ?>>30</option>
+                                            <option value="40" <?php echo ($curBem !== '' && $curBem === 40) ? 'selected' : ''; ?>>40</option>
+                                            <option value="50" <?php echo ($curBem !== '' && $curBem === 50) ? 'selected' : ''; ?>>50</option>
                                         </select>
                                         <span>分</span>
                                     </div>
-
-                                    <div class="step-actions">
-                                        <button type="button" class="btn btn-primary btn-next" onclick="goToStep(2)">下一步 ➔ 場地需求</button>
-                                    </div>
-                                    
-                                    <div class="draft-action-row">
-                                        <button type="button" class="draft-btn save-btn saveDraftBtn">暫存申請</button>
-                                        <button type="button" class="draft-btn draft-box-btn openDraftBoxBtn">草稿箱</button>
-                                    </div>
-                                    <div id="submitDebugMsg" class="draft-message"></div>
                                 </div>
 
-                                <div class="step-content" id="step-content-2">
-                                <h3 class="step-title" style="margin-bottom: 10px;">第二步：場地需求</h3>
+                                <div class="step-actions">
+                                    <button type="button" class="btn btn-primary btn-next" onclick="goToStep(2)">下一步 ➔ 場地需求 </button>
+                                </div>
 
+
+                                <div class="draft-action-row">
+                                    <button type="button" id="saveDraftBtn" class="draft-btn save-btn">
+                                        暫存申請
+                                    </button>
+                                    <button type="button" id="openDraftBoxBtn" class="draft-btn draft-box-btn">
+                                        草稿箱
+                                    </button>
+                                </div>
+                                <div id="submitDebugMsg" class="draft-message"></div>
+
+
+                            </div>
+                            
+<!-- ========== 步驟 2 內容區 ========== -->
+                            <div class="step-content" id="step-content-2">
+                                <h3 class="step-title" style="margin-bottom: 10px;">第二步：場地需求</h3>
+                                
                                 <div class="form-group" style="margin-top: 20px;">
                                     <label>車輛進出 <span style="color:red">*</span></label>
                                     <div style="margin-top: 8px; display: flex; align-items: center; gap: 20px;">
                                         <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
-                                            <input type="radio" name="vehicle_entry" value="no" id="vehicleNo" style="margin: 0;" <?php echo (($reservationRow['vehicle_entry'] ?? '') === 'no' || empty($reservationRow['vehicle_entry'] ?? '')) ? 'checked' : ''; ?>> 否
+                                            <input type="radio" name="vehicle_entry" value="no" id="vehicleNo" style="margin: 0;" <?php echo ($formData['vehicle_entry'] === 'no' || empty($formData['vehicle_entry'])) ? 'checked' : ''; ?>> 否
                                         </label>
                                         <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
-                                            <input type="radio" name="vehicle_entry" value="yes" id="vehicleYes" style="margin: 0;" <?php echo (($reservationRow['vehicle_entry'] ?? '') === 'yes') ? 'checked' : ''; ?>> 是
+                                            <input type="radio" name="vehicle_entry" value="yes" id="vehicleYes" style="margin: 0;" <?php echo ($formData['vehicle_entry'] === 'yes') ? 'checked' : ''; ?>> 是
                                         </label>
                                     </div>
                                 </div>
-
+                                
                                 <div class="form-group" style="margin-top: 20px;">
                                     <label>插立旗幟(選擇"是"將填寫旗幟插立表單) <span style="color:red">*</span></label>
                                     <div style="margin-top: 8px; display: flex; align-items: center; gap: 20px;">
                                         <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
-                                            <input type="radio" name="setup_flags" value="no" id="flagOptionNo" style="margin: 0;" <?php echo (($reservationRow['setup_flags'] ?? '') === 'no' || empty($reservationRow['setup_flags'] ?? '')) ? 'checked' : ''; ?> onchange="toggleFlagDetails()"> 否
+                                            <input type="radio" name="setup_flags" value="no" id="flagOptionNo" style="margin: 0;" <?php echo ($formData['setup_flags'] === 'no' || empty($formData['setup_flags'])) ? 'checked' : ''; ?> onchange="toggleFlagDetails()"> 否
                                         </label>
                                         <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
-                                            <input type="radio" name="setup_flags" value="yes" id="flagOptionYes" style="margin: 0;" <?php echo (($reservationRow['setup_flags'] ?? '') === 'yes') ? 'checked' : ''; ?> onchange="toggleFlagDetails()"> 是
+                                            <input type="radio" name="setup_flags" value="yes" id="flagOptionYes" style="margin: 0;" <?php echo ($formData['setup_flags'] === 'yes') ? 'checked' : ''; ?> onchange="toggleFlagDetails()"> 是
                                         </label>
                                     </div>
                                 </div>
-
+                                
                                 <div id="flagDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:8px;">
                                     <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
                                         旗幟插立申請表
@@ -914,19 +990,19 @@ if ($dbError === '') {
                                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start; margin-bottom:12px; padding: 20px 20px 0 20px;">
                                         <div>
                                             <label>申請單位 <span style="color:red">*</span></label>
-                                            <input type="text" id="flag_organization_name" name="flag_organization_name" class="form-control" value="<?php echo htmlspecialchars($reservationRow['flag_organization_name'] ?? ($reservationRow['organization_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
+                                            <input type="text" id="flag_organization_name" name="flag_organization_name" class="form-control" value="<?php echo htmlspecialchars($formData['flag_organization_name'] ?? $formData['organization_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                         </div>
                                         <div>
                                             <label>活動名稱 <span style="color:red">*</span></label>
-                                            <input type="text" id="flag_activity_name" name="flag_activity_name" class="form-control" value="<?php echo htmlspecialchars($reservationRow['flag_activity_name'] ?? ($reservationRow['activity_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
+                                            <input type="text" id="flag_activity_name" name="flag_activity_name" class="form-control" value="<?php echo htmlspecialchars($formData['flag_activity_name'] ?? $formData['activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                         </div>
                                         <div>
                                             <label>負責人 <span style="color:red">*</span></label>
-                                            <input type="text" id="flag_responsible_person" name="flag_responsible_person" class="form-control" value="<?php echo htmlspecialchars($reservationRow['flag_responsible_person'] ?? ($reservationRow['activity_coordinator'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
+                                            <input type="text" id="flag_responsible_person" name="flag_responsible_person" class="form-control" value="<?php echo htmlspecialchars($formData['flag_responsible_person'] ?? $formData['activity_coordinator'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                         </div>
                                         <div>
                                             <label>連絡電話 <span style="color:red">*</span></label>
-                                            <input type="text" id="flag_contact_phone" name="flag_contact_phone" class="form-control" value="<?php echo htmlspecialchars($reservationRow['flag_contact_phone'] ?? ($reservationRow['coordinator_phone'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
+                                            <input type="text" id="flag_contact_phone" name="flag_contact_phone" class="form-control" value="<?php echo htmlspecialchars($formData['flag_contact_phone'] ?? $formData['coordinator_phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                         </div>
                                     </div>
 
@@ -934,9 +1010,9 @@ if ($dbError === '') {
                                         <div>
                                             <label>使用日期 <span style="color:red">*</span></label>
                                             <div style="display:flex; gap:8px; align-items:center;">
-                                                <input type="date" id="flag_use_start" name="flag_use_start" class="form-control" readonly style="background:#fff;" value="<?php echo htmlspecialchars($reservationRow['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                                <input type="date" id="flag_use_start" name="flag_use_start" class="form-control" readonly style="background:#fff;" value="<?php echo htmlspecialchars($formData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                                 <span>至</span>
-                                                <input type="date" id="flag_use_end" name="flag_use_end" class="form-control" readonly style="background:#fff;" value="<?php echo htmlspecialchars($reservationRow['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                                <input type="date" id="flag_use_end" name="flag_use_end" class="form-control" readonly style="background:#fff;" value="<?php echo htmlspecialchars($formData['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                             </div>
                                             <div style="font-size:12px;color:#64748b;margin-top:6px;">說明：使用日期已自動帶入活動起訖時間，無法修改。</div>
                                         </div>
@@ -947,7 +1023,7 @@ if ($dbError === '') {
                                             <label>宣傳旗幟 <span style="color:red">*</span></label>
                                             <div style="display:flex; align-items:center; gap:8px;">
                                                 <span>共</span>
-                                                <input type="number" name="flag_count" id="flag_count" class="form-control" min="1" max="20" step="1" style="width:100px;height:38px;" placeholder="最多20" value="<?php echo htmlspecialchars((string)($reservationRow['flag_count'] ?? '1'), ENT_QUOTES, 'UTF-8'); ?>">
+                                                <input type="number" name="flag_count" id="flag_count" class="form-control" min="1" max="20" step="1" style="width:100px;height:38px;" placeholder="最多20" value="<?php echo htmlspecialchars((string)($formData['flag_count'] ?? '1'), ENT_QUOTES, 'UTF-8'); ?>">
                                                 <span>支</span>
                                             </div>
                                         </div>
@@ -959,12 +1035,12 @@ if ($dbError === '') {
                                     </div>
 
                                     <label style="display: flex; align-items: flex-start; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; background: #eff6ff; padding: 15px 20px; border-top: 1px solid #cbd5e1; border-radius: 0 0 8px 8px;">
-                                        <input type="checkbox" name="flag_agreement" id="flag_agreement" value="1" <?php echo (isset($reservationRow['flag_agreement']) && $reservationRow['flag_agreement'] == '1') ? 'checked' : ''; ?> style="margin-top: 2px;" required>
+                                        <input type="checkbox" name="flag_agreement" id="flag_agreement" value="1" <?php echo (isset($formData['flag_agreement']) && $formData['flag_agreement'] == '1') ? 'checked' : ''; ?> style="margin-top: 2px;" required>
                                         <span style="color: #1e3a8a; line-height: 1.5; font-size: 14px;">本人為旗幟插立總負責人，已詳細閱讀並遵守以下各項注意事項，為維護校園安全與景觀，願無條件承擔所插旗幟所致之一切賠償責任，特此聲明。 <span style="color:red">*</span></span>
                                     </label>
                                 </div>
 
-                                <!-- 酒精與明火表單和驗證 JS（來自 borrow.php） -->
+                                <!-- 👇 這裡幫你把遺失的【酒精申請表 HTML】補回來了 👇 -->
                                 <div id="alcoholDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:8px;">
                                     <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
                                         輔仁大學學生自治組織暨社團辦理提供酒精飲品活動須知
@@ -1004,11 +1080,11 @@ if ($dbError === '') {
                                         <div style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 20px; align-items: center; background: #f8fafc; padding: 20px; border-radius: 6px; border: 1px solid #e2e8f0;">
                                             <div style="display: flex; align-items: center; gap: 8px;">
                                                 <label for="alcohol_coordinator" style="margin: 0; font-size: 15px; font-weight: bold; white-space: nowrap;">活動負責人</label>
-                                                <input type="text" id="alcohol_coordinator" name="alcohol_coordinator" placeholder="姓名" value="<?php echo htmlspecialchars($reservationRow['alcohol_coordinator'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" style="width: 150px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
+                                                <input type="text" id="alcohol_coordinator" name="alcohol_coordinator" placeholder="姓名" value="<?php echo htmlspecialchars($formData['alcohol_coordinator'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" style="width: 150px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
                                             </div>
                                             <div style="display: flex; align-items: center; gap: 8px;">
                                                 <label for="alcohol_president" style="margin: 0; font-size: 15px; font-weight: bold; white-space: nowrap;">社長</label>
-                                                <input type="text" id="alcohol_president" name="alcohol_president" placeholder="姓名" value="<?php echo htmlspecialchars($reservationRow['alcohol_president'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" style="width: 150px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
+                                                <input type="text" id="alcohol_president" name="alcohol_president" placeholder="姓名" value="<?php echo htmlspecialchars($formData['alcohol_president'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" style="width: 150px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
                                             </div>
                                             <span style="font-size: 15px; color: #1e293b; font-weight: bold;">已知悉以上事項，願負一切責任。</span>
                                         </div>
@@ -1018,7 +1094,9 @@ if ($dbError === '') {
                                         </p>
                                     </div>
                                 </div>
+                                <!-- 👆 酒精申請表 HTML 結束 👆 -->
 
+                                <!-- 👇 明火申請表 HTML 開始 👇 -->
                                 <div id="fireDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:8px;">
                                     <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
                                         輔仁大學學生活動上火確認表(火舞)
@@ -1026,17 +1104,17 @@ if ($dbError === '') {
                                     <div style="padding: 20px;">
                                         <div class="form-group" style="margin-bottom: 15px;">
                                             <label for="fire_activity_name">活動名稱 <span style="color:red">*</span></label>
-                                            <input type="text" id="fire_activity_name" name="fire_activity_name" class="form-control" placeholder="請輸入活動名稱" value="<?php echo htmlspecialchars($reservationRow['fire_activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                            <input type="text" id="fire_activity_name" name="fire_activity_name" class="form-control" placeholder="請輸入活動名稱" value="<?php echo htmlspecialchars($formData['fire_activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                         </div>
 
                                         <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
                                             <div class="form-group" style="flex: 1; min-width: 150px;">
                                                 <label for="fire_date">日期 (限30天後) <span style="color:red">*</span></label>
-                                                <input type="date" id="fire_date" name="fire_date" class="form-control" min="<?php echo date('Y-m-d', strtotime('+30 days')); ?>" value="<?php echo htmlspecialchars($reservationRow['fire_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                                <input type="date" id="fire_date" name="fire_date" class="form-control" min="<?php echo date('Y-m-d', strtotime('+30 days')); ?>" value="<?php echo htmlspecialchars($formData['fire_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                             </div>
                                             <div class="form-group" style="flex: 1; min-width: 150px;">
                                                 <label for="fire_location">地點 <span style="color:red">*</span></label>
-                                                <input type="text" id="fire_location" name="fire_location" class="form-control" placeholder="請輸入地點" value="<?php echo htmlspecialchars($reservationRow['fire_location'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                                <input type="text" id="fire_location" name="fire_location" class="form-control" placeholder="請輸入地點" value="<?php echo htmlspecialchars($formData['fire_location'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                             </div>
                                         </div>
 
@@ -1044,38 +1122,183 @@ if ($dbError === '') {
                                             <label>時間 <span style="color:red">*</span></label>
                                             <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                                                 <?php
-                                                $curFsh = $reservationRow['fire_start_time_h'] ?? '';
-                                                $curFsm = $reservationRow['fire_start_time_m'] ?? '';
+                                                $curFsh = $formData['fire_start_time_h'] ?? '';
+                                                $curFsm = $formData['fire_start_time_m'] ?? '';
+                                                $curFeh = $formData['fire_end_time_h'] ?? '';
+                                                $curFem = $formData['fire_end_time_m'] ?? '';
                                                 ?>
-                                                <select name="fire_start_time_h" class="form-control" style="padding:8px; width:80px;">
+                                                <select name="fire_start_time_h" class="form-control" style="padding: 8px; width: 80px;">
                                                     <option value="">選擇</option>
-                                                    <?php for($h=7;$h<=22;$h++){ $sel = ($curFsh !== '' && (int)$curFsh === $h) ? 'selected' : ''; ?>
-                                                        <option value="<?php echo $h;?>" <?php echo $sel; ?>><?php echo $h;?></option>
+                                                    <?php for($h=7; $h<=22; $h++) { ?>
+                                                        <option value="<?php echo $h; ?>" <?php echo ($curFsh !== '' && (int)$curFsh === $h) ? 'selected' : ''; ?>><?php echo $h; ?></option>
                                                     <?php } ?>
                                                 </select>
                                                 <span>時</span>
-                                                <select name="fire_start_time_m" class="form-control" style="padding:8px; width:80px;">
+                                                <select name="fire_start_time_m" class="form-control" style="padding: 8px; width: 80px;">
                                                     <option value="">選擇</option>
-                                                    <option value="00">00</option>
-                                                    <option value="10">10</option>
-                                                    <option value="20">20</option>
-                                                    <option value="30">30</option>
-                                                    <option value="40">40</option>
-                                                    <option value="50">50</option>
+                                                    <?php foreach(['00','10','20','30','40','50'] as $m) { ?>
+                                                        <option value="<?php echo $m; ?>" <?php echo ($curFsm !== '' && $curFsm === $m) ? 'selected' : ''; ?>><?php echo $m; ?></option>
+                                                    <?php } ?>
                                                 </select>
+                                                <span>分</span>
+                                                
+                                                <span style="margin: 0 10px;">～</span>
+                                                
+                                                <select name="fire_end_time_h" class="form-control" style="padding: 8px; width: 80px;">
+                                                    <option value="">選擇</option>
+                                                    <?php for($h=7; $h<=22; $h++) { ?>
+                                                        <option value="<?php echo $h; ?>" <?php echo ($curFeh !== '' && (int)$curFeh === $h) ? 'selected' : ''; ?>><?php echo $h; ?></option>
+                                                    <?php } ?>
+                                                </select>
+                                                <span>時</span>
+                                                <select name="fire_end_time_m" class="form-control" style="padding: 8px; width: 80px;">
+                                                    <option value="">選擇</option>
+                                                    <?php foreach(['00','10','20','30','40','50'] as $m) { ?>
+                                                        <option value="<?php echo $m; ?>" <?php echo ($curFem !== '' && $curFem === $m) ? 'selected' : ''; ?>><?php echo $m; ?></option>
+                                                    <?php } ?>
+                                                </select>
+                                                <span>分</span>
                                             </div>
                                         </div>
-                                        
-                                        <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 25px;">
-                                            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; margin-left: -20px; font-weight: bold; color: #3b82f6;">
-                                                <input type="checkbox" id="fire_ack" name="fire_ack" value="1" style="margin-top: 5px; width: 18px; height: 18px; flex-shrink: 0;">
-                                                <span style="font-size: 15px; line-height: 1.6;">已閱讀並同意明火安全規範</span>
-                                            </label>
+
+                                        <!-- 👇 這裡新增各種人員的表格 👇 -->
+                                        <hr style="margin: 30px 0; border: 0; border-top: 1px solid #e2e8f0;">
+                                        <h4 style="margin: 0 0 15px 0; color: #1e40af; font-size: 16px; font-weight: bold;">活動相關人員名單</h4>
+                                        <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">請點擊「＋新增」按鈕來增加列數，您也可以點擊「刪除」移除列。</p>
+
+                                        <style>
+                                            .fire-staff-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; font-size: 14px; }
+                                            .fire-staff-table th, .fire-staff-table td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; }
+                                            .fire-staff-table th { background: #f8fafc; font-weight: 600; color: #334155; }
+                                            .fire-staff-title { font-size: 15px; font-weight: bold; margin: 0 0 8px 0; color: #334155; }
+                                            .fire-staff-wrapper { margin-bottom: 25px; padding: 15px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
+                                            .btn-add-staff { background: #3b82f6; color: white; border: none; padding: 5px 12px; border-radius: 5px; cursor: pointer; font-size: 13px; transition: 0.2s; }
+                                            .btn-add-staff:hover { background: #2563eb; }
+                                            .btn-del-staff { color: #ef4444; background: none; border: none; cursor: pointer; font-size: 13px; padding: 4px; transition: 0.2s; }
+                                            .btn-del-staff:hover { color: #b91c1c; background: rgba(239, 68, 68, 0.1); border-radius: 4px; }
+                                        </style>
+
+                                        <div class="fire-staff-wrapper">
+                                            <h5 class="fire-staff-title">表演人員</h5>
+                                            <table class="fire-staff-table" id="table_staff_performer">
+                                                <thead><tr><th>姓名</th><th style="width: 70px; text-align: center;">操作</th></tr></thead>
+                                                <tbody>
+                                                    <tr>
+                                                        <td><input type="text" name="fire_staff_performer[]" class="form-control" placeholder="請輸入姓名"></td>
+                                                        <td style="text-align: center;"><button type="button" class="btn-del-staff" onclick="removeFireStaffRow(this)">刪除</button></td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                            <button type="button" class="btn-add-staff" onclick="addFireStaffRow('table_staff_performer', 'fire_staff_performer[]')">＋ 新增人員</button>
                                         </div>
+
+                                        <div class="fire-staff-wrapper">
+                                            <h5 class="fire-staff-title">上油人員 <span style="color: #ef4444; font-weight: normal; font-size: 13px;">(至少一人)</span></h5>
+                                            <table class="fire-staff-table" id="table_staff_oiler">
+                                                <thead><tr><th>姓名</th><th style="width: 70px; text-align: center;">操作</th></tr></thead>
+                                                <tbody>
+                                                    <tr>
+                                                        <td><input type="text" name="fire_staff_oiler[]" class="form-control" placeholder="請輸入姓名"></td>
+                                                        <td style="text-align: center;"><button type="button" class="btn-del-staff" onclick="removeFireStaffRow(this)">刪除</button></td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                            <button type="button" class="btn-add-staff" onclick="addFireStaffRow('table_staff_oiler', 'fire_staff_oiler[]')">＋ 新增人員</button>
+                                        </div>
+
+                                        <div class="fire-staff-wrapper">
+                                            <h5 class="fire-staff-title">滅火人員 <span style="color: #ef4444; font-weight: normal; font-size: 13px;">(至少一人)</span></h5>
+                                            <table class="fire-staff-table" id="table_staff_extinguisher">
+                                                <thead><tr><th>姓名</th><th style="width: 70px; text-align: center;">操作</th></tr></thead>
+                                                <tbody>
+                                                    <tr>
+                                                        <td><input type="text" name="fire_staff_extinguisher[]" class="form-control" placeholder="請輸入姓名"></td>
+                                                        <td style="text-align: center;"><button type="button" class="btn-del-staff" onclick="removeFireStaffRow(this)">刪除</button></td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                            <button type="button" class="btn-add-staff" onclick="addFireStaffRow('table_staff_extinguisher', 'fire_staff_extinguisher[]')">＋ 新增人員</button>
+                                        </div>
+
+                                        <div class="fire-staff-wrapper">
+                                            <h5 class="fire-staff-title">維安人員 <span style="color: #ef4444; font-weight: normal; font-size: 13px;">(至少三人)</span></h5>
+                                            <table class="fire-staff-table" id="table_staff_security">
+                                                <thead><tr><th>姓名</th><th style="width: 70px; text-align: center;">操作</th></tr></thead>
+                                                <tbody>
+                                                    <tr>
+                                                        <td><input type="text" name="fire_staff_security[]" class="form-control" placeholder="請輸入姓名"></td>
+                                                        <td style="text-align: center;"><button type="button" class="btn-del-staff" onclick="removeFireStaffRow(this)">刪除</button></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td><input type="text" name="fire_staff_security[]" class="form-control" placeholder="請輸入姓名"></td>
+                                                        <td style="text-align: center;"><button type="button" class="btn-del-staff" onclick="removeFireStaffRow(this)">刪除</button></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td><input type="text" name="fire_staff_security[]" class="form-control" placeholder="請輸入姓名"></td>
+                                                        <td style="text-align: center;"><button type="button" class="btn-del-staff" onclick="removeFireStaffRow(this)">刪除</button></td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                            <button type="button" class="btn-add-staff" onclick="addFireStaffRow('table_staff_security', 'fire_staff_security[]')">＋ 新增人員</button>
+                                        </div>
+
+                                        <div class="fire-staff-wrapper">
+                                            <h5 class="fire-staff-title">緊急狀況處理人員 <span style="color: #ef4444; font-weight: normal; font-size: 13px;">(至少一人)</span></h5>
+                                            <table class="fire-staff-table" id="table_staff_emergency">
+                                                <thead><tr><th>姓名</th><th style="width: 70px; text-align: center;">操作</th></tr></thead>
+                                                <tbody>
+                                                    <tr>
+                                                        <td><input type="text" name="fire_staff_emergency[]" class="form-control" placeholder="請輸入姓名"></td>
+                                                        <td style="text-align: center;"><button type="button" class="btn-del-staff" onclick="removeFireStaffRow(this)">刪除</button></td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                            <button type="button" class="btn-add-staff" onclick="addFireStaffRow('table_staff_emergency', 'fire_staff_emergency[]')">＋ 新增人員</button>
+                                        </div>
+
+                                        <div class="fire-staff-wrapper">
+                                            <h5 class="fire-staff-title">醫療人員 <span style="color: #ef4444; font-weight: normal; font-size: 13px;">(至少一人)</span></h5>
+                                            <table class="fire-staff-table" id="table_staff_medical">
+                                                <thead><tr><th>姓名</th><th style="width: 70px; text-align: center;">操作</th></tr></thead>
+                                                <tbody>
+                                                    <tr>
+                                                        <td><input type="text" name="fire_staff_medical[]" class="form-control" placeholder="請輸入姓名"></td>
+                                                        <td style="text-align: center;"><button type="button" class="btn-del-staff" onclick="removeFireStaffRow(this)">刪除</button></td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                            <button type="button" class="btn-add-staff" onclick="addFireStaffRow('table_staff_medical', 'fire_staff_medical[]')">＋ 新增人員</button>
+                                        </div>
+                                        <!-- 👆 新增各種人員的表格結束 👆 -->
+                                        
                                     </div>
                                 </div>
+                                <!-- 👆 明火申請表 HTML 結束 👆 -->
 
                                 <script>
+                                function addFireStaffRow(tableId, inputName) {
+                                    const tbody = document.getElementById(tableId).querySelector('tbody');
+                                    const tr = document.createElement('tr');
+                                    tr.innerHTML = `
+                                        <td><input type="text" name="${inputName}" class="form-control" placeholder="請輸入姓名"></td>
+                                        <td style="text-align: center;"><button type="button" class="btn-del-staff" onclick="removeFireStaffRow(this)">刪除</button></td>
+                                    `;
+                                    tbody.appendChild(tr);
+                                }
+                                function removeFireStaffRow(btn) {
+                                    const tr = btn.closest('tr');
+                                    const tbody = tr.parentNode;
+                                    // 防呆：如果刪到剩最後一筆，只清空內容不刪除整列
+                                    if (tbody.querySelectorAll('tr').length <= 1) {
+                                        tr.querySelector('input').value = '';
+                                        return;
+                                    }
+                                    tr.remove();
+                                }
+                                </script>
+
+                                <script>
+                                // 👇 這裡幫你把遺失的【酒精驗證 Javascript】補回來了 👇
                                 function toggleAllAlcoholAgreements(source) {
                                     const checkboxes = document.querySelectorAll('input[name^="alcohol_agree_"]');
                                     checkboxes.forEach(function(cb) {
@@ -1086,8 +1309,9 @@ if ($dbError === '') {
                                 }
 
                                 function isAlcoholEnabled() {
-                                    const checkbox = document.querySelector('input[name="has_alcohol"]');
-                                    return checkbox ? checkbox.checked : false;
+// 改為直接抓取 checkbox 的 checked 屬性
+    const checkbox = document.querySelector('input[name="has_alcohol"]');
+    return checkbox ? checkbox.checked : false;
                                 }
 
                                 function toggleAlcoholDetails() {
@@ -1095,6 +1319,7 @@ if ($dbError === '') {
                                     if (!alcSection) return;
                                     const show = isAlcoholEnabled();
                                     alcSection.style.display = show ? 'block' : 'none';
+                                    
                                     alcSection.querySelectorAll('input').forEach(function(el) {
                                         if (show) {
                                             el.removeAttribute('disabled');
@@ -1106,53 +1331,112 @@ if ($dbError === '') {
 
                                 function validateAlcoholForm() {
                                     if (!isAlcoholEnabled()) return true;
+                                    
                                     const checkboxes = document.querySelectorAll('#alcoholDetailsSection input[type="checkbox"]');
                                     let allChecked = true;
-                                    checkboxes.forEach(function(cb) { if (!cb.checked) allChecked = false; });
+                                    checkboxes.forEach(function(cb) {
+                                        if (!cb.checked) allChecked = false;
+                                    });
+                                    
                                     const coordinator = document.getElementById('alcohol_coordinator').value.trim();
                                     const president = document.getElementById('alcohol_president').value.trim();
-                                    if (!allChecked) { alert('請先勾選並確認遵守「酒精飲品活動須知」的所有規範事項。'); return false; }
-                                    if (!coordinator) { alert('請填寫「酒精飲品活動須知」的活動負責人。'); return false; }
-                                    if (!president) { alert('請填寫「酒精飲品活動須知」的社長。'); return false; }
+                                    
+                                    if (!allChecked) {
+                                        alert('請先勾選並確認遵守「酒精飲品活動須知」的所有規範事項。');
+                                        return false;
+                                    }
+                                    
+                                    if (!coordinator) {
+                                        alert('請填寫「酒精飲品活動須知」的活動負責人。');
+                                        return false;
+                                    }
+                                    
+                                    if (!president) {
+                                        alert('請填寫「酒精飲品活動須知」的社長。');
+                                        return false;
+                                    }
+                                    
                                     return true;
                                 }
+                                // 👆 酒精驗證 Javascript 結束 👆
 
-                                function isFireEnabled() { const checkbox = document.querySelector('input[name="has_fire"]'); return checkbox ? checkbox.checked : false; }
+                                // 👇 明火驗證 Javascript 開始 👇
+                                function isFireEnabled() {
+const checkbox = document.querySelector('input[name="has_fire"]');
+    return checkbox ? checkbox.checked : false;
+                                }
 
                                 function toggleFireDetails() {
                                     const fireSection = document.getElementById('fireDetailsSection');
                                     if (!fireSection) return;
                                     const show = isFireEnabled();
                                     fireSection.style.display = show ? 'block' : 'none';
+                                    
                                     fireSection.querySelectorAll('input').forEach(function(el) {
-                                        if (show) { el.removeAttribute('disabled'); } else { el.setAttribute('disabled', 'disabled'); }
+                                        if (show) {
+                                            el.removeAttribute('disabled');
+                                        } else {
+                                            el.setAttribute('disabled', 'disabled');
+                                        }
                                     });
                                 }
 
-                                function validateFireForm() { if (!isFireEnabled()) return true; return true; }
+                                function validateFireForm() {
+                                    if (!isFireEnabled()) return true;
+                                    // 之後如果有明火表單內容的必填欄位，可在此撰寫驗證邏輯
+                                    return true;
+                                }
+                                // 👆 明火驗證 Javascript 結束 👆
 
-                                function isFlagEnabled() { const checkedFlag = document.querySelector('input[name="setup_flags"]:checked'); return checkedFlag && checkedFlag.value === 'yes'; }
+                                function isFlagEnabled() {
+                                    const checkedFlag = document.querySelector('input[name="setup_flags"]:checked');
+                                    return checkedFlag && checkedFlag.value === 'yes';
+                                }
 
                                 function addWorkDays(startDate, days) {
                                     const date = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
                                     let count = 0;
+
                                     while (count < days) {
                                         date.setDate(date.getDate() + 1);
                                         const weekDay = date.getDay();
-                                        if (weekDay !== 0 && weekDay !== 6) { count++; }
+                                        if (weekDay !== 0 && weekDay !== 6) {
+                                            count++;
+                                        }
                                     }
                                     return date;
                                 }
 
-                                function formatDate(date) { const y = date.getFullYear(); const m = String(date.getMonth() + 1).padStart(2, '0'); const d = String(date.getDate()).padStart(2, '0'); return `${y}-${m}-${d}`; }
+                                function formatDate(date) {
+                                    const y = date.getFullYear();
+                                    const m = String(date.getMonth() + 1).padStart(2, '0');
+                                    const d = String(date.getDate()).padStart(2, '0');
+                                    return `${y}-${m}-${d}`;
+                                }
 
-                                function getMinFlagDate() { return formatDate(addWorkDays(new Date(), 7)); }
+                                function getMinFlagDate() {
+                                    return formatDate(addWorkDays(new Date(), 7));
+                                }
 
                                 function toggleFlagDetails() {
-                                    const detailsSection = document.getElementById('flagDetailsSection'); if (!detailsSection) return;
-                                    const show = isFlagEnabled(); detailsSection.style.display = show ? 'block' : 'none';
-                                    detailsSection.querySelectorAll('input, select, textarea').forEach(function (el) { if (show) { el.removeAttribute('disabled'); } else { el.setAttribute('disabled', 'disabled'); } });
-                                    if (show) { syncFlagForm(); validateStartDate(); }
+                                    const detailsSection = document.getElementById('flagDetailsSection');
+                                    if (!detailsSection) return;
+
+                                    const show = isFlagEnabled();
+                                    detailsSection.style.display = show ? 'block' : 'none';
+
+                                    detailsSection.querySelectorAll('input, select, textarea').forEach(function (el) {
+                                        if (show) {
+                                            el.removeAttribute('disabled');
+                                        } else {
+                                            el.setAttribute('disabled', 'disabled');
+                                        }
+                                    });
+
+                                    if (show) {
+                                        syncFlagForm();
+                                        validateStartDate();
+                                    }
                                 }
 
                                 function is30DaysRequired() {
@@ -1160,35 +1444,94 @@ if ($dbError === '') {
                                     const hasAlcohol = document.querySelector('input[name="has_alcohol"]')?.checked;
                                     const hasFire = document.querySelector('input[name="has_fire"]')?.checked;
                                     const hasSales = document.querySelector('input[name="has_sales"]')?.checked;
-                                    return (participantCount === '100~200人' || participantCount === '200人以上') || hasAlcohol || hasFire || hasSales;
+                                    
+                                    return (participantCount === '100~200人' || participantCount === '200人以上') ||
+                                           hasAlcohol || hasFire || hasSales;
                                 }
 
                                 function validateStartDate() {
-                                    const startDateInput = document.getElementById('borrow_start_date'); if (!startDateInput || !startDateInput.value) return;
-                                    const selectedDate = new Date(startDateInput.value); selectedDate.setHours(0,0,0,0);
-                                    const req30 = is30DaysRequired(); const reqFlag = isFlagEnabled(); let errorMsg = '';
+                                    const startDateInput = document.getElementById('borrow_start_date');
+                                    if (!startDateInput || !startDateInput.value) return;
+
+                                    const selectedDate = new Date(startDateInput.value);
+                                    selectedDate.setHours(0,0,0,0);
+
+                                    const req30 = is30DaysRequired();
+                                    const reqFlag = isFlagEnabled();
+
+                                    let errorMsg = '';
+                                    
                                     if (req30) {
-                                        const min30Date = new Date(); min30Date.setDate(min30Date.getDate() + 30); min30Date.setHours(0,0,0,0);
-                                        if (selectedDate < min30Date) { errorMsg = '注意：由於您的活動包含特殊性質（酒精、明火、攤販或超過100人），必須在 30 天之前申請！\n系統已清空不合規的日期，請重新選擇至少為 ' + formatDate(min30Date) + ' 的日期。'; }
+                                        const min30Date = new Date();
+                                        min30Date.setDate(min30Date.getDate() + 30);
+                                        min30Date.setHours(0,0,0,0);
+                                        
+                                        if (selectedDate < min30Date) {
+                                            errorMsg = '注意：由於您的活動包含特殊性質（酒精、明火、攤販或超過100人），必須在 30 天之前申請！\n系統已清空不合規的日期，請重新選擇至少為 ' + formatDate(min30Date) + ' 的日期。';
+                                        }
                                     }
+
                                     if (!errorMsg && reqFlag) {
-                                        const minFlagDateStr = getMinFlagDate(); const minFlagDate = new Date(minFlagDateStr); minFlagDate.setHours(0,0,0,0);
-                                        if (selectedDate < minFlagDate) { errorMsg = '注意：插立旗幟的使用日期只能選擇 7 個工作天之後的日期（至少為 ' + minFlagDateStr + '）！\n系統已為您清空不合規的活動開始日期，請重新選擇。'; }
+                                        const minFlagDateStr = getMinFlagDate();
+                                        const minFlagDate = new Date(minFlagDateStr);
+                                        minFlagDate.setHours(0,0,0,0);
+                                        
+                                        if (selectedDate < minFlagDate) {
+                                            errorMsg = '注意：插立旗幟的使用日期只能選擇 7 個工作天之後的日期（至少為 ' + minFlagDateStr + '）！\n系統已為您清空不合規的活動開始日期，請重新選擇。';
+                                        }
                                     }
-                                    if (errorMsg) { alert(errorMsg); startDateInput.value = ''; const sEl = document.getElementById('flag_start_date'); const eEl = document.getElementById('flag_end_date'); if (sEl) sEl.value = ''; if (eEl) eEl.value = ''; }
+
+                                    if (errorMsg) {
+                                        alert(errorMsg);
+                                        startDateInput.value = '';
+                                        const sEl = document.getElementById('flag_start_date');
+                                        const eEl = document.getElementById('flag_end_date');
+                                        if (sEl) sEl.value = '';
+                                        if (eEl) eEl.value = '';
+                                    }
                                 }
 
                                 function syncFlagForm() {
-                                    if (!isFlagEnabled()) return; const flagCount = document.getElementById('flag_count'); if (flagCount && flagCount.value !== '' && Number(flagCount.value) > 20) { flagCount.value = 20; }
-                                    const bs = document.getElementById('borrow_start_date'); const be = document.getElementById('borrow_end_date'); const fus = document.getElementById('flag_use_start'); const fue = document.getElementById('flag_use_end');
-                                    const mapping = [ ['organization_name', 'flag_organization_name'], ['activity_name', 'flag_activity_name'], ['activity_coordinator', 'flag_responsible_person'], ['coordinator_phone', 'flag_contact_phone'] ];
-                                    mapping.forEach(function(pair){ const s = document.getElementById(pair[0]); const d = document.getElementById(pair[1]); if (s && d && (d.value === '' || d.value === null)) { d.value = s.value || ''; } });
+                                    if (!isFlagEnabled()) return;
+                                    const flagCount = document.getElementById('flag_count');
+                                    if (flagCount && flagCount.value !== '' && Number(flagCount.value) > 20) {
+                                        flagCount.value = 20;
+                                    }
+
+                                    const bs = document.getElementById('borrow_start_date');
+                                    const be = document.getElementById('borrow_end_date');
+                                    const fus = document.getElementById('flag_use_start');
+                                    const fue = document.getElementById('flag_use_end');
+                                    
+                                    const mapping = [
+                                        ['organization_name', 'flag_organization_name'],
+                                        ['activity_name', 'flag_activity_name'],
+                                        ['activity_coordinator', 'flag_responsible_person'],
+                                        ['coordinator_phone', 'flag_contact_phone']
+                                    ];
+                                    mapping.forEach(function(pair){
+                                        const s = document.getElementById(pair[0]);
+                                        const d = document.getElementById(pair[1]);
+                                        if (s && d && (d.value === '' || d.value === null)) {
+                                            d.value = s.value || '';
+                                        }
+                                    });
                                     if (fus && fue && bs && be) {
-                                        fus.value = bs.value || ''; fue.value = be.value || '';
-                                        try { const min = getMinFlagDate(); fus.setAttribute('min', min); fue.setAttribute('min', min); } catch (e) {}
+                                        fus.value = bs.value || '';
+                                        fue.value = be.value || '';
+                                        try {
+                                            const min = getMinFlagDate();
+                                            fus.setAttribute('min', min);
+                                            fue.setAttribute('min', min);
+                                        } catch (e) {}
+
                                         if (bs.value) {
-                                            const minDate = new Date(getMinFlagDate()); const startDate = new Date(bs.value);
-                                            if (startDate < minDate) { alert('插立旗幟使用日期必須為 7 個工作天之後，請將活動開始日期調整至 ' + getMinFlagDate() + '（或更晚）。'); bs.focus(); }
+                                            const minDate = new Date(getMinFlagDate());
+                                            const startDate = new Date(bs.value);
+                                            if (startDate < minDate) {
+                                                alert('插立旗幟使用日期必須為 7 個工作天之後，請將活動開始日期調整至 ' + getMinFlagDate() + '（或更晚）。');
+                                                bs.focus();
+                                            }
                                         }
                                     }
                                 }
@@ -1198,148 +1541,2790 @@ if ($dbError === '') {
                                     const flagCount = document.getElementById('flag_count');
 
                                     flagRadios.forEach(function (radio) {
-                                        radio.addEventListener('change', function () { toggleFlagDetails(); syncFlagForm(); });
+                                        radio.addEventListener('change', function () {
+                                            toggleFlagDetails();
+                                            syncFlagForm();
+                                        });
                                     });
 
                                     ['borrow_start_date', 'borrow_end_date', 'organization_name', 'activity_name', 'coordinator_phone', 'activity_coordinator', 'participant_count'].forEach(function (id) {
-                                        const el = document.getElementById(id); if (el) {
-                                            if (id === 'borrow_start_date' || id === 'participant_count') { el.addEventListener('change', function() { validateStartDate(); syncFlagForm(); }); }
-                                            else { el.addEventListener('change', syncFlagForm); }
+                                        const el = document.getElementById(id);
+                                        if (el) {
+                                            if (id === 'borrow_start_date' || id === 'participant_count') {
+                                                el.addEventListener('change', function() {
+                                                    validateStartDate();
+                                                    syncFlagForm();
+                                                });
+                                            } else {
+                                                el.addEventListener('change', syncFlagForm);
+                                            }
                                             el.addEventListener('input', syncFlagForm);
                                         }
                                     });
 
+                                    // 👇 綁定切換按鈕，勾選酒精時會跳出申請表 👇
                                     ['has_alcohol', 'has_fire', 'has_sales'].forEach(function(name) {
                                         const el = document.querySelector('input[name="' + name + '"]');
-                                        if (el) { el.addEventListener('change', function() { if (name === 'has_alcohol' && typeof toggleAlcoholDetails === 'function') { toggleAlcoholDetails(); } if (name === 'has_fire' && typeof toggleFireDetails === 'function') { toggleFireDetails(); } }); }
+                                        if (el) {
+                                            el.addEventListener('change', function() {
+                                                if (name === 'has_alcohol' && typeof toggleAlcoholDetails === 'function') {
+                                                    toggleAlcoholDetails();
+                                                }
+                                                if (name === 'has_fire' && typeof toggleFireDetails === 'function') {
+                                                    toggleFireDetails();
+                                                }
+                                            });
+                                        }
                                     });
+                                    
+                                    // 確保重整網頁時如果有勾選，也能正確顯示
+                                    if (typeof toggleAlcoholDetails === 'function') {
+                                        toggleAlcoholDetails();
+                                    }
+                                    if (typeof toggleFireDetails === 'function') {
+                                        toggleFireDetails();
+                                    }
+                                    // 👆 綁定結束 👆
 
-                                    if (typeof toggleAlcoholDetails === 'function') { toggleAlcoholDetails(); }
-                                    if (typeof toggleFireDetails === 'function') { toggleFireDetails(); }
+                                    (function(){
+                                        const pairs = [
+                                            ['organization_name', 'flag_organization_name'],
+                                            ['activity_name', 'flag_activity_name'],
+                                            ['activity_coordinator', 'flag_responsible_person'],
+                                            ['coordinator_phone', 'flag_contact_phone']
+                                        ];
+                                        pairs.forEach(function(pair){
+                                            const src = document.getElementById(pair[0]);
+                                            const dst = document.getElementById(pair[1]);
+                                            if (!src || !dst) return;
+                                            dst.value = src.value || dst.value || '';
+                                            src.addEventListener('input', function(){ dst.value = src.value; });
+                                            src.addEventListener('change', function(){ dst.value = src.value; });
+                                        });
+                                    })();
 
-                                    (function(){ const pairs = [ ['organization_name', 'flag_organization_name'], ['activity_name', 'flag_activity_name'], ['activity_coordinator', 'flag_responsible_person'], ['coordinator_phone', 'flag_contact_phone'] ]; pairs.forEach(function(pair){ const src = document.getElementById(pair[0]); const dst = document.getElementById(pair[1]); if (!src || !dst) return; dst.value = src.value || dst.value || ''; src.addEventListener('input', function(){ dst.value = src.value; }); src.addEventListener('change', function(){ dst.value = src.value; }); }); })();
+                                    if (flagCount) {
+                                        flagCount.addEventListener('input', function () {
+                                            if (this.value !== '' && Number(this.value) > 20) {
+                                                this.value = 20;
+                                                alert('宣傳旗幟最多只能選 20 支');
+                                            }
+                                            if (this.value !== '' && Number(this.value) < 1) {
+                                                this.value = 1;
+                                            }
+                                        });
+                                    }
 
-                                    if (flagCount) { flagCount.addEventListener('input', function () { if (this.value !== '' && Number(this.value) > 20) { this.value = 20; alert('宣傳旗幟最多只能選 20 支'); } if (this.value !== '' && Number(this.value) < 1) { this.value = 1; } }); }
+                                    toggleFlagDetails();
+                                    syncFlagForm();
 
-                                    toggleFlagDetails(); syncFlagForm();
-
-                                    const draftBtns = document.querySelectorAll('.openDraftBoxBtn'); draftBtns.forEach(function (btn) { btn.addEventListener('click', function () { window.location.href = 'drafts.php'; }); });
+                                    const draftBtns = document.querySelectorAll('.openDraftBoxBtn');
+                                    draftBtns.forEach(function (btn) {
+                                        btn.addEventListener('click', function () {
+                                            window.location.href = 'drafts.php';
+                                        });
+                                    });
                                 });
                                 </script>
 
                                 <div class="step-actions">
                                     <button type="button" class="btn btn-secondary" onclick="goToStep(1)"> ⬅ 回上一步</button>
+                                    <!-- 👇 這裡也幫你把進入第三步前的檢查條件加回來了 👇 -->
                                     <button type="button" class="btn btn-primary btn-next" onclick="if(validateAlcoholForm() && validateFireForm()) { goToStep(3); }">下一步 ➔ 挑選器材與場地</button>
                                 </div>
 
                                 <div class="draft-action-row">
-                                    <button type="button" class="draft-btn save-btn saveDraftBtn">暫存申請</button>
-                                    <button type="button" class="draft-btn draft-box-btn openDraftBoxBtn">草稿箱</button>
+                                    <button type="button" class="draft-btn save-btn saveDraftBtn">
+                                        暫存申請
+                                    </button>
+                                    <button type="button" class="draft-btn draft-box-btn openDraftBoxBtn">
+                                        草稿箱
+                                    </button>
                                 </div>
                                 <div id="submitDebugMsg" class="draft-message"></div>
-                            </div>
-
-                                <div class="step-content" id="step-content-3">
-                                    <h3 class="step-title" style="margin-bottom: 10px;">第三步：器材與場地</h3>
-                                    <p class="step-desc" style="color: #7f8c8d; margin-bottom: 20px;">請確認要移除或新增的場地與器材，最後送出修改。</p>
-
-                                    <div class="form-group">
-                                        <label>場地（可移除或新增）</label>
-                                        <?php if (!empty($space_items)) { ?>
-                                            <div style="margin-bottom:8px;">目前場地：請勾選欲移除的場地</div>
-                                            <ul>
-                                                <?php foreach ($space_items as $s) { ?>
-                                                    <li>
-                                                        <label><input type="checkbox" name="remove_space[]" value="<?php echo htmlspecialchars($s['space_id'], ENT_QUOTES, 'UTF-8'); ?>"> <?php echo htmlspecialchars($s['space_name'] . ' (' . $s['space_id'] . ')', ENT_QUOTES, 'UTF-8'); ?></label>
-                                                    </li>
-                                                <?php } ?>
-                                            </ul>
-                                        <?php } else { ?>
-                                            <div>目前沒有場地預約。</div>
-                                        <?php } ?>
-
-                                        <div style="margin-top:10px;">
-                                            <label>新增場地（輸入場地代碼，每次可新增一個，可重複送出多個）</label>
-                                            <div style="display:flex; gap:8px; align-items:center;">
-                                                <input type="text" name="add_space_id[]" placeholder="場地代碼（例如 S101）">
-                                            </div>
-                                            <small style="color:#666;">注意：新增時系統會檢查時段衝突。</small>
-                                        </div>
-                                    </div>
-
-                                    <div class="form-group">
-                                        <label>器材（可移除或新增）</label>
-                                        <?php if (!empty($equipment_items)) { ?>
-                                            <div style="margin-bottom:8px;">目前器材：請勾選欲移除的器材</div>
-                                            <ul>
-                                                <?php foreach ($equipment_items as $e) { ?>
-                                                    <li>
-                                                        <label><input type="checkbox" name="remove_equipment[]" value="<?php echo (int)$e['equipment_id']; ?>"> <?php echo htmlspecialchars($e['equipment_code'] . ' - ' . $e['equipment_name'], ENT_QUOTES, 'UTF-8'); ?></label>
-                                                    </li>
-                                                <?php } ?>
-                                            </ul>
-                                        <?php } else { ?>
-                                            <div>目前沒有器材預約。</div>
-                                        <?php } ?>
-
-                                        <div style="margin-top:10px;">
-                                            <label>新增器材（輸入器材代碼與數量）</label>
-                                            <div id="addEquipContainer">
-                                                <div style="display:flex; gap:8px; margin-bottom:6px; align-items:center;">
-                                                    <input type="text" name="add_equipment_code[]" placeholder="器材代碼（例如 MIC01）">
-                                                    <input type="number" name="add_equipment_qty[]" placeholder="數量" min="1" style="width:80px;">
-                                                </div>
-                                            </div>
-                                            <button type="button" class="btn-secondary" id="addEquipRowBtn" style="margin-top:6px;">再加一筆</button>
-                                            <small style="display:block; color:#666; margin-top:6px;">系統會依照時段與可用狀態自動分配實體器材。</small>
-                                        </div>
-                                    </div>
-
-                                    <script>
-                                        document.addEventListener('DOMContentLoaded', function(){
-                                            const btn = document.getElementById('addEquipRowBtn');
-                                            const container = document.getElementById('addEquipContainer');
-                                            btn && btn.addEventListener('click', function(){
-                                                const div = document.createElement('div');
-                                                div.style.display = 'flex'; div.style.gap = '8px'; div.style.marginBottom = '6px'; div.style.alignItems = 'center';
-                                                div.innerHTML = '<input type="text" name="add_equipment_code[]" placeholder="器材代碼（例如 MIC01）"> <input type="number" name="add_equipment_qty[]" placeholder="數量" min="1" style="width:80px;"> <button type="button" class="btn-secondary" onclick="this.parentNode.remove()">移除</button>';
-                                                container.appendChild(div);
-                                            });
-                                        });
-
-                                        function goToStep(stepNumber) {
-                                            const steps = [1, 2, 3];
-                                            steps.forEach(function(step) {
-                                                const content = document.getElementById('step-content-' + step);
-                                                const stepper = document.getElementById('stepper-' + step);
-                                                if (content && stepper) {
-                                                    content.classList.toggle('active', step === stepNumber);
-                                                    stepper.classList.toggle('active', step === stepNumber);
-                                                }
-                                            });
-                                            const currentStep = document.getElementById('current_step');
-                                            if (currentStep) {
-                                                currentStep.value = String(stepNumber);
-                                            }
-                                            const card = document.getElementById('mainBorrowLayout');
-                                            if (card) {
-                                                card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                            }
-                                        }
-                                    </script>
-
-                                    <div class="step-actions">
-                                        <button type="button" class="btn btn-secondary" onclick="goToStep(2)"> ⬅ 回上一步</button>
-                                        <button type="submit" class="btn btn-primary btn-next">確認修改</button>
-                                    </div>
+                            </div>                            <!-- ========== 步驟 3 內容區 ========== -->
+                            <div class="step-content" id="step-content-3">
+                                <h3 class="step-title" style="margin-bottom: 10px;">第三步：器材與場地</h3>
+                                
+                                <!-- 隱藏或不需要重新顯示的部分 -->
+                                <div class="form-group" style="display:none;">
+                                    <label for="resource_type">借用類型 (已合併)</label>
+                                    <select id="resource_type" name="resource_type">
+                                        <option value="both" selected>兩者</option>
+                                    </select>
                                 </div>
 
-                            </form>
-                        </section>
+                            <!-- Old proposalGroup removed -->
+
+                            <div class="form-group">
+                                <label for="applicant_user_id">申請人帳號</label>
+                                <input type="text" id="applicant_user_id" value="<?php echo htmlspecialchars($userId, ENT_QUOTES, 'UTF-8'); ?>" readonly>
+                            </div>
+
+                            <div id="equipmentSelectorContainer" class="equipment-selector-container">
+                                <div class="es-left">
+                                    <div class="es-title">
+                                        <span style="color: #3b82f6; margin-right: 8px;">
+                                            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                                                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                                            </svg>
+                                        </span>
+                                        選擇借用項目
+                                    </div>
+                                    <div class="es-tabs" style="display:flex; background:#fff; border-bottom:1px solid #e2e8f0; flex-shrink: 0;">
+                                        <button type="button" class="es-tab-btn active" data-target="equipment" style="flex:1; padding:10px; border:none; background:none; cursor:pointer; font-weight:bold; color:#3b82f6; border-bottom:2px solid #3b82f6; transition:all 0.2s;">器材</button>
+                                        <button type="button" class="es-tab-btn" data-target="space" style="flex:1; padding:10px; border:none; background:none; cursor:pointer; font-weight:bold; color:#64748b; border-bottom:2px solid transparent; transition:all 0.2s;">空間場地</button>
+                                    </div>
+                                    <div class="es-search" style="display: flex; align-items: center; justify-content: space-between; gap: 15px;">
+                                        <div style="flex: 1;">
+                                            <input type="text" id="esSearchInput" placeholder="搜尋名稱...">
+                                        </div>
+                                        <div id="esItemCount" style="font-size: 13px; color: #64748b; white-space: nowrap;">
+                                            顯示所有項目
+                                        </div>
+                                    </div>
+                                    <ul class="es-list" id="esEquipmentList">
+                                        <?php foreach ($equipmentMap as $equipment) { 
+                                            $avail = (int)$equipment['available_quantity'];
+                                            $limitRaw = $equipment['borrow_limit_quantity'];
+                                            $limit = $limitRaw === null ? '不限' : (int)$limitRaw;
+                                            $maxInput = $limitRaw !== null ? min($avail, (int)$limitRaw) : $avail;
+                                        ?>
+                                            <li class="es-item" data-type="equipment" data-name="<?php echo htmlspecialchars($equipment['equipment_name'], ENT_QUOTES, 'UTF-8'); ?>" data-code="<?php echo htmlspecialchars($equipment['equipment_code'], ENT_QUOTES, 'UTF-8'); ?>" data-original-disabled="0">
+                                                <div class="es-item-header">
+                                                    <div class="es-item-info">
+                                                        <div class="es-item-icon"><?php echo getEquipmentIcon($equipment['equipment_name']); ?></div>
+                                                        <div class="es-item-name-block">
+                                                            <div class="es-item-title"><?php echo htmlspecialchars($equipment['equipment_name'], ENT_QUOTES, 'UTF-8'); ?></div>
+                                                            <div class="es-item-subtitle">
+                                                                <span>型號: <?php echo htmlspecialchars($equipment['equipment_code'], ENT_QUOTES, 'UTF-8'); ?></span>
+                                                                <span>可借數量: <span class="es-available-value" data-code="<?php echo htmlspecialchars($equipment['equipment_code'], ENT_QUOTES, 'UTF-8'); ?>" data-type="equipment">請先選日期</span></span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <button type="button" class="es-btn-invite">選擇</button>
+                                                </div>
+                                                <div class="es-item-body">
+                                                    <div class="es-item-details">
+                                                        <span>目前可借用數量：<strong class="es-availability-detail" data-code="<?php echo htmlspecialchars($equipment['equipment_code'], ENT_QUOTES, 'UTF-8'); ?>" data-type="equipment">請先選日期</strong></span>
+                                                        <span>限借數量：<?php echo $limit; ?></span>
+                                                    </div>
+                                                    <div class="es-item-action">
+                                                        <label>選擇借幾個：</label>
+                                                        <input type="number" class="es-qty-input" min="1" max="1" value="1" disabled>
+                                                        <button type="button" class="es-btn-add">加入清單</button>
+                                                    </div>
+                                                </div>
+                                            </li>
+                                        <?php } ?>
+                                        <?php foreach ($spaceMap as $space) { 
+                                            $spaceStatusVal = (string)$space['space_status'];
+                                        ?>
+                                            <li class="es-item" data-type="space" data-name="<?php echo htmlspecialchars($space['space_name'], ENT_QUOTES, 'UTF-8'); ?>" data-code="<?php echo htmlspecialchars($space['space_id'], ENT_QUOTES, 'UTF-8'); ?>" data-original-disabled="0">
+                                                <div class="es-item-header">
+                                                    <div class="es-item-info">
+                                                        <div class="es-item-icon"><?php echo getSpaceIcon($space['space_name']); ?></div>
+                                                        <div class="es-item-name-block">
+                                                            <div class="es-item-title"><?php echo htmlspecialchars($space['space_name'], ENT_QUOTES, 'UTF-8'); ?></div>
+                                                            <div class="es-item-subtitle">
+                                                                <span>編號: <?php echo htmlspecialchars($space['space_id'], ENT_QUOTES, 'UTF-8'); ?></span>
+                                                                <span>可借數量: <span class="es-available-value" data-code="<?php echo htmlspecialchars($space['space_id'], ENT_QUOTES, 'UTF-8'); ?>" data-type="space">請先選日期與節次</span></span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <button type="button" class="es-btn-invite">選擇</button>
+                                                </div>
+                                                <div class="es-item-body">
+                                                    <div class="es-item-details">
+                                                        <span>容納人數：<?php echo (int)$space['capacity']; ?></span>
+                                                        <span>目前可借用數量：<strong class="es-availability-detail" data-code="<?php echo htmlspecialchars($space['space_id'], ENT_QUOTES, 'UTF-8'); ?>" data-type="space">請先選日期與節次</strong></span>
+                                                    </div>
+                                                    <div class="es-item-action">
+                                                        <label>場地僅能選擇一個</label>
+                                                        <input type="number" class="es-qty-input" min="1" max="1" value="1" style="display:none;">
+                                                        <button type="button" class="es-btn-add">加入清單</button>
+                                                    </div>
+                                                </div>
+                                            </li>
+                                        <?php } ?>
+                                    </ul>
+                                </div>
+                                <div class="es-right">
+                                    <div class="es-title" style="color: #333;">
+                                        <span style="color: #f59e0b; margin-right: 8px;">
+                                            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                                                <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/>
+                                            </svg>
+                                        </span>
+                                        已選取項目
+                                    </div>
+                                    <div style="flex: 1; display: flex; flex-direction: column; min-height: 0; background:#f8fafc; padding: 15px;">
+                                        <div class="cart-header" style="flex-shrink: 0; background: #f8fafc;">
+                                            <div class="cart-col-name">項目名稱</div>
+                                            <div class="cart-col-qty">數量</div>
+                                            <div class="cart-col-action">操作</div>
+                                        </div>
+                                        <ul class="es-list" id="esSelectedList" style="padding: 0; background: #f8fafc !important;">
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+
+
+                            <div class="form-group">
+                                <label for="purpose">用途說明 <span style="color:red">*</span></label>
+                                <textarea id="purpose" name="purpose" rows="4" required><?php echo htmlspecialchars($formData['purpose'], ENT_QUOTES, 'UTF-8'); ?></textarea>
+                            </div>
+
+                            <div class="step-actions">
+                                <button type="button" class="btn btn-secondary" onclick="goToStep(2)"> ⬅ 回上一步</button>
+                                <button type="submit" class="btn btn-primary btn-next" id="borrowSubmitBtn">確認修改</button>
+                            </div>
+
+                            <div class="draft-action-row">
+                                <button type="button" class="draft-btn save-btn saveDraftBtn">
+                                    暫存申請
+                                </button>
+                                <button type="button" class="draft-btn draft-box-btn openDraftBoxBtn">
+                                    草稿箱
+                                </button>
+                            </div>
+                            <div id="submitDebugMsg" class="draft-message"></div>
+                        </div> <!-- end of step-content-3 -->
+
+                        <!-- 草稿功能保留可放至其他位置, 或暫時隱藏, 為了簡化, 先放著 -->
+                        <!-- <div class="form-buttons">
+                                <div class="draft-buttons">
+                                    <button type="button" class="btn-draft btn-draft-save" id="saveDraftBtn">暫存申請</button>
+                                    <button type="button" class="btn-draft btn-draft-manage" id="manageDraftBtn">草稿箱</button>
+                                </div>
+                                <button type="button" class="btn-secondary" onclick="location.href='index.php'">取消</button>
+                            </div> -->
+                        <div id="submitDebugMsg" style="margin-top:8px; font-size:13px; color:#64748b;"></div>
+                        </form>
+                    </section>
+
+                    <!-- 草稿管理中心模態框 -->
+                    <div id="draftModalOverlay" class="draft-modal-overlay">
+                        <div class="draft-modal">
+                            <div class="draft-modal-header">
+                                <h2>📋 草稿管理中心</h2>
+                                <button type="button" class="draft-modal-close" id="draftModalCloseBtn">&times;</button>
+                            </div>
+                            <div class="draft-modal-content">
+                                <div id="draftMessage" class="draft-message"></div>
+                                <div id="draftTableContainer">
+                                    <p class="draft-empty-message">
+                                        <div class="draft-empty-icon">📭</div>
+                                        暫無已儲存的草稿
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="draft-modal-footer">
+                                <div class="draft-footer-buttons">
+                                    <button type="button" class="draft-btn-new" id="draftBtnNew">✨ 新增申請</button>
+                                    <button type="button" class="draft-btn-close" id="draftBtnClose">關閉</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                <?php } ?>
+                </div>
             </section>
         </main>
     </div>
+
+    <script>
+        // ===== 草稿第三步「已選取項目」同步橋接 =====
+        // 用途：暫存前把右側已選項目寫進 cart_items；草稿載入後再把 cart_items 畫回右側清單。
+        window.borrowCartDraftBridge = {
+            getOrCreateCartInput: function () {
+                let cartInput = document.querySelector('input[name="cart_items"]');
+                const form = document.getElementById('multistep_form') || document.querySelector('form.borrow-form');
+
+                if (!cartInput && form) {
+                    cartInput = document.createElement('input');
+                    cartInput.type = 'hidden';
+                    cartInput.name = 'cart_items';
+                    form.appendChild(cartInput);
+                }
+
+                return cartInput;
+            },
+
+            normalizeItems: function (items) {
+                return (Array.isArray(items) ? items : []).map(function (item) {
+                    return {
+                        code: String(item.code || item.equipment_code || item.space_id || '').trim(),
+                        name: String(item.name || item.equipment_name || item.space_name || item.code || item.space_id || '').trim(),
+                        quantity: parseInt(item.quantity || item.qty || 1, 10) || 1,
+                        type: String(item.type || (item.space_id ? 'space' : 'equipment')).trim()
+                    };
+                }).filter(function (item) {
+                    return item.code !== '';
+                });
+            },
+
+            // 從右側 DOM 備援抓資料：避免 cartItems 區域變數還沒同步到 hidden input
+            readItemsFromRightPanelDom: function () {
+                const rows = document.querySelectorAll('#esSelectedList .es-right-item');
+                const items = [];
+
+                rows.forEach(function (row) {
+                    const nameCol = row.querySelector('.cart-col-name');
+                    const qtyInput = row.querySelector('.cart-qty-update');
+                    if (!nameCol) return;
+
+                    const rawName = nameCol.textContent.trim();
+                    const match = rawName.match(/^(.*)\s*\(([^()]+)\)\s*$/);
+                    const name = match ? match[1].trim() : rawName;
+                    const code = match ? match[2].trim() : '';
+                    const quantity = qtyInput ? (parseInt(qtyInput.value, 10) || 1) : 1;
+                    const type = qtyInput && qtyInput.disabled ? 'space' : 'equipment';
+
+                    if (code) {
+                        items.push({ code: code, name: name || code, quantity: quantity, type: type });
+                    }
+                });
+
+                return items;
+            },
+
+            syncHiddenBeforeSave: function () {
+                const cartInput = this.getOrCreateCartInput();
+                if (!cartInput) return [];
+
+                let items = [];
+
+                if (typeof window.getBorrowCartItems === 'function') {
+                    items = window.getBorrowCartItems();
+                }
+
+                if (!Array.isArray(items) || items.length === 0) {
+                    items = this.readItemsFromRightPanelDom();
+                }
+
+                // 若右側也抓不到，就保留 hidden input 原本資料
+                if ((!Array.isArray(items) || items.length === 0) && cartInput.value) {
+                    try {
+                        const oldItems = JSON.parse(cartInput.value || '[]');
+                        items = Array.isArray(oldItems) ? oldItems : [];
+                    } catch (e) {
+                        items = [];
+                    }
+                }
+
+                items = this.normalizeItems(items);
+                cartInput.value = JSON.stringify(items);
+                return items;
+            },
+
+            getDraftCartItems: function (draft) {
+                if (!draft) return [];
+                const data = draft.formData || draft.data || draft.form_data || {};
+                let raw = data.cart_items || data.cartItems || draft.cart_items || draft.cartItems || '[]';
+
+                if (Array.isArray(raw)) return this.normalizeItems(raw);
+
+                try {
+                    const parsed = JSON.parse(raw || '[]');
+                    return this.normalizeItems(Array.isArray(parsed) ? parsed : []);
+                } catch (e) {
+                    console.error('草稿 cart_items 解析失敗', e, raw);
+                    return [];
+                }
+            },
+
+            restoreRightPanel: function (draft) {
+                const items = this.getDraftCartItems(draft);
+                const cartInput = this.getOrCreateCartInput();
+
+                if (cartInput) {
+                    cartInput.value = JSON.stringify(items);
+                }
+
+                if (typeof window.setBorrowCartItems === 'function') {
+                    window.setBorrowCartItems(items);
+                    return;
+                }
+
+                if (typeof window.restoreBorrowCartFromHidden === 'function') {
+                    window.restoreBorrowCartFromHidden();
+                    return;
+                }
+
+                // 最後備援：直接手動畫到右側，避免畫面空白
+                const list = document.getElementById('esSelectedList');
+                if (!list) return;
+                list.innerHTML = '';
+
+                items.forEach(function (item, index) {
+                    const li = document.createElement('li');
+                    li.className = 'es-right-item';
+                    li.innerHTML = `
+                        <div class="cart-row">
+                            <div class="cart-col-name">${item.name} (${item.code})</div>
+                            <div class="cart-col-qty">
+                                <input type="number"
+                                       class="cart-qty-update"
+                                       data-index="${index}"
+                                       value="${item.quantity}"
+                                       min="1"
+                                       style="width:50px;text-align:center;border:1px solid #ccc;border-radius:4px;padding:2px;"
+                                       ${item.type === 'space' ? 'disabled title="場地僅能申請一項"' : ''}>
+                            </div>
+                            <div class="cart-col-action">
+                                <button type="button" class="es-btn-remove" data-index="${index}">移除</button>
+                            </div>
+                        </div>
+                    `;
+                    list.appendChild(li);
+                });
+            }
+        };
+    </script>
+
+        <script>
+        // 確保在 DOM 完全加載後執行
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', startApplication);
+        } else {
+            startApplication();
+        }
+
+function startApplication() {
+    console.log('[Borrow Page] Initializing...');
+    
+    // 👇👇👇 把這整段用 /* 和 */ 包起來，或是整段刪掉 👇👇👇
+    /*
+    if (!window.draftManager) {
+        console.error('[Draft] DraftManager not found! Retrying...');
+        setTimeout(startApplication, 100);
+        return;
+    }
+    */
+    // 👆👆👆 註解到這邊 👆👆👆
+    
+    console.log('[Draft] DraftManager bypassed or initialized');
+    
+    // 記得我們上一回合說要補上的變數宣告（在 initializeBorrowForm 裡面）也要加喔！
+    initializeBorrowForm();
+    
+    // 啟用草稿管理模組
+    initializeDraftManagement();
+}
+// 新增這個函數，確保頁面載入時檢查 radio/checkbox 狀態
+function initializeFormVisibility() {
+    // 延遲一下確保 DOM 穩定，或是確保在數據綁定後執行
+    setTimeout(() => {
+        if (typeof toggleAlcoholDetails === 'function') toggleAlcoholDetails();
+        if (typeof toggleFireDetails === 'function') toggleFireDetails();
+        if (typeof toggleFlagDetails === 'function') toggleFlagDetails();
+    }, 300); // 給 JS 載入資料一點時間
+}
+        // ================== 借用表單邏輯 ==================
+        function initializeBorrowForm() {
+            (function () {
+            const spaceGroup = document.getElementById('spaceGroup');
+            const equipmentSelectorContainer = document.getElementById('equipmentSelectorContainer');
+            const proposalFileInput = document.getElementById('proposal_file');
+            const proposalFileNameDisplay = document.getElementById('proposal_file_name_display');
+            const submitDebugMsg = document.getElementById('submitDebugMsg');
+        // 👇 新增這兩行 👇
+        const submitButton = document.getElementById('borrowSubmitBtn');
+        const borrowForm = document.getElementById('multistep_form');
+        // 👆 新增這兩行 👆
+            if (proposalFileInput) {
+                proposalFileInput.addEventListener('change', function(e) {
+                    if (proposalFileNameDisplay) {
+                        if (e.target.files && e.target.files.length > 0) {
+                            proposalFileNameDisplay.textContent = e.target.files[0].name;
+                        } else {
+                            proposalFileNameDisplay.textContent = '';
+                        }
+                    }
+                });
+            }
+
+            // --- Missing cart logic re-added ---
+            const esEquipmentList = document.getElementById('esEquipmentList');
+            const esSelectedList = document.getElementById('esSelectedList');
+            const esSearchInput = document.getElementById('esSearchInput');
+            const esItemCount = document.getElementById('esItemCount');
+            
+            // cartItemsInput needs to be dynamically added if missing
+            let cartItemsInput = document.querySelector('input[name="cart_items"]');
+            if(!cartItemsInput) {
+                const f = document.querySelector('form.borrow-form');
+                if(f) {
+                    cartItemsInput = document.createElement('input');
+                    cartItemsInput.type = 'hidden';
+                    cartItemsInput.name = 'cart_items';
+                    f.appendChild(cartItemsInput);
+                }
+            }
+            
+            const items = esEquipmentList ? esEquipmentList.querySelectorAll('.es-item') : [];
+            let cartItems = [];
+            if (cartItemsInput && cartItemsInput.value) {
+                try {
+                    const savedCartItems = JSON.parse(cartItemsInput.value);
+                    cartItems = Array.isArray(savedCartItems) ? savedCartItems : [];
+                } catch (e) {
+                    console.error('草稿已選取項目解析失敗', e);
+                    cartItems = [];
+                }
+            }
+            // 讓草稿功能可以讀取/還原第三步右側「已選取項目」的實際購物車資料
+            window.getBorrowCartItems = function () {
+                return Array.isArray(cartItems) ? JSON.parse(JSON.stringify(cartItems)) : [];
+            };
+
+            window.setBorrowCartItems = function (itemsToRestore) {
+                cartItems = Array.isArray(itemsToRestore) ? itemsToRestore.map(function (item) {
+                    return {
+                        code: String(item.code || item.equipment_code || item.space_id || ''),
+                        name: String(item.name || item.equipment_name || item.space_name || item.code || item.space_id || ''),
+                        quantity: parseInt(item.quantity || item.qty || 1, 10) || 1,
+                        type: String(item.type || (item.space_id ? 'space' : 'equipment'))
+                    };
+                }).filter(function (item) {
+                    return item.code !== '';
+                }) : [];
+
+                if (cartItemsInput) {
+                    cartItemsInput.value = JSON.stringify(cartItems);
+                }
+
+                renderCart();
+                refreshModeUI();
+            };
+
+            let currentTab = 'equipment';
+            const tabBtns = document.querySelectorAll('.es-tab-btn');
+
+            function updateItemCount() {
+                if(!esItemCount) return;
+                let visible = 0;
+                let total = 0;
+                items.forEach(el => {
+                    if(el.dataset.type === currentTab) {
+                        total++;
+                        if(el.style.display !== 'none') visible++;
+                    }
+                });
+                esItemCount.innerHTML = `顯示 ${visible > 0 ? '1' : '0'}-${visible} / 共 ${total} 項`;
+            }
+
+            function renderCart() {
+                if(!esSelectedList) return;
+                esSelectedList.innerHTML = '';
+                cartItems.forEach((c, index) => {
+                    const li = document.createElement('li');
+                    li.className = 'es-right-item';
+                    li.innerHTML = `
+                        <div class="cart-row">
+                            <div class="cart-col-name">${c.name} (${c.code})</div>
+                            <div class="cart-col-qty">
+                                <input type="number" 
+                                    class="cart-qty-update" 
+                                    data-index="${index}" 
+                                    value="${c.quantity}" 
+                                    min="1" 
+                                    style="width: 50px; text-align: center; border: 1px solid #ccc; border-radius:4px; padding:2px;"
+                                    ${c.type === 'space' ? 'disabled title="場地僅能申請一項"' : ''}>
+                            </div>
+                            <div class="cart-col-action">
+                                <button type="button" class="es-btn-remove" data-index="${index}">移除</button>
+                            </div>
+                        </div>
+                    `;
+                    esSelectedList.appendChild(li);
+                });
+                
+
+            const availabilityCache = window.availabilityCache || (window.availabilityCache = {});
+            const pendingAvailabilityLoads = window.pendingAvailabilityLoads || (window.pendingAvailabilityLoads = {});
+
+            function setItemAvailabilityState(item, availabilityText, detailText, maxQty, isEnabled) {
+                const qtyInput = item.querySelector('.es-qty-input');
+                const addBtn = item.querySelector('.es-btn-add');
+                const inviteBtn = item.querySelector('.es-btn-invite');
+                const valueEl = item.querySelector('.es-available-value');
+                const detailEl = item.querySelector('.es-availability-detail');
+
+                if (valueEl) {
+                    valueEl.textContent = availabilityText;
+                }
+                if (detailEl) {
+                    detailEl.textContent = detailText;
+                }
+
+                if (qtyInput) {
+                    qtyInput.max = String(Math.max(1, maxQty || 1));
+                    qtyInput.disabled = !isEnabled;
+                    if (!isEnabled) {
+                        qtyInput.value = 1;
+                    } else if (parseInt(qtyInput.value, 10) > maxQty) {
+                        qtyInput.value = Math.max(1, maxQty);
+                    }
+                }
+
+                if (addBtn) {
+                    addBtn.disabled = !isEnabled;
+                }
+                
+                if (inviteBtn) {
+                    inviteBtn.disabled = !isEnabled;
+                }
+            }
+
+            function refreshResourceAvailability() {
+                const borrowStartDateElLocal = document.getElementById('borrow_start_date');
+                const borrowEndDateElLocal = document.getElementById('borrow_end_date');
+                const selectedDate = borrowStartDateElLocal ? borrowStartDateElLocal.value : '';
+                const selectedEndDate = borrowEndDateElLocal ? borrowEndDateElLocal.value : '';
+                const startPeriodCode = 'always';
+                const endPeriodCode = 'always';
+                const periodSlotsMap = window.periodSlotsMap || {};
+                const spaceReservations = window.existingSpaceReservations || [];
+
+                items.forEach(item => {
+                    const type = item.dataset.type;
+                    const code = item.dataset.code;
+
+                    if (type === 'equipment') {
+                        if (!selectedDate) {
+                            setItemAvailabilityState(item, '請先選日期', '請先選日期', 1, true); // 改為 true 讓他可以加入再說
+                            return;
+                        }
+
+                        const year = selectedDate.substring(0, 4);
+                        const month = selectedDate.substring(5, 7);
+                        const monthKey = `${code}_${year}_${month}`;
+                        const applyAvailability = (data) => {
+                            const reservations = Array.isArray(data.reservations) ? data.reservations : [];
+                            let used = 0;
+                            reservations.forEach(r => {
+                                if ((r.start || '').substring(0, 10) === selectedDate) {
+                                    used += parseInt(r.qty || 0, 10) || 0;
+                                }
+                            });
+                            const availableQty = Math.max(0, (parseInt(data.total_capacity || 0, 10) || 0) - used);
+                            const label = String(availableQty);
+                            setItemAvailabilityState(item, label, label, availableQty, availableQty > 0);
+                        };
+
+                        if (availabilityCache[monthKey]) {
+                            applyAvailability(availabilityCache[monthKey]);
+                        } else if (!pendingAvailabilityLoads[monthKey]) {
+                            pendingAvailabilityLoads[monthKey] = true;
+                            fetch(`api_get_availability.php?type=equipment&id=${encodeURIComponent(code)}&year=${year}&month=${month}`)
+                                .then(res => res.json())
+                                .then(data => {
+                                    if (data && data.total_capacity !== undefined) {
+                                        availabilityCache[monthKey] = data;
+                                    }
+                                })
+                                .catch(err => console.error('Resource availability load error:', err))
+                                .finally(() => {
+                                    delete pendingAvailabilityLoads[monthKey];
+                                    if (typeof window.refreshResourceAvailability === 'function') {
+                                        window.refreshResourceAvailability();
+                                    }
+                                });
+                            setItemAvailabilityState(item, '讀取中...', '讀取中...', 1, true); // 讓它能點
+                        } else {
+                            setItemAvailabilityState(item, '讀取中...', '讀取中...', 1, true); // 讓它能點
+                        }
+                        return;
+                    }
+
+                    if (type === 'space') {
+                        const startH = document.querySelector('select[name="borrow_start_time_h"]')?.value;
+                        const startM = document.querySelector('select[name="borrow_start_time_m"]')?.value;
+                        const endH = document.querySelector('select[name="borrow_end_time_h"]')?.value;
+                        const endM = document.querySelector('select[name="borrow_end_time_m"]')?.value;
+                        
+                        if (!selectedDate || !selectedEndDate || !startH || !startM || !endH || !endM) {
+                            setItemAvailabilityState(item, '請先選日期與時間', '請先選完整借用起訖時間', 1, true); // 改為 true 讓他可以加入再說
+                            return;
+                        }
+
+                        const selectedStart = `${startH.padStart(2, '0')}:${startM.padStart(2, '0')}:00`;
+                        const selectedEndString = `${endH.padStart(2, '0')}:${endM.padStart(2, '0')}:00`;
+                        
+                        // 我們暫時用前端粗略判斷（同一天）是否衝突
+                        const availableQty = 1;
+                        const label = String(availableQty);
+                        setItemAvailabilityState(item, label, label, availableQty, availableQty > 0);
+                    }
+                });
+            }
+
+            window.refreshResourceAvailability = refreshResourceAvailability;
+
+            // 綁定事件使得選擇時間時也能重新驗證
+            document.querySelectorAll('#borrow_start_date, #borrow_end_date, select[name="borrow_start_time_h"], select[name="borrow_start_time_m"], select[name="borrow_end_time_h"], select[name="borrow_end_time_m"]').forEach(el => {
+                el.addEventListener('change', refreshResourceAvailability);
+            });
+                // Binding updates
+                const qtys = esSelectedList.querySelectorAll('.cart-qty-update');
+                qtys.forEach(input => {
+                    input.addEventListener('change', function() {
+                        const idx = parseInt(this.dataset.index, 10);
+                        const newVal = parseInt(this.value, 10);
+                        if(newVal > 0) {
+                            cartItems[idx].quantity = newVal;
+                            cartItemsInput.value = JSON.stringify(cartItems);
+                        } else {
+                            this.value = cartItems[idx].quantity;
+                        }
+                    });
+                });
+
+                const removes = esSelectedList.querySelectorAll('.es-btn-remove');
+                removes.forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        const idx = parseInt(this.dataset.index, 10);
+                        cartItems.splice(idx, 1);
+                        cartItemsInput.value = JSON.stringify(cartItems);
+                        renderCart();
+                        refreshModeUI();
+                    });
+                });
+
+                // Sync the "選擇/已加入" button state for all items
+                document.querySelectorAll('.es-item').forEach(item => {
+                    const code = item.dataset.code;
+                    const inviteBtn = item.querySelector('.es-btn-invite');
+                    if (inviteBtn) {
+                        const inCart = cartItems.some(c => c.code === code);
+                        if (inCart) {
+                            inviteBtn.innerText = '已加入';
+                            inviteBtn.style.backgroundColor = '#dcfce7';
+                            inviteBtn.style.color = '#166534';
+                        } else {
+                            inviteBtn.innerText = '選擇';
+                            inviteBtn.style.backgroundColor = '';
+                            inviteBtn.style.color = '';
+                        }
+                    }
+                });
+            }
+
+            if(esSearchInput) {
+                esSearchInput.addEventListener('input', function() {
+                    const q = this.value.toLowerCase().trim();
+                    items.forEach(li => {
+                        const txt = li.textContent.toLowerCase();
+                        const type = li.dataset.type;
+                        const matchType = (type === currentTab);
+                        const matchQuery = txt.includes(q);
+                        li.style.display = (matchType && matchQuery) ? '' : 'none';
+                    });
+                    updateItemCount();
+                });
+            }
+
+            tabBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    tabBtns.forEach(b => {
+                        b.classList.remove('active');
+                        b.style.color = '#64748b';
+                        b.style.borderBottomColor = 'transparent';
+                    });
+                    this.classList.add('active');
+                    this.style.color = '#3b82f6';
+                    this.style.borderBottomColor = '#3b82f6';
+                    currentTab = this.dataset.target;
+                    if(esSearchInput) {
+                        esSearchInput.dispatchEvent(new Event('input'));
+                    }
+                });
+            });
+
+            // Initialize display
+            if(esSearchInput) {
+                esSearchInput.dispatchEvent(new Event('input'));
+            }
+
+            // -----------------------------------
+
+            // Toggle & Add
+            items.forEach(li => {
+                const header = li.querySelector('.es-item-header');
+                const inviteBtn = li.querySelector('.es-btn-invite');
+                const body = li.querySelector('.es-item-body');
+                const addBtn = li.querySelector('.es-btn-add');
+                const qtyInput = li.querySelector('.es-qty-input');
+                const name = li.dataset.name;
+                const code = li.dataset.code;
+                const type = li.dataset.type;
+
+                if(header) {
+                    header.addEventListener('click', function(e) {
+                        if (inviteBtn && inviteBtn.disabled) return;
+                        const isActive = body.classList.contains('active');
+                        // Close everyone else first to make it clean
+                        items.forEach(o => {
+                            const ob = o.querySelector('.es-item-body');
+                            if (ob) ob.classList.remove('active');
+                        });
+                        
+                        if(!isActive) {
+                            body.classList.add('active');
+                        }
+                    });
+                }
+                
+                if(inviteBtn) {
+                    // Stop propagation so clicking btn doesn't double-trigger if we bind header
+                    inviteBtn.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        // Instead of expanding, directly add 1 to cart
+                        if(addBtn) addBtn.click();
+                    });
+                }
+
+                if(addBtn) {
+                    addBtn.addEventListener('click', function() {
+                        const qty = parseInt(qtyInput.value, 10);
+                        if (isNaN(qty) || qty <= 0) {
+                            alert('請輸入大於 0 的借用數量。');
+                            return;
+                        }
+                        
+                        if (type === 'space') {
+                            const existingSpace = cartItems.find(i => i.type === 'space');
+                            if (existingSpace && existingSpace.code !== code) {
+                                alert('同時只能申請借用一個場地，您已選取「' + existingSpace.name + '」。如欲更換，請先移除原有的場地。');
+                                return;
+                            }
+                        }
+
+                        const existing = cartItems.find(i => i.code === code);
+                        if (existing) {
+                            if (type === 'equipment') {
+                                existing.quantity += qty;
+                            }
+                        } else {
+                            cartItems.push({ code: code, name: name, quantity: qty, type: type });
+                            
+                            // 如果是器材，預先獲取當月的可用性數據
+                            if (type === 'equipment') {
+                                const today = new Date();
+                                const year = today.getFullYear();
+                                const month = String(today.getMonth() + 1).padStart(2, '0');
+                                
+                                fetch(`api_get_availability.php?type=equipment&id=${encodeURIComponent(code)}&year=${year}&month=${month}`)
+                                    .then(res => res.json())
+                                    .then(data => {
+                                        if (data.total_capacity !== undefined) {
+                                            // 緩存整個月的數據
+                                                const monthKey = `${code}_${year}_${month}`;
+                                                availabilityCache[monthKey] = data;
+                                            const daysInMonth = new Date(year, month, 0).getDate();
+                                            for (let d = 1; d <= daysInMonth; d++) {
+                                                const dateStr = `${year}-${month}-${String(d).padStart(2, '0')}`;
+                                                const dateKey = `${code}_${dateStr}`;
+                                                availabilityCache[dateKey] = {
+                                                    totalCapacity: data.total_capacity,
+                                                    reservations: data.reservations || []
+                                                };
+                                            }
+                                                // If flatpickr is active, refresh disabled dates for this equipment/month
+                                                try {
+                                                    if (typeof refreshDisabledDatesForCurrentMonth === 'function' && window.fpBorrowDate) {
+                                                        refreshDisabledDatesForCurrentMonth(window.fpBorrowDate, { code: code, quantity: qty });
+                                                    }
+                                                } catch (e) { console.error('refresh after preload error', e); }
+                                        }
+                                    })
+                                    .catch(err => console.error('Preload availability error:', err));
+                            }
+                        }
+                        if(cartItemsInput) {
+                            cartItemsInput.value = JSON.stringify(cartItems);
+                        }
+                        renderCart();
+                        refreshModeUI();
+                        body.classList.remove('active');
+                    });
+                }
+            });
+
+            function refreshModeUI() {
+                const hasSpace = cartItems.some(i => i.type === 'space');
+                
+                if (proposalFileInput) {
+                    proposalFileInput.required = hasSpace;
+                }
+                
+                if (typeof window.updatePeriodOptions === 'function') {
+                    window.updatePeriodOptions();
+                }
+            }
+
+            function restoreCartFromHiddenInput() {
+                if (!cartItemsInput) return;
+
+                let restoredItems = [];
+                if (cartItemsInput.value) {
+                    try {
+                        const parsed = JSON.parse(cartItemsInput.value);
+                        restoredItems = Array.isArray(parsed) ? parsed : [];
+                    } catch (e) {
+                        console.error('草稿已選取項目載入失敗', e);
+                        restoredItems = [];
+                    }
+                }
+
+                if (typeof window.setBorrowCartItems === 'function') {
+                    window.setBorrowCartItems(restoredItems);
+                } else {
+                    cartItems = restoredItems;
+                    cartItemsInput.value = JSON.stringify(cartItems);
+                    renderCart();
+                    refreshModeUI();
+                }
+            }
+
+            window.restoreBorrowCartFromHidden = restoreCartFromHiddenInput;
+
+            function handleFormSubmit() {
+                if (submitDebugMsg) {
+                    submitDebugMsg.textContent = '已觸發送出，正在提交資料...';
+                }
+                if (cartItemsInput) {
+                    cartItemsInput.value = JSON.stringify(cartItems);
+                }
+                if (submitButton) {
+                    submitButton.disabled = true;
+                    submitButton.textContent = '送出中...';
+                }
+            }
+
+            if (submitButton) {
+                submitButton.addEventListener('click', function () {
+                    if (submitDebugMsg) {
+                        submitDebugMsg.textContent = '已按下送出按鈕，準備驗證欄位...';
+                    }
+                });
+            }
+
+            if (borrowForm) borrowForm.addEventListener('submit', handleFormSubmit);
+            refreshModeUI();
+            restoreCartFromHiddenInput();
+            })();
+        }
+
+        async function loadDraftFromDatabase() {
+            const params = new URLSearchParams(window.location.search);
+            const draftId = params.get('draft_id');
+
+            if (!draftId) return;
+
+            try {
+                const res = await fetch(
+                    'api/load_draft.php?draft_id=' + encodeURIComponent(draftId)
+                );
+
+                const data = await res.json();
+
+                if (!data.success) {
+                    alert(data.message || '草稿載入失敗');
+                    return;
+                }
+
+const draft = data.draft || {};
+                const formData = draft.formData || {};
+
+                Object.keys(formData).forEach(function (name) {
+                    let values = formData[name];
+                    let targetName = name;
+                    let els = document.querySelectorAll(`[name="${targetName}"]`);
+
+                    // 1. 如果找不到元素，有可能是因為 PHP 把陣列的 '[]' 拿掉了，我們幫它加回來找找看
+                    if (els.length === 0) {
+                        targetName = name + '[]';
+                        els = document.querySelectorAll(`[name="${targetName}"]`);
+                    }
+
+                    // 2. 如果這個欄位存的是陣列 (例如明火表單的人員名單)
+                    if (Array.isArray(values)) {
+                        let tableId = '';
+                        if (targetName === 'fire_staff_performer[]') tableId = 'table_staff_performer';
+                        else if (targetName === 'fire_staff_oiler[]') tableId = 'table_staff_oiler';
+                        else if (targetName === 'fire_staff_extinguisher[]') tableId = 'table_staff_extinguisher';
+                        else if (targetName === 'fire_staff_security[]') tableId = 'table_staff_security';
+                        else if (targetName === 'fire_staff_emergency[]') tableId = 'table_staff_emergency';
+                        else if (targetName === 'fire_staff_medical[]') tableId = 'table_staff_medical';
+
+                        if (tableId) {
+                            const tbody = document.getElementById(tableId).querySelector('tbody');
+                            if (tbody) {
+                                // 動態把缺少的列數補齊 (確保輸入框數量等於陣列長度)
+                                while (tbody.querySelectorAll('tr').length < values.length) {
+                                    addFireStaffRow(tableId, targetName);
+                                }
+                                // 重新抓取所有輸入框，依序把值填進去
+                                const inputs = document.querySelectorAll(`[name="${targetName}"]`);
+                                values.forEach((val, idx) => {
+                                    if (inputs[idx]) inputs[idx].value = val;
+                                });
+                            }
+                        } else {
+                            // 預留給其他一般的多選 checkbox
+                            els.forEach(el => {
+                                if (el.type === 'checkbox' || el.type === 'radio') {
+                                    el.checked = values.includes(el.value);
+                                }
+                            });
+                        }
+                    } else {
+                        // 3. 一般的單一欄位處理
+                        els.forEach(function (el) {
+                            if (el.type === 'checkbox') {
+                                el.checked = values === '1' || values === 1 || values === true || String(values).toLowerCase() === 'yes';
+                            } else if (el.type === 'radio') {
+                                el.checked = el.value === String(values);
+                            } else if (el.type !== 'file') {
+                                el.value = values;
+                            }
+                        });
+                    }
+                });
+
+                const currentDraftIdInput = document.getElementById('current_draft_id');
+                if (currentDraftIdInput) {
+                    currentDraftIdInput.value = draft.draft_id || draft.draftId || draftId;
+                }
+
+                const fileDisplay = document.getElementById('proposal_file_name_display');
+                const draftProposalFileInput = document.getElementById('draft_proposal_file');
+                const draftProposalOriginalNameInput = document.getElementById('draft_proposal_original_name');
+                const draftProposalUploadedAtInput = document.getElementById('draft_proposal_uploaded_at');
+
+                if (draft.proposal_file && draftProposalFileInput) {
+                    draftProposalFileInput.value = draft.proposal_file;
+                }
+                if (draft.proposal_original_name && draftProposalOriginalNameInput) {
+                    draftProposalOriginalNameInput.value = draft.proposal_original_name;
+                }
+                if (draft.proposal_uploaded_at && draftProposalUploadedAtInput) {
+                    draftProposalUploadedAtInput.value = draft.proposal_uploaded_at;
+                }
+                if (fileDisplay && draft.proposal_original_name) {
+                    fileDisplay.innerText = '已上傳企劃書：' + draft.proposal_original_name;
+                }
+
+                if (window.borrowCartDraftBridge) {
+                    const bridgeDraft = {
+                        formData: formData,
+                        cart_items: formData.cart_items || formData.cartItems || []
+                    };
+
+                    window.borrowCartDraftBridge.restoreRightPanel(bridgeDraft);
+
+                    setTimeout(function () {
+                        window.borrowCartDraftBridge.restoreRightPanel(bridgeDraft);
+                    }, 200);
+                }
+
+                if (typeof toggleFlagDetails === 'function') {
+                    toggleFlagDetails();
+                }
+
+                if (typeof syncFlagForm === 'function') {
+                    syncFlagForm();
+                }
+
+                const step = draft.current_step || draft.currentStep || formData.current_step || '1';
+
+                const currentStepInput = document.getElementById('current_step');
+                if (currentStepInput) {
+                    currentStepInput.value = step;
+                }
+
+                if (typeof showStep === 'function') {
+                    showStep(step);
+                } else if (typeof goToStep === 'function') {
+                    goToStep(Number(step));
+                }
+                // --- 在這裡加入我們說的強制觸發區塊 ---
+    
+    // 強制 UI 更新，確保載入後的顯示正確
+    setTimeout(() => {
+        console.log('執行強制 UI 更新檢查...');
+        if (typeof toggleAlcoholDetails === 'function') toggleAlcoholDetails();
+        if (typeof toggleFireDetails === 'function') toggleFireDetails();
+        if (typeof toggleFlagDetails === 'function') toggleFlagDetails();
+    }, 500);
+            } catch (error) {
+                console.error(error);
+                alert('草稿載入失敗：' + error.message);
+            }
+        }
+
+        function initializeDraftManagement() {
+            const saveDraftBtn = document.getElementById('saveDraftBtn');
+            const openDraftBoxBtn = document.getElementById('openDraftBoxBtn');
+            const msg = document.getElementById('submitDebugMsg');
+
+            async function saveDraft(e) {
+                if (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+
+                try {
+                    if (window.borrowCartDraftBridge) {
+                        window.borrowCartDraftBridge.syncHiddenBeforeSave();
+                    }
+
+                    const form = document.getElementById('multistep_form');
+                    if (!form) {
+                        alert('找不到表單，無法暫存。');
+                        return;
+                    }
+
+                    const fd = new FormData(form);
+
+                    const currentDraftId =
+                        document.getElementById('current_draft_id')?.value || '';
+
+                    const currentStep =
+                        document.getElementById('current_step')?.value || '1';
+
+                    fd.set('draft_id', currentDraftId);
+                    fd.set('currentStep', currentStep);
+
+                    // 如果已有草稿ID，詢問用戶是否覆蓋或新建
+                    let saveAction = 'update'; // 默認更新
+                    if (currentDraftId && currentDraftId !== '') {
+                        // 显示模态窗口并等待用户选择
+                        const choice = await new Promise((resolve) => {
+                            const modal = document.getElementById('draftChoiceModal');
+                            const updateBtn = document.getElementById('draftBtnUpdate');
+                            const newBtn = document.getElementById('draftBtnNew');
+                            const draftIdDisplay = document.getElementById('draftIdDisplay');
+
+                            if (!modal || !updateBtn || !newBtn) {
+                                resolve('update'); // 回退到更新
+                                return;
+                            }
+
+                            draftIdDisplay.textContent = currentDraftId;
+                            modal.classList.add('show');
+
+                            const handleUpdate = () => {
+                                modal.classList.remove('show');
+                                updateBtn.removeEventListener('click', handleUpdate);
+                                newBtn.removeEventListener('click', handleNew);
+                                resolve('update');
+                            };
+
+                            const handleNew = () => {
+                                modal.classList.remove('show');
+                                updateBtn.removeEventListener('click', handleUpdate);
+                                newBtn.removeEventListener('click', handleNew);
+                                resolve('new');
+                            };
+
+                            updateBtn.addEventListener('click', handleUpdate);
+                            newBtn.addEventListener('click', handleNew);
+                        });
+
+                        saveAction = choice;
+                        if (choice === 'new') {
+                            // 如果选择新建，清除draft_id來創建新草稿
+                            fd.set('draft_id', '');
+                            fd.set('action', 'new');
+                        } else {
+                            fd.set('action', 'update');
+                        }
+                    }
+
+                    const res = await fetch('api/save_draft.php', {
+                        method: 'POST',
+                        body: fd
+                    });
+
+                    const data = await res.json();
+
+                    if (data.success) {
+                        const draftId = data.draft_id || data.draftId || data.reservation_id || '';
+                        const currentDraftInput = document.getElementById('current_draft_id');
+                        if (currentDraftInput) currentDraftInput.value = draftId;
+
+                        const actionText = saveAction === 'new' ? '新增' : '更新';
+                        const successMsg = '✅ 草稿已' + actionText + '，草稿編號：' + draftId;
+                        if (msg) {
+                            msg.textContent = successMsg;
+                        }
+
+                        alert('草稿已' + actionText + '成功！\n\n草稿編號：' + draftId);
+                    } else {
+                        if (msg) {
+                            msg.textContent = '❌ ' + (data.message || '草稿暫存失敗');
+                        }
+                        alert(data.message || '草稿暫存失敗');
+                    }
+                } catch (error) {
+                    console.error(error);
+                    if (msg) {
+                        msg.textContent = '❌ 暫存失敗：' + error.message;
+                    }
+                    alert('暫存失敗：' + error.message);
+                }
+            }
+
+            if (saveDraftBtn) {
+                saveDraftBtn.addEventListener('click', saveDraft);
+            }
+
+            document.querySelectorAll('.saveDraftBtn').forEach(function (btn) {
+                btn.addEventListener('click', saveDraft);
+            });
+
+            if (openDraftBoxBtn) {
+                openDraftBoxBtn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    window.location.href = 'drafts.php';
+                });
+            }
+
+            document.querySelectorAll('.openDraftBoxBtn').forEach(function (btn) {
+                btn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    window.location.href = 'drafts.php';
+                });
+            });
+
+            loadDraftFromDatabase();
+        }
+
+        
+        
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
+    <script>
+// 存儲當前選中的器材/空間的可用性數據（按日期緩存）
+window.availabilityCache = window.availabilityCache || {};
+const availabilityCache = window.availabilityCache;
+window.existingSpaceReservations = <?= json_encode($existingSpaceReservations ?? []); ?>;
+window.existingEquipmentReservations = <?= json_encode($existingEquipmentReservations ?? []); ?>;
+window.periodSlotsMap = <?= json_encode($periodSlots); ?>;
+const existingSpaceReservations = window.existingSpaceReservations;
+const existingEquipmentReservations = window.existingEquipmentReservations;
+const periodSlotsMap = window.periodSlotsMap;
+
+document.addEventListener('DOMContentLoaded', () => {
+    const spaceIdEl = document.getElementById('space_id');
+    const borrowDateEl = document.getElementById('borrow_date');
+    const startPeriodEl = document.getElementById('start_period_code');
+    const endPeriodEl = document.getElementById('end_period_code');
+    const resTypeEl = document.getElementById('resource_type');
+    
+    // 驗證日期是否可選
+    function isDateSelectable(dateStr, itemCode, itemType, reqQty) {
+        if (!itemCode || !dateStr) return true;
+        reqQty = reqQty || 1;
+        
+        if (itemType === 'equipment') {
+            // 器材按天單位判斷：該天有任何預約就不可選
+            const availability = availabilityCache[`${itemCode}_${dateStr}`];
+            if (!availability) return true;
+            
+            let dayHasReservation = false;
+            availability.reservations.forEach(r => {
+                const rDate = r.start.substring(0, 10);
+                if (rDate === dateStr) dayHasReservation = true;
+            });
+            return !dayHasReservation;
+        }
+        
+        if (itemType === 'space') {
+             const conflicts = existingSpaceReservations.filter(r => r.space_id === itemCode && r.date === dateStr);
+             const periodOrder = Object.keys(periodSlotsMap);
+             // 如果在所有時段中都有衝突，則全天不可選
+             for (const code of periodOrder) {
+                  const times = periodSlotsMap[code];
+                  if (!times) continue;
+                  const pStart = times.start;
+                  const pEnd = times.end;
+                  // 檢查此時段是否能借
+                  let canBorrow = true;
+                  for (const c of conflicts) {
+                       if (pStart < c.end && pEnd > c.start) {
+                            canBorrow = false;
+                            break;
+                       }
+                  }
+                  if (canBorrow) return true; // 只要有一個時段可以借，當天就可選
+             }
+             return false; // 全天衝突
+        }
+        
+        const dateKey = `${itemCode}_${dateStr}`;
+        if (!availabilityCache[dateKey]) return true; // 無數據時允許選擇
+        
+        const availability = availabilityCache[dateKey];
+        const periodOrder = Object.keys(periodSlotsMap);
+        
+        // 檢查是否至少有一個時段可用
+        for (const code of periodOrder) {
+            const times = periodSlotsMap[code];
+            if (!times) continue;
+            
+            let used = 0;
+            const pStart = new Date(`${dateStr}T${times.start}`).getTime();
+            const pEnd = new Date(`${dateStr}T${times.end}`).getTime();
+            
+            availability.reservations.forEach(r => {
+                const rStart = new Date(r.start.replace(' ', 'T')).getTime();
+                const rEnd = new Date(r.end.replace(' ', 'T')).getTime();
+                
+                if (!(pEnd <= rStart || pStart >= rEnd)) {
+                    used += r.qty;
+                }
+            });
+            
+            const finalAvail = Math.max(0, availability.totalCapacity - used);
+            if (finalAvail >= reqQty) {
+                return true; // 至少有一個時段滿足所需數量
+            }
+        }
+        
+        return false; // 全天都已借滿或不足
+    }
+
+    function updatePeriodOptions() {
+        const cartItemsInput = document.querySelector('input[name="cart_items"]');
+        const cartItemsStr = cartItemsInput ? cartItemsInput.value : '[]';
+        let cartItems = [];
+        try { cartItems = JSON.parse(cartItemsStr); } catch (e) {}
+
+        const equipmentObj = cartItems.find(c => c.type === 'equipment');
+        const spaceObj = cartItems.find(c => c.type === 'space');
+        const selEquipment = equipmentObj ? equipmentObj.code : '';
+        const selSpace = spaceObj ? spaceObj.code : '';
+        const selDate = borrowDateEl ? borrowDateEl.value : '';
+        const now = new Date();
+        console.log('updatePeriodOptions called', { selSpace, selDate, now: now.toString() });
+        
+        // Reset all options
+        if (startPeriodEl) Array.from(startPeriodEl.options).forEach(opt => { 
+            if(opt.value) {
+                opt.disabled = false; 
+                opt.innerHTML = opt.innerHTML.replace(' (���i�ɥ�)', '')
+                                           .replace(' (過去時段)', '')
+                                           .replace(' (已被預約)', '')
+                                           .replace(' (緊鄰保留)', '')
+                                           .replace(' (不可選)', '');
+            }
+        });
+        if (endPeriodEl) Array.from(endPeriodEl.options).forEach(opt => { 
+            if(opt.value) {
+                opt.disabled = false;
+                opt.innerHTML = opt.innerHTML.replace(' (���i�ɥ�)', '')
+                                           .replace(' (過去時段)', '')
+                                           .replace(' (已被預約)', '')
+                                           .replace(' (緊鄰保留)', '')
+                                           .replace(' (不可選)', '');
+            }
+        });
+
+        if (!selDate) {
+            if (typeof window.refreshResourceAvailability === 'function') {
+                window.refreshResourceAvailability();
+            }
+            return;
+        }
+
+        // 對於器材，基於實時API數據來禁用已借滿的時段
+        if (selEquipment && selDate) {
+            const year = selDate.substring(0, 4);
+            const month = selDate.substring(5, 7);
+            const dateKey = `${selEquipment}_${selDate}`;
+            const availability = availabilityCache[dateKey];
+            
+            if (availability) {
+                // 器材按天判：該天有任何預約就禁用所有時段
+                let dayHasReservation = false;
+                availability.reservations.forEach(r => {
+                    const rDate = r.start.substring(0, 10);
+                    if (rDate === selDate) dayHasReservation = true;
+                });
+                
+                if (dayHasReservation) {
+                    // 禁用所有時段
+                    const periodOrder = Object.keys(periodSlotsMap);
+                    for (const code of periodOrder) {
+                        if (startPeriodEl) {
+                            const opt1 = startPeriodEl.querySelector(`option[value="${code}"]`);
+                            if (opt1) {
+                                opt1.disabled = true;
+                                if (!opt1.innerHTML.includes('該天已被預約')) opt1.innerHTML += ' (該天已被預約)';
+                            }
+                        }
+                        if (endPeriodEl) {
+                            const opt2 = endPeriodEl.querySelector(`option[value="${code}"]`);
+                            if (opt2) {
+                                opt2.disabled = true;
+                                if (!opt2.innerHTML.includes('該天已被預約')) opt2.innerHTML += ' (該天已被預約)';
+                            }
+                        }
+                    }
+                    return;
+                }
+            } else {
+                // 無快取，需要先取得
+                const monthKey = `${selEquipment}_${year}_${month}`;
+                if (!availabilityCache[monthKey]) {
+                    fetch(`api_get_availability.php?type=equipment&id=${encodeURIComponent(selEquipment)}&year=${year}&month=${month}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.total_capacity !== undefined) {
+                             availabilityCache[monthKey] = data;
+                            const daysInMonth = new Date(parseInt(year,10), parseInt(month,10), 0).getDate();
+                            for (let d = 1; d <= daysInMonth; d++) {
+                                const dateStr = `${year}-${month}-${String(d).padStart(2,'0')}`;
+                                const dateKeyInner = `${selEquipment}_${dateStr}`;
+                                 availabilityCache[dateKeyInner] = {
+                                    totalCapacity: data.total_capacity,
+                                    reservations: data.reservations || []
+                                };
+                            }
+                            // 再次執行以套用禁用
+                            updatePeriodOptions();
+                        }
+                    })
+                    .catch(err => console.error('Fetch availability error:', err));
+                    return;
+                } else {
+                    if (!availabilityCache[dateKey]) {
+                        const data = availabilityCache[monthKey];
+                        availabilityCache[dateKey] = {
+                            totalCapacity: data.total_capacity,
+                            reservations: data.reservations || []
+                        };
+                    }
+                }
+            }
+
+        }
+
+        // Find conflicts (only relevant for space mode)
+        const conflicts = (selSpace && selDate) ? existingSpaceReservations.filter(r => r.space_id === selSpace && r.date === selDate) : [];
+
+        conflicts.forEach(c => {
+            for (const [code, times] of Object.entries(periodSlotsMap)) {
+                // overlapping periods (existing behavior)
+                if (times.start < c.end && times.end > c.start) {
+                    if (startPeriodEl) {
+                        const opt1 = startPeriodEl.querySelector(`option[value="${code}"]`);
+                        if (opt1) {
+                            opt1.disabled = true;
+                            if(!opt1.innerHTML.includes('已被預約')) opt1.innerHTML += ' (已被預約)';
+                        }
+                    }
+                    if (endPeriodEl) {
+                        const opt2 = endPeriodEl.querySelector(`option[value="${code}"]`);
+                        if (opt2) {
+                            opt2.disabled = true;
+                            if(!opt2.innerHTML.includes('已被預約')) opt2.innerHTML += ' (已被預約)';
+                        }
+                    }
+                }
+
+                // 處理緊鄰保留：找到結束時間小於等於 c.end 的最後一個節次，並停用其下一節
+                try {
+                    function timeToSec(t) {
+                        const p = (t||'00:00:00').split(':').map(x=>parseInt(x,10)||0);
+                        return p[0]*3600 + p[1]*60 + p[2];
+                    }
+                    const cEndSec = timeToSec(c.end);
+                    // 建立 periodEndSeconds 陣列
+                    const periodCodes = Object.keys(periodSlotsMap);
+                    const periodEndSecs = periodCodes.map(cd => timeToSec(periodSlotsMap[cd].end));
+                    // 找最後一個 endSec <= cEndSec (或最接近)
+                    let lastIdx = -1;
+                    for (let idx = 0; idx < periodEndSecs.length; idx++) {
+                        if (periodEndSecs[idx] <= cEndSec + 1) {
+                            lastIdx = idx;
+                        } else {
+                            break;
+                        }
+                    }
+                    const nextIdx = lastIdx + 1;
+                    if (nextIdx >= 0 && nextIdx < periodCodes.length) {
+                        const nextCode = periodCodes[nextIdx];
+                        if (startPeriodEl) {
+                            const opt1n = startPeriodEl.querySelector(`option[value="${nextCode}"]`);
+                            if (opt1n) {
+                                opt1n.disabled = true;
+                                if(!opt1n.innerHTML.includes(' (緊鄰保留)')) opt1n.innerHTML += ' (緊鄰保留)';
+                                console.log('disable adjacent next start', nextCode, 'for reservation ending at', c.end);
+                            }
+                        }
+                        if (endPeriodEl) {
+                            const opt2n = endPeriodEl.querySelector(`option[value="${nextCode}"]`);
+                            if (opt2n) {
+                                opt2n.disabled = true;
+                                if(!opt2n.innerHTML.includes(' (緊鄰保留)')) opt2n.innerHTML += ' (緊鄰保留)';
+                                console.log('disable adjacent next end', nextCode, 'for reservation ending at', c.end);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error('adjacent disable error', e);
+                }
+            }
+        });
+
+        // 若選擇的是今天，停用已過的節次（包含已開始或已結束的節次）
+        try {
+            const now = new Date();
+            const todayStr = now.toISOString().slice(0,10);
+            const currentTimeStr = now.toTimeString().split(' ')[0]; // HH:MM:SS
+            const periodOrder = Object.keys(periodSlotsMap);
+
+            if (selDate === todayStr) {
+                // helper to build Date from YYYY-MM-DD and HH:MM:SS parts (local time)
+                function makeDateFromYMDTime(ymd, timeStr) {
+                    const [y, m, d] = (ymd || '').split('-').map(s => parseInt(s, 10));
+                    const parts = (timeStr || '00:00:00').split(':').map(s => parseInt(s, 10));
+                    const hh = parts[0] || 0;
+                    const mm = parts[1] || 0;
+                    const ss = parts[2] || 0;
+                    return new Date(y, (m || 1) - 1, d || 1, hh, mm, ss);
+                }
+
+                for (const [code, times] of Object.entries(periodSlotsMap)) {
+                    const startDt = makeDateFromYMDTime(selDate, times.start);
+                    const endDt = makeDateFromYMDTime(selDate, times.end);
+                    if (startDt <= now) {
+                        if (startPeriodEl) {
+                            const opt1 = startPeriodEl.querySelector(`option[value="${code}"]`);
+                            if (opt1) {
+                                opt1.disabled = true;
+                                if (!opt1.innerHTML.includes('過去時段')) opt1.innerHTML += ' (過去時段)';
+                                console.log('disable start option due to past', code, startDt.toString(), now.toString());
+                            }
+                        }
+                        if (endPeriodEl) {
+                            const opt2 = endPeriodEl.querySelector(`option[value="${code}"]`);
+                            if (opt2) {
+                                opt2.disabled = true;
+                                if (!opt2.innerHTML.includes('過去時段')) opt2.innerHTML += ' (過去時段)';
+                                console.log('disable end option due to past', code, endDt.toString(), now.toString());
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 如果已選開始節次，限制結束節次不得早於開始節次，且若為今天也不可選已過的結束節次
+            if (startPeriodEl && endPeriodEl && startPeriodEl.value) {
+                const startVal = startPeriodEl.value;
+                const startIndex = periodOrder.indexOf(startVal);
+                if (startIndex !== -1) {
+                    Array.from(endPeriodEl.options).forEach(opt => {
+                        if (!opt.value) return;
+                        const optIndex = periodOrder.indexOf(opt.value);
+                        let shouldDisable = optIndex < startIndex;
+                        // 當選擇的是今天，若該節次的結束時間已在過去也不可選
+                        if (selDate === todayStr) {
+                            const optTimes = periodSlotsMap[opt.value];
+                            if (optTimes) {
+                                const endDt = makeDateFromYMDTime(selDate, optTimes.end);
+                                if (endDt <= now) shouldDisable = true;
+                            }
+                        }
+                        opt.disabled = shouldDisable;
+                        // 加上提示文字
+                        if (shouldDisable) {
+                            if (!opt.innerHTML.includes(' (不可選)') && !opt.innerHTML.includes('過去時段')) {
+                                opt.innerHTML += ' (不可選)';
+                            }
+                        } else {
+                            opt.innerHTML = opt.innerHTML.replace(' (不可選)', '').replace(' (過去時段)', '');
+                        }
+                    });
+                }
+            }
+        } catch (e) {
+            // ignore any unexpected errors in client-side time-checking
+            console.error(e);
+        }
+
+        if (typeof window.refreshResourceAvailability === 'function') {
+            window.refreshResourceAvailability();
+        }
+    }
+
+    if (borrowDateEl) {
+        // Initialize flatpickr on the borrow date input and manage per-day disabling for equipment
+        let disabledDatesSet = new Set();
+        let fp = null;
+
+        function fallbackToNativeDate() {
+            try {
+                borrowDateEl.removeAttribute('readonly');
+                borrowDateEl.type = 'date';
+            } catch (e) { console.error('fallbackToNativeDate error', e); }
+        }
+
+        if (typeof flatpickr !== 'function') {
+            console.warn('flatpickr not available; falling back to native date input');
+            fallbackToNativeDate();
+        } else {
+            try {
+                fp = flatpickr(borrowDateEl, {
+                    dateFormat: 'Y-m-d',
+                    minDate: borrowDateEl.getAttribute('data-mindate') || 'today',
+                    disable: [],
+                    onChange: function(selectedDates, dateStr) {
+                        const selDate = dateStr;
+                        const cartItemsInput = document.querySelector('input[name="cart_items"]');
+                        const cartItemsStr = cartItemsInput ? cartItemsInput.value : '[]';
+                        let cartItems = [];
+                        try { cartItems = JSON.parse(cartItemsStr); } catch (e) {}
+
+                        const equipmentObj = cartItems.find(c => c.type === 'equipment');
+                        const spaceObj = cartItems.find(c => c.type === 'space');
+
+                        function proceedUpdate() {
+                            if (equipmentObj) {
+                                if (!isDateSelectable(selDate, equipmentObj.code, 'equipment', parseInt(equipmentObj.quantity, 10))) {
+                                    alert('器材在該日期全天已借滿，請選擇其他日期。');
+                                    fp.clear();
+                                    updatePeriodOptions();
+                                    return;
+                                }
+                            }
+                            if (spaceObj) {
+                                if (!isDateSelectable(selDate, spaceObj.code, 'space', 1)) {
+                                    alert('空間在該日期全天已被預約，請選擇其他日期。');
+                                    fp.clear();
+                                    updatePeriodOptions();
+                                    return;
+                                }
+                            }
+                            updatePeriodOptions();
+                        }
+
+                        if (equipmentObj && selDate) {
+                            const year = selDate.substring(0, 4);
+                            const month = selDate.substring(5, 7);
+                            const monthKey = `${equipmentObj.code}_${year}_${month}`;
+                            if (!availabilityCache[monthKey]) {
+                                fetch(`api_get_availability.php?type=equipment&id=${encodeURIComponent(equipmentObj.code)}&year=${year}&month=${month}`)
+                                    .then(res => res.json())
+                                    .then(data => {
+                                        availabilityCache[monthKey] = data;
+                                        availabilityCache[`${equipmentObj.code}_${selDate}`] = { totalCapacity: data.total_capacity, reservations: data.reservations || [] };
+                                        proceedUpdate();
+                                        refreshDisabledDatesForCurrentMonth(fp, equipmentObj);
+                                    })
+                                    .catch(err => { console.error('Date check error:', err); proceedUpdate(); });
+                            } else {
+                                if (!availabilityCache[`${equipmentObj.code}_${selDate}`]) {
+                                    const data = availabilityCache[monthKey];
+                                    availabilityCache[`${equipmentObj.code}_${selDate}`] = { totalCapacity: data.total_capacity, reservations: data.reservations || [] };
+                                }
+                                proceedUpdate();
+                            }
+                        } else if (spaceObj && selDate) {
+                            if (!isDateSelectable(selDate, spaceObj.code, 'space', 1)) {
+                                alert('空間在該日期全天已被預約，請選擇其他日期。');
+                                fp && fp.clear();
+                            }
+                            updatePeriodOptions();
+                        } else {
+                            updatePeriodOptions();
+                        }
+                    },
+                    onMonthChange: function() { refreshDisabledDatesForCurrentMonth(fp); },
+                    onYearChange: function() { refreshDisabledDatesForCurrentMonth(fp); },
+                    onDayCreate: function(dObj, dStr, fpObj, dayElem) {
+                        try {
+                            const d = dayElem.dateObj.toISOString().slice(0,10);
+                            if (disabledDatesSet && disabledDatesSet.has(d)) dayElem.classList.add('borrow-disabled');
+                        } catch(e) {}
+                    }
+                });
+            } catch (e) {
+                console.error('flatpickr init error', e);
+                fallbackToNativeDate();
+            }
+        }
+
+        window.fpBorrowDate = fp;
+
+        function refreshDisabledDatesForCurrentMonth(fpInstance, equipmentObjParam) {
+            const cartItemsInput = document.querySelector('input[name="cart_items"]');
+            const cartItemsStr = cartItemsInput ? cartItemsInput.value : '[]';
+            let cartItems = [];
+            try { cartItems = JSON.parse(cartItemsStr); } catch (e) {}
+            const equipmentObj = equipmentObjParam || cartItems.find(c => c.type === 'equipment');
+            if (!equipmentObj) {
+                disabledDatesSet = new Set();
+                fpInstance.set('disable', []);
+                fpInstance.redraw && fpInstance.redraw();
+                return;
+            }
+            const year = String(fpInstance.currentYear);
+            const month = String(fpInstance.currentMonth + 1).padStart(2, '0');
+            fetch(`api_get_availability.php?type=equipment&id=${encodeURIComponent(equipmentObj.code)}&year=${year}&month=${month}`)
+                .then(res => res.json())
+                .then(data => {
+                    const total = data.total_capacity || 0;
+                    const reservations = data.reservations || [];
+                    const yNum = parseInt(year, 10);
+                    const mNum = parseInt(month, 10);
+                    const lastDay = new Date(yNum, mNum, 0).getDate();
+                    const set = new Set();
+                    for (let d = 1; d <= lastDay; d++) {
+                        const day = `${year}-${String(mNum).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                        let dayHasReservation = false;
+                        reservations.forEach(r => {
+                            const rDate = r.start.substring(0, 10);
+                            if (rDate === day) dayHasReservation = true;
+                        });
+                        if (dayHasReservation) set.add(day);
+                    }
+                    disabledDatesSet = set;
+                    fpInstance.set('disable', [function(date) { const ds = date.toISOString().slice(0,10); return disabledDatesSet.has(ds); }]);
+                    fpInstance.redraw && fpInstance.redraw();
+                })
+                .catch(err => { console.error('fetch month avail error', err); });
+        }
+
+        // wrap existing updatePeriodOptions to also refresh disabled dates
+        if (window.updatePeriodOptions) {
+            const _orig = window.updatePeriodOptions;
+            window.updatePeriodOptions = function() { _orig(); try { refreshDisabledDatesForCurrentMonth(window.fpBorrowDate); } catch(e) {} };
+        }
+        if (startPeriodEl) startPeriodEl.addEventListener('change', updatePeriodOptions);
+        if (borrowDateEl) {
+            borrowDateEl.addEventListener('change', updatePeriodOptions);
+            borrowDateEl.addEventListener('input', updatePeriodOptions);
+        }
+
+        // Expose function globally so cart changes can trigger this
+        window.updatePeriodOptions = updatePeriodOptions;
+
+        // Prevent user from selecting a disabled option (some browsers/clients may bypass)
+        if (startPeriodEl) {
+            startPeriodEl.addEventListener('change', function () {
+                const opt = startPeriodEl.options[startPeriodEl.selectedIndex];
+                if (opt && opt.disabled) {
+                    alert('所選開始節次不可選，請選擇其他節次。');
+                    startPeriodEl.value = '';
+                    updatePeriodOptions();
+                }
+            });
+        }
+        if (endPeriodEl) {
+            endPeriodEl.addEventListener('change', function () {
+                const opt = endPeriodEl.options[endPeriodEl.selectedIndex];
+                if (opt && opt.disabled) {
+                    alert('所選結束節次不可選，請選擇其他節次。');
+                    endPeriodEl.value = '';
+                    updatePeriodOptions();
+                }
+            });
+        }
+
+        updatePeriodOptions();
+    }
+});
+
+let selectedDays = 0;
+
+// 計算 n 個工作天後的日期 (跳過六、日)
+function getWorkingDaysFromToday(days) {
+    let date = new Date();
+    let addedDays = 0;
+    while (addedDays < days) {
+        date.setDate(date.getDate() + 1);
+        if (date.getDay() !== 0 && date.getDay() !== 6) {
+            addedDays++;
+        }
+    }
+    return date;
+}
+
+// 根據人數取得最短限制日期
+function getMinDateByParticipantCount(countValue) {
+    if (countValue === '100~200人' || countValue === '200人以上') {
+        // 大於 100 人：30 天 (日曆天)
+        let d = new Date();
+        d.setDate(d.getDate() + 30);
+        return d;
+    } else {
+        // 一般情況：7 個工作天後
+        return getWorkingDaysFromToday(7);
+    }
+}
+
+let initialMinDate = getMinDateByParticipantCount(document.getElementById('participant_count') ? document.getElementById('participant_count').value : ''); 
+
+// Resolve locale safely: prefer registered zh_tw locale object, fallback to no locale option
+let _flatpickrLocale = null;
+if (typeof flatpickr !== 'undefined' && flatpickr.l10ns) {
+    _flatpickrLocale = flatpickr.l10ns.zh_tw || flatpickr.l10ns['zh_tw'] || flatpickr.l10ns.zh || null;
+}
+
+const fpStartDate = flatpickr("#borrow_start_date", Object.assign({
+    minDate: initialMinDate,
+    dateFormat: "Y-m-d"
+}, _flatpickrLocale ? { locale: _flatpickrLocale } : {}));
+
+const fpEndDate = flatpickr("#borrow_end_date", Object.assign({
+    minDate: initialMinDate,
+    dateFormat: "Y-m-d"
+}, _flatpickrLocale ? { locale: _flatpickrLocale } : {}));
+
+// 當改變人數時，動態更新鎖定日期
+const participantSelect = document.getElementById('participant_count');
+if (participantSelect) {
+    participantSelect.addEventListener('change', function(e) {
+        const newMinDate = getMinDateByParticipantCount(e.target.value);
+        
+        // 更新日曆的最小可選日期
+        fpStartDate.set('minDate', newMinDate);
+        fpEndDate.set('minDate', newMinDate);
+        
+        // 如果目前已選日期早於新規定日期，則清空重選
+        const startSel = fpStartDate.selectedDates;
+        if (startSel.length > 0) {
+            const minTime = new Date(newMinDate).setHours(0,0,0,0);
+            if (startSel[0].getTime() < minTime) {
+                alert("人數達 100 人以上之大型活動需提前 30 天申請！\n系統已清空您的舊日期，請重新按規定選擇。");
+                fpStartDate.clear();
+                fpEndDate.clear();
+            }
+        }
+    });
+}
+
+function goToStep(stepNo) {
+    const currentStepInput = document.getElementById("current_step");
+    const currentStep = parseInt(currentStepInput ? currentStepInput.value : 1);
+
+    if (stepNo > currentStep + 1) {
+        alert("請依序完成每個步驟，無法直接略過喔！");
+        return;
+    }
+
+    // 在導航到第2、3步時（從第1步）檢查企劃書
+    if (stepNo > 1 && currentStep === 1) {
+        // 檢查是否有新上傳的文件 OR 草稿中已有的企劃書
+        const proposalFile = document.getElementById('proposal_file');
+        const draftProposalFile = document.getElementById('draft_proposal_file');
+        const draftProposalName = document.getElementById('draft_proposal_original_name');
+        
+        const hasNewFile = proposalFile && proposalFile.value;
+        const hasDraftFile = (draftProposalFile && draftProposalFile.value) || 
+                            (draftProposalName && draftProposalName.value);
+        
+        if (!hasNewFile && !hasDraftFile) {
+            alert("請先上傳活動企劃書！");
+            return;
+        }
+
+        const startDate = document.getElementById('borrow_start_date').value;
+        const endDate = document.getElementById('borrow_end_date').value;
+        if (!startDate || !endDate) {
+            alert("請先選擇活動起訖日期！");
+            return;
+        }
+
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        const timeDiff = Math.abs(end.getTime() - start.getTime());
+        const days = Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1;
+        
+        if (days > 4) {
+            alert("活動天數最多不可超過 4 天，請重新選擇！");
+            return;
+        }
+        
+    }
+
+    if (currentStepInput) {
+        currentStepInput.value = stepNo;
+    }
+
+    document.querySelectorAll('.step-content').forEach(function(el) {
+        el.classList.remove('active');
+    });
+    
+    const nextStep = document.getElementById('step-content-' + stepNo);
+    if(nextStep) {
+        nextStep.classList.add('active');
+    }
+
+    for(let i=1; i<=5; i++) {
+        let st = document.getElementById('stepper-' + i);
+        if (st) st.classList.remove('active');
+    }
+    for(let i=1; i<=stepNo; i++) {
+        let st = document.getElementById('stepper-' + i);
+        if (st) st.classList.add('active');
+    }
+}
+</script>
+
+<?php if ($_SERVER['REQUEST_METHOD'] === 'POST' && $borrowError !== '') { 
+    $targetStep = 1;
+    if (mb_strpos($borrowError, '器材') !== false || mb_strpos($borrowError, '場地') !== false || mb_strpos($borrowError, '空間') !== false || mb_strpos($borrowError, '數量') !== false) {
+        $targetStep = 3;
+    } elseif (mb_strpos($borrowError, '駁回') !== false || mb_strpos($borrowError, '酒精') !== false || mb_strpos($borrowError, '明火') !== false || mb_strpos($borrowError, '擺攤') !== false) {
+        $targetStep = 2;
+    } elseif (mb_strpos($borrowError, '時間') !== false || mb_strpos($borrowError, '日期') !== false || mb_strpos($borrowError, '用途') !== false) {
+        $targetStep = 1;
+    } else {
+        $targetStep = (isset($_POST['current_step']) ? (int)$_POST['current_step'] : 1);
+    }
+?>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    goToStep(<?php echo $targetStep; ?>);
+});
+</script>
+<?php } ?>
+
+
+
+<!-- 草稿載入後：強制還原第三步右側「已選取項目」 -->
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.get('draft_id')) return;
+
+    // 等 initializeBorrowForm() 完成後，再補跑一次，避免右側清單被初始化清空。
+    setTimeout(function () {
+        if (typeof window.restoreBorrowCartFromHidden === 'function') {
+            window.restoreBorrowCartFromHidden();
+        }
+    }, 100);
+});
+</script>
+
+<!-- 草稿載入後：若插立旗幟為「是」，強制顯示旗幟插立申請表 -->
+<script>
+(function () {
+    function getDraftByUrlId() {
+        const params = new URLSearchParams(window.location.search);
+        const loadId = params.get('draft_id');
+        if (!loadId) return null;
+
+        const drafts = JSON.parse(localStorage.getItem('borrow_drafts') || '[]');
+        return drafts.find(function (d) {
+            return d && String(d.draftId) === String(loadId);
+        }) || null;
+    }
+
+    function getDraftFormData(draft) {
+        if (!draft) return {};
+        return draft.formData || draft.data || draft.form_data || {};
+    }
+
+    function restoreFlagFormAfterDraftLoad() {
+        const draft = getDraftByUrlId();
+        if (!draft) return;
+
+        const data = getDraftFormData(draft);
+        const flagValue = data.setup_flags || data.flag_setup || '';
+        const isYes = flagValue === 'yes' || flagValue === '1' || flagValue === 1 || flagValue === true;
+
+        const yesRadio = document.querySelector('input[name="setup_flags"][value="yes"]');
+        const noRadio = document.querySelector('input[name="setup_flags"][value="no"]');
+        const detailsSection = document.getElementById('flagDetailsSection');
+
+        if (isYes) {
+            if (yesRadio) yesRadio.checked = true;
+            if (noRadio) noRadio.checked = false;
+
+            if (detailsSection) {
+                detailsSection.style.display = 'block';
+                detailsSection.querySelectorAll('input, select, textarea').forEach(function (el) {
+                    el.removeAttribute('disabled');
+                });
+            }
+        } else {
+            if (detailsSection) {
+                detailsSection.style.display = 'none';
+            }
+            return;
+        }
+
+        // 把草稿內旗幟表單欄位重新塞回去
+        [
+            'flag_count',
+        ].forEach(function (name) {
+            const value = data[name];
+            const els = document.querySelectorAll('[name="' + name + '"]');
+
+            els.forEach(function (el) {
+                if (el.type === 'checkbox') {
+                    el.checked = value === '1' || value === 1 || value === true;
+                } else if (value !== undefined && value !== null) {
+                    el.value = value;
+                }
+            });
+        });
+
+        // 若原本函式存在，再跑一次，讓日期與顯示狀態同步
+        if (typeof window.toggleFlagDetails === 'function') {
+            window.toggleFlagDetails();
+        }
+if (typeof window.toggleAlcoholDetails === 'function') {
+            window.toggleAlcoholDetails();
+        }
+        if (typeof window.toggleFireDetails === 'function') {
+            window.toggleFireDetails();
+        }
+        if (typeof window.syncFlagForm === 'function') {
+            window.syncFlagForm();
+        }
+
+        // 防止其他舊程式後面又把它隱藏，最後再強制打開一次
+        if (isYes && detailsSection) {
+            detailsSection.style.display = 'block';
+            detailsSection.querySelectorAll('input, select, textarea').forEach(function (el) {
+                el.removeAttribute('disabled');
+            });
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        restoreFlagFormAfterDraftLoad();
+        setTimeout(restoreFlagFormAfterDraftLoad, 100);
+        setTimeout(restoreFlagFormAfterDraftLoad, 300);
+    });
+})();
+</script>
+
+
+
+<!-- 草稿載入/暫存：強制同步第三步右側「已選取項目」 -->
+<script>
+(function () {
+    function getDraftByUrlId() {
+        const params = new URLSearchParams(window.location.search);
+        const loadId = params.get('draft_id');
+        if (!loadId) return null;
+        try {
+            const drafts = JSON.parse(localStorage.getItem('borrow_drafts') || '[]');
+            return drafts.find(function (d) {
+                return d && String(d.draftId) === String(loadId);
+            }) || null;
+        } catch (e) {
+            console.error('讀取草稿失敗', e);
+            return null;
+        }
+    }
+
+    function parseCartItemsFromDraft(draft) {
+        if (!draft) return [];
+        const data = draft.formData || draft.data || draft.form_data || {};
+        const raw = data.cart_items || draft.cart_items || draft.cartItems || '[]';
+
+        if (Array.isArray(raw)) return raw;
+
+        try {
+            const parsed = JSON.parse(raw || '[]');
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+            console.error('草稿 cart_items 解析失敗', e, raw);
+            return [];
+        }
+    }
+
+    function normalizeCartItems(items) {
+        return (Array.isArray(items) ? items : []).map(function (item) {
+            return {
+                code: String(item.code || item.equipment_code || item.space_id || ''),
+                name: String(item.name || item.equipment_name || item.space_name || item.code || item.space_id || ''),
+                quantity: parseInt(item.quantity || item.qty || 1, 10) || 1,
+                type: String(item.type || (item.space_id ? 'space' : 'equipment'))
+            };
+        }).filter(function (item) {
+            return item.code !== '';
+        });
+    }
+
+    function syncHiddenCartBeforeSaving() {
+        const cartInput = document.querySelector('input[name="cart_items"]');
+        if (!cartInput) return;
+
+        if (typeof window.getBorrowCartItems === 'function') {
+            cartInput.value = JSON.stringify(window.getBorrowCartItems());
+        }
+    }
+
+    function restoreDraftCartToRightPanel() {
+        const draft = getDraftByUrlId();
+        if (!draft) return;
+
+        const items = normalizeCartItems(parseCartItemsFromDraft(draft));
+        const cartInput = document.querySelector('input[name="cart_items"]');
+
+        if (cartInput) {
+            cartInput.value = JSON.stringify(items);
+        }
+
+        if (typeof window.setBorrowCartItems === 'function') {
+            window.setBorrowCartItems(items);
+        } else if (typeof window.restoreBorrowCartFromHidden === 'function') {
+            window.restoreBorrowCartFromHidden();
+        }
+    }
+
+    // 在原本的暫存 click handler 執行前，先把右側已選取項目同步進 hidden input。
+    document.addEventListener('click', function (e) {
+        const btn = e.target.closest('.saveDraftBtn, #saveDraftBtn');
+        if (btn) syncHiddenCartBeforeSaving();
+    }, true);
+
+    document.addEventListener('DOMContentLoaded', function () {
+        if (!new URLSearchParams(window.location.search).get('draft_id')) return;
+
+        let tries = 0;
+        const timer = setInterval(function () {
+            restoreDraftCartToRightPanel();
+            tries++;
+            if (typeof window.setBorrowCartItems === 'function' || tries >= 20) {
+                clearInterval(timer);
+            }
+        }, 100);
+    });
+})();
+</script>
+
+
+
+
+<script>
+/**
+ * 活動日期與特殊條件驗證最終版
+ *
+ * 規則：
+ * 1. 開始日期、結束日期都不可早於今天
+ * 2. 結束時間必須晚於開始時間
+ * 3. 活動天數 diffDays > 4 才擋下
+ * 4. 活動對象人數 100 人以上、工作人員人數 100 人以上、酒精、明火、販售活動，都必須提前 30 天
+ * 5. 不管先選日期、先勾特殊項目、後改人數、或送出前，都會重新檢查
+ */
+(function () {
+    function getDateOnly(value) {
+        if (!value) return null;
+
+        const date = new Date(value + 'T00:00:00');
+
+        if (isNaN(date.getTime())) return null;
+
+        date.setHours(0, 0, 0, 0);
+
+        return date;
+    }
+
+    function getTimePart(name) {
+        const el = document.querySelector('[name="' + name + '"]');
+
+        if (!el || el.value === '') return null;
+
+        return String(el.value).padStart(2, '0');
+    }
+
+    function getDateTime(dateValue, hourName, minuteName) {
+        const h = getTimePart(hourName);
+        const m = getTimePart(minuteName);
+
+        if (!dateValue || h === null || m === null) return null;
+
+        const date = new Date(dateValue + 'T' + h + ':' + m + ':00');
+
+        return isNaN(date.getTime()) ? null : date;
+    }
+
+    function formatDate(date) {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+
+        return y + '-' + m + '-' + d;
+    }
+
+    function isCheckedByName(name) {
+        const el = document.querySelector('input[name="' + name + '"]');
+
+        return !!(el && el.checked);
+    }
+
+    function getParticipantCountValue() {
+        const el =
+            document.getElementById('participant_count') ||
+            document.querySelector('[name="participant_count"]');
+
+        return el ? (el.value || '') : '';
+    }
+
+    function getStaffCountValue() {
+        const el =
+            document.getElementById('staff_count') ||
+            document.querySelector('[name="staff_count"]');
+
+        const value = el ? parseInt(el.value || '0', 10) : 0;
+
+        return isNaN(value) ? 0 : value;
+    }
+
+    window.is30DaysRequired = function () {
+        const participantCount = getParticipantCountValue();
+        const staffCount = getStaffCountValue();
+
+        return (
+            isCheckedByName('has_alcohol') ||
+            isCheckedByName('has_fire') ||
+            isCheckedByName('has_sales') ||
+            participantCount === '100~200人' ||
+            participantCount === '200人以上' ||
+            staffCount >= 100
+        );
+    };
+
+    window.validateActivityDateRange = function (shouldClearInvalidDates = true) {
+        const startDateInput = document.getElementById('borrow_start_date');
+        const endDateInput = document.getElementById('borrow_end_date');
+
+        if (!startDateInput || !endDateInput) return true;
+
+        const startDateValue = startDateInput.value;
+        const endDateValue = endDateInput.value;
+
+        const startDate = getDateOnly(startDateValue);
+        const endDate = getDateOnly(endDateValue);
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        if (startDate && startDate < today) {
+            alert('活動開始日期不可早於今天，請重新選擇！');
+
+            if (shouldClearInvalidDates) {
+                startDateInput.value = '';
+                endDateInput.value = '';
+            }
+
+            return false;
+        }
+
+        if (endDate && endDate < today) {
+            alert('活動結束日期不可早於今天，請重新選擇！');
+
+            if (shouldClearInvalidDates) {
+                endDateInput.value = '';
+            }
+
+            return false;
+        }
+
+        if (!startDate || !endDate) return true;
+
+        if (startDate > endDate) {
+            alert('活動開始日期不能晚於活動結束日期！');
+
+            if (shouldClearInvalidDates) {
+                endDateInput.value = '';
+            }
+
+            return false;
+        }
+
+        const startDateTime = getDateTime(
+            startDateValue,
+            'borrow_start_time_h',
+            'borrow_start_time_m'
+        );
+
+        const endDateTime = getDateTime(
+            endDateValue,
+            'borrow_end_time_h',
+            'borrow_end_time_m'
+        );
+
+        if (startDateTime && endDateTime && endDateTime <= startDateTime) {
+            alert('活動結束時間必須晚於活動開始時間！');
+
+            if (shouldClearInvalidDates) {
+                const endHour = document.querySelector('[name="borrow_end_time_h"]');
+                const endMin = document.querySelector('[name="borrow_end_time_m"]');
+
+                if (endHour) endHour.value = '';
+                if (endMin) endMin.value = '';
+            }
+
+            return false;
+        }
+
+        const diffDays = Math.ceil(
+            (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+        );
+
+        if (diffDays > 4) {
+            alert('活動天數最多不可超過 4 天，請重新選擇！');
+
+            if (shouldClearInvalidDates) {
+                endDateInput.value = '';
+            }
+
+            return false;
+        }
+
+        if (window.is30DaysRequired()) {
+            const minAllowedDate = new Date(today);
+
+            minAllowedDate.setDate(minAllowedDate.getDate() + 30);
+
+            if (startDate < minAllowedDate || endDate < minAllowedDate) {
+                alert(
+                    '注意：由於您的活動包含特殊性質（酒精、明火、攤販、活動對象100人以上或工作人員100人以上），必須在 30 天之前申請！\n' +
+                    '系統已清空不合規的日期，請重新選擇至少為 ' + formatDate(minAllowedDate) + ' 的日期。'
+                );
+
+                if (shouldClearInvalidDates) {
+                    startDateInput.value = '';
+                    endDateInput.value = '';
+                }
+
+                return false;
+            }
+        }
+
+        return true;
+    };
+
+    window.validateStartDate = function () {
+        return window.validateActivityDateRange(true);
+    };
+
+    function bindDateRuleValidation() {
+        const dateAndTimeSelectors = [
+            '#borrow_start_date',
+            '#borrow_end_date',
+            '[name="borrow_start_time_h"]',
+            '[name="borrow_start_time_m"]',
+            '[name="borrow_end_time_h"]',
+            '[name="borrow_end_time_m"]'
+        ];
+
+        document.querySelectorAll(dateAndTimeSelectors.join(',')).forEach(function (el) {
+            el.addEventListener('change', function () {
+                window.validateActivityDateRange(true);
+            });
+
+            el.addEventListener('blur', function () {
+                window.validateActivityDateRange(true);
+            });
+        });
+
+        document.querySelectorAll('#participant_count, [name="participant_count"], #staff_count, [name="staff_count"]').forEach(function (el) {
+            el.addEventListener('change', function () {
+                window.validateActivityDateRange(true);
+            });
+
+            el.addEventListener('input', function () {
+                window.validateActivityDateRange(true);
+            });
+        });
+
+['has_alcohol', 'has_fire', 'has_sales'].forEach(function (key) {
+            document.querySelectorAll('#' + key + ', input[name="' + key + '"]').forEach(function (el) {
+                el.addEventListener('change', function () {
+                    window.validateActivityDateRange(true);
+                    // 補回觸發酒精表單的靈魂！
+                    if (key === 'has_alcohol' && typeof toggleAlcoholDetails === 'function') {
+                        toggleAlcoholDetails();
+                    }
+                    if (key === 'has_fire' && typeof toggleFireDetails === 'function') {
+                        toggleFireDetails();
+                    }
+                });
+
+                el.addEventListener('click', function () {
+                    setTimeout(function () {
+                        window.validateActivityDateRange(true);
+                    }, 0);
+                });
+            });
+        });
+
+        // 確保網頁重整、載入草稿或切換上一步時，如果酒精已勾選，能正確把表單開起來
+        if (typeof toggleAlcoholDetails === 'function') {
+            toggleAlcoholDetails();
+        }
+        if (typeof toggleFireDetails === 'function') {
+            toggleFireDetails();
+        }
+
+        const originalGoToStep = window.goToStep;
+
+        window.goToStep = function (stepNo) {
+            const currentStepInput = document.getElementById('current_step');
+            const currentStep = parseInt(currentStepInput ? currentStepInput.value : '1', 10);
+
+            if (stepNo > 1 && currentStep === 1) {
+                if (!window.validateActivityDateRange(true)) {
+                    return;
+                }
+            }
+
+            if (typeof originalGoToStep === 'function') {
+                return originalGoToStep(stepNo);
+            }
+        };
+
+        const form = document.getElementById('multistep_form');
+
+        if (form) {
+            form.addEventListener('submit', function (e) {
+                if (!window.validateActivityDateRange(true)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return false;
+                }
+            }, true);
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bindDateRuleValidation);
+    } else {
+        bindDateRuleValidation();
+    }
+})();
+</script>
+
+
+<script>
+(function () {
+    function hasProposalForSubmit() {
+        const proposalInput = document.getElementById('proposal_file');
+        const draftProposalInput = document.getElementById('draft_proposal_file');
+        const hasNewFile = proposalInput && proposalInput.files && proposalInput.files.length > 0;
+        const hasDraftFile = draftProposalInput && draftProposalInput.value && draftProposalInput.value.trim() !== '';
+        return hasNewFile || hasDraftFile;
+    }
+
+    window.hasProposalForSubmit = hasProposalForSubmit;
+
+    function bindProposalSubmitCheck() {
+        const form = document.getElementById('multistep_form');
+        if (!form) return;
+
+        form.addEventListener('submit', function (e) {
+            if (!hasProposalForSubmit()) {
+                e.preventDefault();
+                e.stopPropagation();
+                alert('請先上傳活動企劃書！');
+                return false;
+            }
+        }, true);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bindProposalSubmitCheck);
+    } else {
+        bindProposalSubmitCheck();
+    }
+})();
+</script>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+
+    if (typeof loadDraftFromDatabase === 'function') {
+
+        const originalLoadDraft = loadDraftFromDatabase;
+
+        loadDraftFromDatabase = async function (...args) {
+
+            const result = await originalLoadDraft.apply(this, args);
+
+            try {
+                if (window.currentDraftData) {
+
+                    const draft = window.currentDraftData;
+
+                    const hiddenInput = document.getElementById('draft_proposal_file');
+                    const originalNameInput = document.getElementById('draft_proposal_original_name');
+                    const uploadedAtInput = document.getElementById('draft_proposal_uploaded_at');
+
+                    if (hiddenInput) {
+                        hiddenInput.value = draft.proposal_file || '';
+                    }
+
+                    if (originalNameInput) {
+                        originalNameInput.value = draft.proposal_original_name || '';
+                    }
+
+                    if (uploadedAtInput) {
+                        uploadedAtInput.value = draft.proposal_uploaded_at || '';
+                    }
+                }
+            } catch (e) {
+                console.log(e);
+            }
+
+            return result;
+        };
+    }
+});
+</script>
+
+
+<script>
+/**
+ * 企劃書焊住機制
+ * input[type=file] 不能被 JS 自動回填，所以必須用：
+ * hidden input + sessionStorage + reservation_drafts.proposal_file
+ * 來保留後端已存的 PDF 路徑。
+ */
+(function () {
+    function isProposalDraftMode() {
+        const params = new URLSearchParams(window.location.search);
+        const urlDraftId = params.get('draft_id') || params.get('id') || '';
+        const hiddenDraftId = document.getElementById('current_draft_id')?.value || '';
+
+        return (
+            (urlDraftId !== '' && urlDraftId !== '0') ||
+            (hiddenDraftId !== '' && hiddenDraftId !== '0')
+        );
+    }
+
+    function clearProposalStateForNewApplication() {
+        sessionStorage.removeItem('draft_proposal_file');
+        sessionStorage.removeItem('draft_proposal_original_name');
+        sessionStorage.removeItem('draft_proposal_uploaded_at');
+
+        const fileInput = document.getElementById('draft_proposal_file');
+        const nameInput = document.getElementById('draft_proposal_original_name');
+        const timeInput = document.getElementById('draft_proposal_uploaded_at');
+        const display = document.getElementById('proposal_file_name_display');
+
+        if (fileInput) fileInput.value = '';
+        if (nameInput) nameInput.value = '';
+        if (timeInput) timeInput.value = '';
+        if (display) display.innerText = '';
+    }
+
+    function setProposalState(file, originalName, uploadedAt) {
+        const fileInput = document.getElementById('draft_proposal_file');
+        const nameInput = document.getElementById('draft_proposal_original_name');
+        const timeInput = document.getElementById('draft_proposal_uploaded_at');
+        const display = document.getElementById('proposal_file_name_display');
+
+        if (fileInput && file) fileInput.value = file;
+        if (nameInput && originalName) nameInput.value = originalName;
+        if (timeInput && uploadedAt) timeInput.value = uploadedAt;
+
+        if (file) sessionStorage.setItem('draft_proposal_file', file);
+        if (originalName) sessionStorage.setItem('draft_proposal_original_name', originalName);
+        if (uploadedAt) sessionStorage.setItem('draft_proposal_uploaded_at', uploadedAt);
+
+        if (display && originalName) {
+            display.innerText = '已上傳企劃書：' + originalName;
+        }
+    }
+
+    function restoreProposalState() {
+        if (!isProposalDraftMode()) {
+            clearProposalStateForNewApplication();
+            return;
+        }
+
+        const file = sessionStorage.getItem('draft_proposal_file') || '';
+        const name = sessionStorage.getItem('draft_proposal_original_name') || '';
+        const time = sessionStorage.getItem('draft_proposal_uploaded_at') || '';
+
+        const fileInput = document.getElementById('draft_proposal_file');
+        const nameInput = document.getElementById('draft_proposal_original_name');
+        const timeInput = document.getElementById('draft_proposal_uploaded_at');
+        const display = document.getElementById('proposal_file_name_display');
+
+        if (fileInput && !fileInput.value && file) fileInput.value = file;
+        if (nameInput && !nameInput.value && name) nameInput.value = name;
+        if (timeInput && !timeInput.value && time) timeInput.value = time;
+
+        if (display && name && !display.innerText.trim()) {
+            display.innerText = '已上傳企劃書：' + name;
+        }
+    }
+
+    function hasProposalForSubmit() {
+        if (isDraftMode) {
+            restoreProposalState();
+        }
+        const currentDraftId =
+            document.getElementById('current_draft_id')?.value || '';
+
+        const isDraftMode =
+            currentDraftId !== '' &&
+            currentDraftId !== '0';
+        const proposalInput = document.getElementById('proposal_file');
+        const draftProposalInput = document.getElementById('draft_proposal_file');
+
+        const hasNewFile =
+            proposalInput &&
+            proposalInput.files &&
+            proposalInput.files.length > 0;
+
+        const hasDraftFile =
+            draftProposalInput &&
+            draftProposalInput.value &&
+            draftProposalInput.value.trim() !== '';
+
+        return hasNewFile || hasDraftFile;
+    }
+
+    window.setProposalState = setProposalState;
+    window.restoreProposalState = restoreProposalState;
+    window.hasProposalForSubmit = hasProposalForSubmit;
+
+    const originalGoToStep = window.goToStep;
+    if (typeof originalGoToStep === 'function' && !window.__proposalGoToStepWrapped) {
+        window.__proposalGoToStepWrapped = true;
+
+        window.goToStep = function () {
+            if (isProposalDraftMode()) restoreProposalState();
+            const result = originalGoToStep.apply(this, arguments);
+            if (isProposalDraftMode()) restoreProposalState();
+            return result;
+        };
+    }
+
+    const originalFetch = window.fetch;
+    if (typeof originalFetch === 'function' && !window.__proposalFetchWrapped) {
+        window.__proposalFetchWrapped = true;
+
+        window.fetch = function (input, init) {
+            try {
+                const url = typeof input === 'string' ? input : (input && input.url ? input.url : '');
+
+                if (url.includes('api/save_draft.php') && init && init.body instanceof FormData) {
+                    if (isProposalDraftMode()) {
+                        restoreProposalState();
+                    }
+
+                    const f = isProposalDraftMode() ? (document.getElementById('draft_proposal_file')?.value || '') : '';
+                    const n = document.getElementById('draft_proposal_original_name')?.value || '';
+                    const t = document.getElementById('draft_proposal_uploaded_at')?.value || '';
+
+                    if (f) init.body.set('draft_proposal_file', f);
+                    if (n) init.body.set('draft_proposal_original_name', n);
+                    if (t) init.body.set('draft_proposal_uploaded_at', t);
+                }
+            } catch (e) {}
+
+            return originalFetch.apply(this, arguments).then(function (response) {
+                try {
+                    response.clone().json().then(function (data) {
+                        if (data && data.proposal_file) {
+                            setProposalState(
+                                data.proposal_file,
+                                data.proposal_original_name || '',
+                                data.proposal_uploaded_at || ''
+                            );
+                        }
+                    }).catch(function () {});
+                } catch (e) {}
+
+                return response;
+            });
+        };
+    }
+
+    function bindProposalWeld() {
+        if (isProposalDraftMode()) {
+            restoreProposalState();
+        } else {
+            clearProposalStateForNewApplication();
+        }
+
+        const form = document.getElementById('multistep_form');
+
+        if (form) {
+            form.addEventListener('submit', function (e) {
+                restoreProposalState();
+
+                if (!hasProposalForSubmit()) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    alert('請先上傳活動企劃書！');
+                    return false;
+                }
+            }, true);
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bindProposalWeld);
+    } else {
+        bindProposalWeld();
+    }
+
+    if (isDraftMode) {
+        if (isProposalDraftMode()) {
+        setInterval(restoreProposalState, 500);
+    } else {
+        clearProposalStateForNewApplication();
+    }
+    }
+})();
+</script>
+
+
+<script>
+/**
+ * 新申請頁面保險清除：
+ * 沒有 draft_id/id 時，企劃書欄位必須是空的。
+ */
+document.addEventListener('DOMContentLoaded', function () {
+    const params = new URLSearchParams(window.location.search);
+    const urlDraftId = params.get('draft_id') || params.get('id') || '';
+    const currentDraftId = document.getElementById('current_draft_id')?.value || '';
+
+    const isDraftMode =
+        (urlDraftId !== '' && urlDraftId !== '0') ||
+        (currentDraftId !== '' && currentDraftId !== '0');
+
+    if (!isDraftMode) {
+        sessionStorage.removeItem('draft_proposal_file');
+        sessionStorage.removeItem('draft_proposal_original_name');
+        sessionStorage.removeItem('draft_proposal_uploaded_at');
+
+        const draftFile = document.getElementById('draft_proposal_file');
+        const draftName = document.getElementById('draft_proposal_original_name');
+        const draftTime = document.getElementById('draft_proposal_uploaded_at');
+        const display = document.getElementById('proposal_file_name_display');
+
+        if (draftFile) draftFile.value = '';
+        if (draftName) draftName.value = '';
+        if (draftTime) draftTime.value = '';
+        if (display) display.innerText = '';
+    }
+});
+</script>
+
 </body>
 </html>
+

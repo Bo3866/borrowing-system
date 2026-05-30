@@ -701,18 +701,24 @@ if ($dbError === '' && count($rows) > 0) {
                                                         if ($approvalStatus === 'approved') {
                                                             echo '<span class="px-2 py-1 rounded bg-indigo-100 text-indigo-800 text-xs font-semibold">審核完成</span>';
                                                         } else {
-                                                            $statusLabel = $approvalStatus;
-                                                            $badgeStyle = "bg-amber-100 text-amber-800";
-                                                            if ($approvalStatus === 'rejected') {
-                                                                $statusLabel = '審核未通過';
-                                                                $badgeStyle = "bg-rose-100 text-rose-800";
-                                                            } elseif ($approvalStatus === 'need_revision') {
-                                                                $statusLabel = '需要補件';
-                                                                $badgeStyle = "bg-yellow-100 text-yellow-800 border border-yellow-200";
-                                                            } elseif ($approvalStatus === 'pending') {
-                                                                $statusLabel = '待審核';
-                                                            }
-                                                            echo '<span class="px-2 py-1 rounded text-xs font-semibold ' . $badgeStyle . '">' . htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8') . '</span>';
+                                                                $statusLabel = $approvalStatus;
+                                                                $badgeStyle = "bg-amber-100 text-amber-800";
+                                                                if ($approvalStatus === 'rejected') {
+                                                                    $statusLabel = '審核未通過';
+                                                                    $badgeStyle = "bg-rose-100 text-rose-800";
+                                                                } elseif ($approvalStatus === 'need_revision') {
+                                                                    $statusLabel = '需要補件';
+                                                                    $badgeStyle = "bg-yellow-100 text-yellow-800 border border-yellow-200";
+                                                                } elseif ($approvalStatus === 'pending') {
+                                                                    $statusLabel = '待審核';
+                                                                } elseif ($approvalStatus === 'revision_overdue') {
+                                                                    $statusLabel = '補件逾期';
+                                                                    $badgeStyle = "bg-rose-100 text-rose-800";
+                                                                } elseif ($approvalStatus === 'approved') {
+                                                                    $statusLabel = '審核完成';
+                                                                    $badgeStyle = "bg-indigo-100 text-indigo-800";
+                                                                }
+                                                                echo '<span class="px-2 py-1 rounded text-xs font-semibold ' . $badgeStyle . '">' . htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8') . '</span>';
                                                         }
                                                     }
                                                 ?>
@@ -1109,6 +1115,36 @@ if ($dbError === '' && count($rows) > 0) {
         }
         
         /**
+         * 將內部狀態碼轉成中文顯示文字
+         */
+        function mapStatusToChinese(status) {
+            if (!status) return '-';
+            switch (status) {
+                case 'rejected': return '審核未通過';
+                case 'need_revision': return '需要補件';
+                case 'pending': return '待審核';
+                case 'approved': return '審核完成';
+                case 'revision_overdue': return '補件逾期';
+                default: return status;
+            }
+        }
+
+        /**
+         * 將階段代碼轉成中文階段名稱
+         */
+        function mapStageName(stage) {
+            if (!stage) return '-';
+            switch (stage) {
+                case 'a': return '學務長審核';
+                case 'b': return '軍訓室審核';
+                case 'c': return '輔導人員審核';
+                case 'd': return '課指組審核';
+                case '3': return '課指組(代號3)';
+                default: return stage;
+            }
+        }
+        
+        /**
          * 只有點擊「查看詳情」按鈕才會觸發此開窗函式
          */
         function openDrawer(element) {
@@ -1135,17 +1171,17 @@ if ($dbError === '' && count($rows) > 0) {
             setText('drawer-submitted-time', submitted);
             setText('drawer-start-time', start);
             setText('drawer-end-time', end);
-            const stage = element.getAttribute('data-stage') || 'N/A';
-            setText('drawer-stage', stage === 'N/A' ? '-' : stage);
-            setText('drawer-status-label', status);
+            const stage = element.getAttribute('data-stage') || '';
+            setText('drawer-stage', stage ? mapStageName(stage) : '-');
+            setText('drawer-status-label', mapStatusToChinese(status));
 
             const stageInlineWrap = document.getElementById('drawer-stage-inline-wrap');
             const stageInlineEl = document.getElementById('drawer-stage-inline');
             const stageInlineLabel = document.getElementById('drawer-stage-inline-label');
             if (stageInlineWrap && stageInlineEl) {
-                if (stage && stage !== 'N/A' && stage !== '') {
+                if (stage && stage !== '') {
                     if (stageInlineLabel) stageInlineLabel.style.display = 'inline';
-                    stageInlineEl.textContent = stage;
+                    stageInlineEl.textContent = mapStageName(stage);
                     stageInlineWrap.style.display = 'block';
                 } else {
                     stageInlineWrap.style.display = 'none';

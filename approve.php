@@ -580,6 +580,7 @@ function fetchItems(mysqli $link, int $reservationId): array
             while ($it = mysqli_fetch_assoc($r)) {
                 $items[] = [
                     'item_type' => 'equipment',
+                            'item_id' => (int)$it['equipment_id'],
                     'item_code' => (string)$it['equipment_code'],
                     'item_name' => (string)$it['equipment_name']
                 ];

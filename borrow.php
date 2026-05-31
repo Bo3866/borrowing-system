@@ -82,11 +82,19 @@ $spaceMap = [];
 $existingSpaceReservations = [];
 $existingEquipmentReservations = [];
 if ($dbError === '') {
+    $cursorColumnResult = mysqli_query($link, "SHOW COLUMNS FROM equipment_categories LIKE 'borrow_cursor_equipment_id'");
+    if (!($cursorColumnResult && mysqli_num_rows($cursorColumnResult) > 0)) {
+        if (!mysqli_query($link, "ALTER TABLE equipment_categories ADD COLUMN borrow_cursor_equipment_id BIGINT UNSIGNED NULL COMMENT '下一次配發起點器材編號' AFTER borrow_limit_quantity")) {
+            $dbError = '建立器材輪轉欄位失敗：' . mysqli_error($link);
+        }
+    }
+
     $equipmentSql = "
         SELECT
             ec.equipment_code,
             ec.equipment_name,
             ec.borrow_limit_quantity,
+            ec.borrow_cursor_equipment_id,
             COALESCE(SUM(CASE WHEN e.operation_status = 1 THEN 1 ELSE 0 END), 0) - COALESCE(COUNT(eri.equipment_id), 0) AS available_quantity
         FROM equipment_categories ec
         LEFT JOIN equipments e ON e.equipment_code = ec.equipment_code
@@ -109,6 +117,7 @@ if ($dbError === '') {
                 'equipment_code' => $code,
                 'equipment_name' => (string)$row['equipment_name'],
                 'borrow_limit_quantity' => $limit,
+                'borrow_cursor_equipment_id' => $row['borrow_cursor_equipment_id'] !== null ? (int)$row['borrow_cursor_equipment_id'] : null,
                 'available_quantity' => (int)$row['available_quantity'],
             ];
         }
@@ -957,7 +966,11 @@ SQL;
                 if (!empty($cartEquipments)) {
                     $stockCheckStmt = mysqli_prepare(
                         $link,
-                        'SELECT COUNT(*) AS available_count FROM equipments WHERE equipment_code = ? AND operation_status = 1 FOR UPDATE'
+                            'SELECT COUNT(*) AS available_count FROM equipments WHERE equipment_code = ? AND operation_status = 1 FOR UPDATE'
+                    );
+                    $cursorStmt = mysqli_prepare(
+                        $link,
+                        'SELECT borrow_cursor_equipment_id FROM equipment_categories WHERE equipment_code = ? FOR UPDATE'
                     );
                     $selectEquipmentStmt = mysqli_prepare(
                         $link,
@@ -973,7 +986,7 @@ SQL;
                                  AND r.borrow_start_at < ?
                                  AND r.borrow_end_at > ?
                            )
-                         ORDER BY e.equipment_id ASC LIMIT ?'
+                         ORDER BY CASE WHEN e.equipment_id > ? THEN 0 ELSE 1 END, e.equipment_id ASC LIMIT ?'
                     );
                     $reservationItemStmt = mysqli_prepare(
                         $link,
@@ -983,7 +996,11 @@ SQL;
                         $link,
                         'UPDATE equipments SET operation_status = 2 WHERE equipment_id = ? AND operation_status = 1 AND ? <= NOW()'
                     );
-                    if (!$stockCheckStmt || !$selectEquipmentStmt || !$reservationItemStmt || !$updateEquipmentStatusStmt) {
+                    $updateCursorStmt = mysqli_prepare(
+                        $link,
+                        'UPDATE equipment_categories SET borrow_cursor_equipment_id = ? WHERE equipment_code = ?'
+                    );
+                    if (!$stockCheckStmt || !$cursorStmt || !$selectEquipmentStmt || !$reservationItemStmt || !$updateEquipmentStatusStmt || !$updateCursorStmt) {
                         throw new RuntimeException('建立器材預約明細指令失敗：' . mysqli_error($link));
                     }
 
@@ -991,6 +1008,15 @@ SQL;
                     foreach ($cartEquipments as $item) {
                         $cCode = $item['code'];
                         $cQty = (int)$item['quantity'];
+                        $borrowCursorId = 0;
+
+                        mysqli_stmt_bind_param($cursorStmt, 's', $cCode);
+                        mysqli_stmt_execute($cursorStmt);
+                        $cursorResult = mysqli_stmt_get_result($cursorStmt);
+                        $cursorRow = $cursorResult ? mysqli_fetch_assoc($cursorResult) : null;
+                        if ($cursorRow && $cursorRow['borrow_cursor_equipment_id'] !== null) {
+                            $borrowCursorId = (int)$cursorRow['borrow_cursor_equipment_id'];
+                        }
 
                                                 // 檢查該天是否已有任何預約（器材按天單位）
                                                 $overlapCheckSql = "
@@ -1026,7 +1052,7 @@ SQL;
                             throw new RuntimeException("器材 {$cCode} 目前整體狀態異常或數量不足，無法送出申請。");
                         }
 
-                        mysqli_stmt_bind_param($selectEquipmentStmt, 'sssi', $cCode, $borrowEndAtSql, $borrowStartAtSql, $cQty);
+                        mysqli_stmt_bind_param($selectEquipmentStmt, 'sssii', $cCode, $borrowEndAtSql, $borrowStartAtSql, $borrowCursorId, $cQty);
                         mysqli_stmt_execute($selectEquipmentStmt);
                         $availableEquipmentResult = mysqli_stmt_get_result($selectEquipmentStmt);
 
@@ -1043,6 +1069,7 @@ SQL;
                         $itemReservationId = $commonReservationId;
 
                         // 將實體器材加入該預約單
+                        $lastAllocatedEquipmentId = null;
                         foreach ($equipmentIds as $equipmentId) {
                             mysqli_stmt_bind_param($reservationItemStmt, 'ii', $itemReservationId, $equipmentId);
                             if (!mysqli_stmt_execute($reservationItemStmt)) {
@@ -1053,13 +1080,23 @@ SQL;
                             if (!mysqli_stmt_execute($updateEquipmentStatusStmt)) {
                                 throw new RuntimeException('更新器材狀態失敗：' . mysqli_stmt_error($updateEquipmentStatusStmt));
                             }
+                            $lastAllocatedEquipmentId = $equipmentId;
+                        }
+
+                        if ($lastAllocatedEquipmentId !== null) {
+                            mysqli_stmt_bind_param($updateCursorStmt, 'is', $lastAllocatedEquipmentId, $cCode);
+                            if (!mysqli_stmt_execute($updateCursorStmt)) {
+                                throw new RuntimeException('更新器材輪轉指標失敗：' . mysqli_stmt_error($updateCursorStmt));
+                            }
                         }
                     }
 
                     mysqli_stmt_close($stockCheckStmt);
+                    mysqli_stmt_close($cursorStmt);
                     mysqli_stmt_close($selectEquipmentStmt);
                     mysqli_stmt_close($reservationItemStmt);
                     mysqli_stmt_close($updateEquipmentStatusStmt);
+                    mysqli_stmt_close($updateCursorStmt);
                 }
 
                 $proposalFileForReservation = null;

@@ -80,14 +80,14 @@ CREATE TABLE `equipments` (
 -- 傾印資料表的資料 `equipments`
 --
 
-INSERT INTO `equipments` (`equipment_id`, `equipment_code`, `operation_status`, `operation_remark`, `added_date`, `maintenance_count`, `created_at`) VALUES
-(1, 'A1', 1, NULL, '2025-02-01', 0, '2026-04-21 14:12:52'),
-(2, 'A2', 2, NULL, '2025-02-01', 0, '2026-04-21 14:12:52'),
-(3, 'A2', 1, NULL, '2025-02-01', 0, '2026-04-21 14:12:52'),
-(4, 'A2', 1, NULL, '2025-02-01', 0, '2026-04-21 14:12:52'),
-(5, 'A2', 1, NULL, '2025-02-01', 0, '2026-04-21 14:12:52'),
-(6, 'A3', 3, NULL, '2025-02-01', 0, '2026-04-21 14:12:52'),
-(7, 'A3', 1, NULL, '2025-02-01', 0, '2026-04-21 14:12:52'),
+/*
+(1, 'A1', 1, NULL, NULL, '2025-02-01', 0, '2026-04-21 14:12:52'),
+(2, 'A2', 2, NULL, NULL, '2025-02-01', 0, '2026-04-21 14:12:52'),
+(3, 'A2', 1, NULL, NULL, '2025-02-01', 0, '2026-04-21 14:12:52'),
+(4, 'A2', 1, NULL, NULL, '2025-02-01', 0, '2026-04-21 14:12:52'),
+(5, 'A2', 1, NULL, NULL, '2025-02-01', 0, '2026-04-21 14:12:52'),
+(6, 'A3', 3, NULL, NULL, '2025-02-01', 0, '2026-04-21 14:12:52'),
+(7, 'A3', 1, NULL, NULL, '2025-02-01', 0, '2026-04-21 14:12:52'),
 (8, 'A3', 1, NULL, '2025-02-01', 0, '2026-04-21 14:12:52'),
 (9, 'A3', 1, NULL, '2025-02-01', 0, '2026-04-21 14:12:52'),
 (10, 'A4', 1, NULL, '2025-02-01', 0, '2026-04-21 14:12:52'),
@@ -234,7 +234,8 @@ INSERT INTO `equipments` (`equipment_id`, `equipment_code`, `operation_status`, 
 (151, 'A4', 1, NULL, '2025-02-01', 0, '2026-05-13 16:12:24'),
 (152, 'A5', 1, NULL, '2025-02-01', 0, '2026-05-13 16:12:24'),
 (153, 'A6', 1, NULL, '2025-02-01', 0, '2026-05-13 16:12:24'),
-(154, 'A7', 1, NULL, '2025-02-01', 0, '2026-05-13 16:12:24'),
+(144, 'A3', 1, NULL, '2025-02-01', 0, '2026-05-13 16:12:24'),
+ (277, 'A1', 1, NULL, '2026-05-15', 0, '2026-05-15 13:54:20'),
 (155, 'A8', 1, NULL, '2025-02-01', 0, '2026-05-13 16:12:24'),
 (156, 'A9', 1, NULL, '2025-02-01', 0, '2026-05-13 16:12:24'),
 (157, 'A10', 1, NULL, '2025-02-01', 0, '2026-05-13 16:12:24'),
@@ -360,7 +361,7 @@ INSERT INTO `equipments` (`equipment_id`, `equipment_code`, `operation_status`, 
 (277, 'A1', 1, NULL, '2026-05-15', 0, '2026-05-15 13:54:20'),
 (278, 'A10', 1, NULL, '2026-05-15', 0, '2026-05-15 13:54:20'),
 (279, 'A2', 1, NULL, '2026-05-15', 0, '2026-05-15 13:54:20');
-
+  -- --------------------------------------------------------
 -- --------------------------------------------------------
 
 --
@@ -371,6 +372,7 @@ CREATE TABLE `equipment_categories` (
   `equipment_code` varchar(5) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '器材代碼(例: A1, B2)',
   `equipment_name` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '器材名稱',
   `borrow_limit_quantity` int(11) NOT NULL DEFAULT '1' COMMENT '限借數量',
+  `borrow_cursor_equipment_id` bigint(20) UNSIGNED DEFAULT NULL COMMENT '下一次配發起點器材編號',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -475,7 +477,6 @@ CREATE TABLE `equipment_reservation_items` (
   `equipment_item_id` bigint(20) UNSIGNED NOT NULL COMMENT '器材預約明細編號',
   `reservation_id` bigint(20) UNSIGNED NOT NULL COMMENT '關聯預約總表(預約編號)',
   `equipment_id` bigint(20) UNSIGNED NOT NULL COMMENT '關聯器材(器材編號)',
-  `borrow_quantity` int(11) NOT NULL DEFAULT '1' COMMENT '借用數量',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ;
@@ -484,13 +485,14 @@ CREATE TABLE `equipment_reservation_items` (
 -- 傾印資料表的資料 `equipment_reservation_items`
 --
 
-INSERT INTO `equipment_reservation_items` (`equipment_item_id`, `reservation_id`, `equipment_id`, `borrow_quantity`, `created_at`) VALUES
-(1, 3, 1, 1, '2026-04-21 17:25:27'),
-(2, 4, 6, 1, '2026-04-21 17:38:12'),
-(3, 8, 19, 1, '2026-04-27 15:58:40'),
-(4, 10, 2, 1, '2026-04-29 19:12:13'),
-(5, 11, 2, 1, '2026-04-29 19:15:02'),
-(6, 22, 30, 1, '2026-05-15 14:18:04');
+INSERT INTO `equipment_reservation_items` (`equipment_item_id`, `reservation_id`, `equipment_id`, `created_at`) VALUES
+(1, 3, 1, '2026-04-21 17:25:27'),
+(2, 4, 6, '2026-04-21 17:38:12'),
+(3, 8, 19, '2026-04-27 15:58:40'),
+(4, 10, 2, '2026-04-29 19:12:13'),
+(5, 11, 2, '2026-04-29 19:15:02'),
+(6, 22, 30, '2026-05-15 14:18:04');
+*/
 
 -- --------------------------------------------------------
 

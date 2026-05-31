@@ -103,6 +103,13 @@ function tableColumns(mysqli $link, string $table): array {
 function colExists(array $cols, string $col): bool { return in_array($col, $cols, true); }
 
 if ($dbError === '') {
+    $cursorColumnResult = mysqli_query($link, "SHOW COLUMNS FROM equipment_categories LIKE 'borrow_cursor_equipment_id'");
+    if (!($cursorColumnResult && mysqli_num_rows($cursorColumnResult) > 0)) {
+        if (!mysqli_query($link, "ALTER TABLE equipment_categories ADD COLUMN borrow_cursor_equipment_id BIGINT UNSIGNED NULL COMMENT '下一次配發起點器材編號' AFTER borrow_limit_quantity")) {
+            $dbError = '建立器材輪轉欄位失敗：' . mysqli_error($link);
+        }
+    }
+
     $availableCols = tableColumns($link, 'reservations');
 
     $selectCols = ['reservation_id','user_id','approval_status','borrow_start_at','borrow_end_at','organization_name','activity_name','participant_count','staff_count','club_president','activity_coordinator','coordinator_department','coordinator_phone','coordinator_other_contact','vehicle_entry','has_alcohol','has_fire','has_sales','setup_flags','flag_count','purpose','proposal_file','proposal_original_name','proposal_uploaded_at','phone','alcohol_coordinator','alcohol_president','fire_activity_name','fire_date','fire_location','fire_start_time','fire_end_time','fire_staff_json'];
@@ -168,7 +175,8 @@ if ($dbError === '') {
 
     $equipmentSql = "
         SELECT ec.equipment_code, ec.equipment_name, ec.borrow_limit_quantity,
-               COALESCE(SUM(CASE WHEN e.operation_status = 1 THEN 1 ELSE 0 END), 0) AS available_quantity
+             ec.borrow_cursor_equipment_id,
+             COALESCE(SUM(CASE WHEN e.operation_status = 1 THEN 1 ELSE 0 END), 0) AS available_quantity
         FROM equipment_categories ec
         LEFT JOIN equipments e ON e.equipment_code = ec.equipment_code
         GROUP BY ec.equipment_code, ec.equipment_name, ec.borrow_limit_quantity
@@ -181,6 +189,7 @@ if ($dbError === '') {
                 'equipment_code' => $code,
                 'equipment_name' => (string)$row['equipment_name'],
                 'borrow_limit_quantity' => $row['borrow_limit_quantity'] !== null ? (int)$row['borrow_limit_quantity'] : null,
+                'borrow_cursor_equipment_id' => $row['borrow_cursor_equipment_id'] !== null ? (int)$row['borrow_cursor_equipment_id'] : null,
                 'available_quantity' => (int)$row['available_quantity'],
             ];
         }
@@ -385,9 +394,19 @@ if ($dbError === '') {
                         $mark = mysqli_prepare($link, 'UPDATE spaces SET space_status = "2" WHERE space_id = ?');
                         if ($mark) { mysqli_stmt_bind_param($mark, 's', $code); mysqli_stmt_execute($mark); mysqli_stmt_close($mark); }
                     } else {
-                        $sel = mysqli_prepare($link, 'SELECT equipment_id FROM equipments WHERE equipment_code = ? AND operation_status = 1 ORDER BY equipment_id ASC LIMIT ?');
+                        $cursorStmt = mysqli_prepare($link, 'SELECT borrow_cursor_equipment_id FROM equipment_categories WHERE equipment_code = ? FOR UPDATE');
+                        if (!$cursorStmt) throw new RuntimeException('查詢器材輪轉指標失敗：' . mysqli_error($link));
+                        mysqli_stmt_bind_param($cursorStmt, 's', $code);
+                        mysqli_stmt_execute($cursorStmt);
+                        $cursorRes = mysqli_stmt_get_result($cursorStmt);
+                        $cursorRow = $cursorRes ? mysqli_fetch_assoc($cursorRes) : null;
+                        mysqli_stmt_close($cursorStmt);
+
+                        $borrowCursorId = ($cursorRow && $cursorRow['borrow_cursor_equipment_id'] !== null) ? (int)$cursorRow['borrow_cursor_equipment_id'] : 0;
+
+                        $sel = mysqli_prepare($link, 'SELECT equipment_id FROM equipments WHERE equipment_code = ? AND operation_status = 1 ORDER BY CASE WHEN equipment_id > ? THEN 0 ELSE 1 END, equipment_id ASC LIMIT ?');
                         if (!$sel) throw new RuntimeException('查詢可用器材失敗：' . mysqli_error($link));
-                        mysqli_stmt_bind_param($sel, 'si', $code, $qty);
+                        mysqli_stmt_bind_param($sel, 'sii', $code, $borrowCursorId, $qty);
                         mysqli_stmt_execute($sel);
                         $res = mysqli_stmt_get_result($sel);
                         $ids = [];
@@ -401,6 +420,14 @@ if ($dbError === '') {
                             mysqli_stmt_execute($ins);
                             mysqli_stmt_close($ins);
                             mysqli_query($link, 'UPDATE equipments SET operation_status = 2 WHERE equipment_id = ' . $eid);
+                            $borrowCursorId = $eid;
+                        }
+
+                        $updateCursorStmt = mysqli_prepare($link, 'UPDATE equipment_categories SET borrow_cursor_equipment_id = ? WHERE equipment_code = ?');
+                        if (!$updateCursorStmt) throw new RuntimeException('更新器材輪轉指標失敗：' . mysqli_error($link));
+                        mysqli_stmt_bind_param($updateCursorStmt, 'is', $borrowCursorId, $code);
+                        mysqli_stmt_execute($updateCursorStmt);
+                        mysqli_stmt_close($updateCursorStmt);
                         }
                     }
                 }

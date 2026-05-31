@@ -181,7 +181,7 @@ if ($dbError === '') {
                         $link,
                         'UPDATE equipments e
                          JOIN equipment_reservation_items eri ON eri.equipment_id = e.equipment_id
-                         SET e.operation_status = 1
+                        SET e.operation_status = 1
                          WHERE eri.reservation_id = ? AND e.operation_status = 2'
                     );
                     if (!$restoreStmt) {

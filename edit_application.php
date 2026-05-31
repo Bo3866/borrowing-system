@@ -67,6 +67,7 @@ $link = getMysqliConnection($dbError);
 $borrowError = '';
 $borrowSuccess = '';
 $targetStep = (isset($_POST['current_step']) ? (int)$_POST['current_step'] : 1);
+$proposalFileHref = '';
 
 $formData = [
     'organization_name' => '', 'activity_name' => '', 'participant_count' => '', 'staff_count' => '',
@@ -104,7 +105,7 @@ function colExists(array $cols, string $col): bool { return in_array($col, $cols
 if ($dbError === '') {
     $availableCols = tableColumns($link, 'reservations');
 
-    $selectCols = ['reservation_id','user_id','approval_status','borrow_start_at','borrow_end_at','organization_name','activity_name','participant_count','staff_count','club_president','activity_coordinator','coordinator_department','coordinator_phone','coordinator_other_contact','vehicle_entry','has_alcohol','has_fire','has_sales','setup_flags','flag_count','purpose','proposal_file','proposal_uploaded_at','phone','alcohol_coordinator','alcohol_president','fire_activity_name','fire_date','fire_location','fire_start_time','fire_end_time','fire_staff_json'];
+    $selectCols = ['reservation_id','user_id','approval_status','borrow_start_at','borrow_end_at','organization_name','activity_name','participant_count','staff_count','club_president','activity_coordinator','coordinator_department','coordinator_phone','coordinator_other_contact','vehicle_entry','has_alcohol','has_fire','has_sales','setup_flags','flag_count','purpose','proposal_file','proposal_original_name','proposal_uploaded_at','phone','alcohol_coordinator','alcohol_president','fire_activity_name','fire_date','fire_location','fire_start_time','fire_end_time','fire_staff_json'];
     $existingSelect = [];
     foreach ($selectCols as $c) { if (colExists($availableCols, $c)) $existingSelect[] = 'r.`' . $c . '`'; }
     if (empty($existingSelect)) {
@@ -142,17 +143,19 @@ if ($dbError === '') {
                 $formData[$key] = (string)$reservationRow[$key];
             }
         }
-        if (!empty($reservationRow['proposal_file'])) $formData['draft_proposal_file'] = (string)$reservationRow['proposal_file'];
-        if (!empty($reservationRow['proposal_uploaded_at'])) $formData['draft_proposal_uploaded_at'] = (string)$reservationRow['proposal_uploaded_at'];
         if (!empty($reservationRow['proposal_file'])) {
             $formData['draft_proposal_file'] = (string)$reservationRow['proposal_file'];
             $proposalFileHref = (string)$reservationRow['proposal_file'];
-            $proposalDisplayName = basename((string)$reservationRow['proposal_file']);
-            if (preg_match('/^\d+_(.+)$/', $proposalDisplayName, $matches)) {
-                $proposalDisplayName = (string)$matches[1];
+            $proposalDisplayName = trim((string)($reservationRow['proposal_original_name'] ?? ''));
+            if ($proposalDisplayName === '') {
+                $proposalDisplayName = basename((string)$reservationRow['proposal_file']);
+                if (preg_match('/^\d+_(.+)$/', $proposalDisplayName, $matches)) {
+                    $proposalDisplayName = (string)$matches[1];
+                }
             }
             $formData['draft_proposal_original_name'] = $proposalDisplayName;
         }
+        if (!empty($reservationRow['proposal_uploaded_at'])) $formData['draft_proposal_uploaded_at'] = (string)$reservationRow['proposal_uploaded_at'];
         if (!empty($reservationRow['borrow_start_at'])) {
             $ts = strtotime((string)$reservationRow['borrow_start_at']);
             if ($ts) { $formData['borrow_start_date'] = date('Y-m-d', $ts); $formData['borrow_start_time'] = date('H:i:s', $ts); }
@@ -798,7 +801,7 @@ $initialCartItemsJson = json_encode($currentCartItems, JSON_UNESCAPED_UNICODE);
                             <input type="hidden" name="cart_items" id="cart_items" value="<?php echo htmlspecialchars($initialCartItemsJson, ENT_QUOTES, 'UTF-8'); ?>">
                             <input type="hidden" name="current_draft_id" id="current_draft_id" value="">
                             <input type="hidden" name="draft_proposal_file" id="draft_proposal_file" value="<?php echo htmlspecialchars((string)($formData['draft_proposal_file'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
-                            <input type="hidden" name="draft_proposal_original_name" id="draft_proposal_original_name" value="">
+                            <input type="hidden" name="draft_proposal_original_name" id="draft_proposal_original_name" value="<?php echo htmlspecialchars((string)($formData['draft_proposal_original_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
                             <input type="hidden" name="draft_proposal_uploaded_at" id="draft_proposal_uploaded_at" value="<?php echo htmlspecialchars((string)($formData['draft_proposal_uploaded_at'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
                             <input type="file" id="proposal_file" name="proposal_file" accept=".pdf,application/pdf" style="opacity: 0; position: absolute; z-index: -1; width: 0; height: 0;" onchange="if (this.files.length > 0) { document.getElementById('proposal_file_name_display').innerText = '已上傳新企劃書：' + this.files[0].name; const f=document.getElementById('draft_proposal_file'); const n=document.getElementById('draft_proposal_original_name'); const t=document.getElementById('draft_proposal_uploaded_at'); if(f)f.value=''; if(n)n.value=''; if(t)t.value=''; } else { document.getElementById('proposal_file_name_display').innerText = ''; }">
                             <!-- ========== 步驟 1 內容區 ========== -->

@@ -284,6 +284,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // 企劃書後端檔案路徑：必須在前面先抓，後面驗證才不會誤判沒有企劃書
     $draftProposalFileForReservation = null;
     $draftProposalUploadedAtForReservation = null;
+    $draftProposalOriginalNameForReservation = trim((string)($_POST['draft_proposal_original_name'] ?? ''));
 
     $formData['draft_proposal_file'] = trim((string)($_POST['draft_proposal_file'] ?? ''));
     $formData['draft_proposal_original_name'] = trim((string)($_POST['draft_proposal_original_name'] ?? ''));
@@ -300,7 +301,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($currentDraftIdForProposalEarly > 0) {
             $draftProposalStmtEarly = mysqli_prepare(
                 $link,
-                'SELECT proposal_file, proposal_uploaded_at
+                'SELECT proposal_file, proposal_original_name, proposal_uploaded_at
                  FROM reservation_drafts
                  WHERE draft_id = ? AND user_id = ?
                  LIMIT 1'
@@ -315,11 +316,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if ($draftProposalRowEarly && !empty($draftProposalRowEarly['proposal_file'])) {
                     $draftProposalFileForReservation = (string)$draftProposalRowEarly['proposal_file'];
+                    if (!empty($draftProposalRowEarly['proposal_original_name'])) {
+                        $draftProposalOriginalNameForReservation = (string)$draftProposalRowEarly['proposal_original_name'];
+                    }
                     $draftProposalUploadedAtForReservation = !empty($draftProposalRowEarly['proposal_uploaded_at'])
                         ? (string)$draftProposalRowEarly['proposal_uploaded_at']
                         : date('Y-m-d H:i:s');
 
                     $formData['draft_proposal_file'] = $draftProposalFileForReservation;
+                    $formData['draft_proposal_original_name'] = $draftProposalOriginalNameForReservation;
                     $formData['draft_proposal_uploaded_at'] = $draftProposalUploadedAtForReservation;
                 }
             }
@@ -706,7 +711,7 @@ SQL;
                     if ($currentDraftIdForProposal > 0) {
                         $draftProposalStmt = mysqli_prepare(
                             $link,
-                            'SELECT proposal_file, proposal_uploaded_at
+                            'SELECT proposal_file, proposal_original_name, proposal_uploaded_at
                              FROM reservation_drafts
                              WHERE draft_id = ? AND user_id = ?
                              LIMIT 1'
@@ -721,6 +726,9 @@ SQL;
 
                             if ($draftProposalRow && !empty($draftProposalRow['proposal_file'])) {
                                 $draftProposalFileForReservation = (string)$draftProposalRow['proposal_file'];
+                                if (!empty($draftProposalRow['proposal_original_name'])) {
+                                    $draftProposalOriginalNameForReservation = (string)$draftProposalRow['proposal_original_name'];
+                                }
                                 $draftProposalUploadedAtForReservation = !empty($draftProposalRow['proposal_uploaded_at'])
                                     ? (string)$draftProposalRow['proposal_uploaded_at']
                                     : date('Y-m-d H:i:s');
@@ -734,6 +742,12 @@ SQL;
                 if (!($reservationColsRes && mysqli_num_rows($reservationColsRes) > 0)) {
                     if (!mysqli_query($link, "ALTER TABLE reservations ADD COLUMN proposal_file VARCHAR(255) NULL")) {
                         @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " ALTER reservations add proposal_file failed: " . mysqli_error($link) . "\n", FILE_APPEND | LOCK_EX);
+                    }
+                }
+                $reservationOriginalNameRes = mysqli_query($link, 'SHOW COLUMNS FROM reservations LIKE \'proposal_original_name\'');
+                if (!($reservationOriginalNameRes && mysqli_num_rows($reservationOriginalNameRes) > 0)) {
+                    if (!mysqli_query($link, "ALTER TABLE reservations ADD COLUMN proposal_original_name VARCHAR(255) NULL COMMENT '企劃書原始檔名' AFTER proposal_file")) {
+                        @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " ALTER reservations add proposal_original_name failed: " . mysqli_error($link) . "\n", FILE_APPEND | LOCK_EX);
                     }
                 }
                 $reservationUploadedAtRes = mysqli_query($link, 'SHOW COLUMNS FROM reservations LIKE \'proposal_uploaded_at\'');
@@ -1049,6 +1063,7 @@ SQL;
                 }
 
                 $proposalFileForReservation = null;
+                $proposalOriginalNameForReservation = null;
                 $proposalUploadedAtForReservation = null;
 
                 if (isset($_FILES['proposal_file']) && $_FILES['proposal_file']['error'] !== UPLOAD_ERR_NO_FILE) {
@@ -1099,31 +1114,35 @@ SQL;
                     }
 
                     $proposalFileForReservation = 'uploads/proposals/' . $targetName;
+                    $proposalOriginalNameForReservation = basename((string)$file['name']);
                     $proposalUploadedAtForReservation = date('Y-m-d H:i:s');
                     $uploadedProposalPath = $targetPath;
 
                     $updateProposalStmt = mysqli_prepare(
                         $link,
-                        'UPDATE reservations SET proposal_file = ?, proposal_uploaded_at = ? WHERE reservation_id = ?'
+                        'UPDATE reservations SET proposal_file = ?, proposal_original_name = ?, proposal_uploaded_at = ? WHERE reservation_id = ?'
                     );
                     if (!$updateProposalStmt) {
                         throw new RuntimeException('更新企劃書資訊失敗：' . mysqli_error($link));
                     }
-                    mysqli_stmt_bind_param($updateProposalStmt, 'ssi', $proposalFileForReservation, $proposalUploadedAtForReservation, $commonReservationId);
+                    mysqli_stmt_bind_param($updateProposalStmt, 'sssi', $proposalFileForReservation, $proposalOriginalNameForReservation, $proposalUploadedAtForReservation, $commonReservationId);
                     mysqli_stmt_execute($updateProposalStmt);
                     mysqli_stmt_close($updateProposalStmt);
                 } elseif ($draftProposalFileForReservation !== null) {
                     $proposalFileForReservation = $draftProposalFileForReservation;
+                    $proposalOriginalNameForReservation = $draftProposalOriginalNameForReservation !== ''
+                        ? $draftProposalOriginalNameForReservation
+                        : basename((string)$draftProposalFileForReservation);
                     $proposalUploadedAtForReservation = $draftProposalUploadedAtForReservation;
 
                     $updateProposalStmt = mysqli_prepare(
                         $link,
-                        'UPDATE reservations SET proposal_file = ?, proposal_uploaded_at = ? WHERE reservation_id = ?'
+                        'UPDATE reservations SET proposal_file = ?, proposal_original_name = ?, proposal_uploaded_at = ? WHERE reservation_id = ?'
                     );
                     if (!$updateProposalStmt) {
                         throw new RuntimeException('沿用草稿企劃書失敗：' . mysqli_error($link));
                     }
-                    mysqli_stmt_bind_param($updateProposalStmt, 'ssi', $proposalFileForReservation, $proposalUploadedAtForReservation, $commonReservationId);
+                    mysqli_stmt_bind_param($updateProposalStmt, 'sssi', $proposalFileForReservation, $proposalOriginalNameForReservation, $proposalUploadedAtForReservation, $commonReservationId);
                     mysqli_stmt_execute($updateProposalStmt);
                     mysqli_stmt_close($updateProposalStmt);
                 } else {
@@ -1623,7 +1642,7 @@ SQL;
                             <input type="hidden" name="current_step" id="current_step" value="<?php echo htmlspecialchars($_POST['current_step'] ?? '1', ENT_QUOTES, 'UTF-8'); ?>">
                             <input type="hidden" name="current_draft_id" id="current_draft_id" value="">
                             <input type="hidden" name="draft_proposal_file" id="draft_proposal_file" value="">
-                            <input type="hidden" name="draft_proposal_original_name" id="draft_proposal_original_name" value="">
+                            <input type="hidden" name="draft_proposal_original_name" id="draft_proposal_original_name" value="<?php echo htmlspecialchars((string)($formData['draft_proposal_original_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
                             <input type="hidden" name="draft_proposal_uploaded_at" id="draft_proposal_uploaded_at" value="">
                             <input type="file" id="proposal_file" name="proposal_file" accept=".pdf,application/pdf" style="opacity: 0; position: absolute; z-index: -1; width: 0; height: 0;" onchange="if (this.files.length > 0) { document.getElementById('proposal_file_name_display').innerText = '已上傳新企劃書：' + this.files[0].name; const f=document.getElementById('draft_proposal_file'); const n=document.getElementById('draft_proposal_original_name'); const t=document.getElementById('draft_proposal_uploaded_at'); if(f)f.value=''; if(n)n.value=''; if(t)t.value=''; } else { document.getElementById('proposal_file_name_display').innerText = ''; }">
                             <!-- ========== 步驟 1 內容區 ========== -->

@@ -76,7 +76,7 @@ $formData = [
     'flag_count' => 1, 'flag_agreement' => '', 'resource_type' => 'both', 'equipment_code' => '',
     'space_id' => '', 'borrow_start_date' => '', 'borrow_start_time' => '',
     'borrow_end_date' => '', 'borrow_end_time' => '', 'purpose' => '', 'phone' => '',
-    'draft_proposal_file' => '', 'draft_proposal_uploaded_at' => '', 'alcohol_coordinator' => '',
+    'draft_proposal_file' => '', 'draft_proposal_original_name' => '', 'draft_proposal_uploaded_at' => '', 'alcohol_coordinator' => '',
     'alcohol_president' => '', 'fire_activity_name' => '', 'fire_date' => '', 'fire_location' => '',
     'fire_start_time' => '', 'fire_end_time' => '', 'fire_staff_json' => '',
 ];
@@ -144,6 +144,15 @@ if ($dbError === '') {
         }
         if (!empty($reservationRow['proposal_file'])) $formData['draft_proposal_file'] = (string)$reservationRow['proposal_file'];
         if (!empty($reservationRow['proposal_uploaded_at'])) $formData['draft_proposal_uploaded_at'] = (string)$reservationRow['proposal_uploaded_at'];
+        if (!empty($reservationRow['proposal_file'])) {
+            $formData['draft_proposal_file'] = (string)$reservationRow['proposal_file'];
+            $proposalFileHref = (string)$reservationRow['proposal_file'];
+            $proposalDisplayName = basename((string)$reservationRow['proposal_file']);
+            if (preg_match('/^\d+_(.+)$/', $proposalDisplayName, $matches)) {
+                $proposalDisplayName = (string)$matches[1];
+            }
+            $formData['draft_proposal_original_name'] = $proposalDisplayName;
+        }
         if (!empty($reservationRow['borrow_start_at'])) {
             $ts = strtotime((string)$reservationRow['borrow_start_at']);
             if ($ts) { $formData['borrow_start_date'] = date('Y-m-d', $ts); $formData['borrow_start_time'] = date('H:i:s', $ts); }
@@ -802,7 +811,15 @@ $initialCartItemsJson = json_encode($currentCartItems, JSON_UNESCAPED_UNICODE);
                                     <label for="proposal_file" style="margin: 0; background-color: #1554b9; color: white; padding: 6px 15px; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: normal; transition: background 0.2s;">
                                         📤 按此上傳活動企劃書 (僅接受PDF檔)
                                     </label>
-                                    <span id="proposal_file_name_display" style="font-size: 14px; color: #1554b9; font-weight: 500;"></span>
+                                    <span id="proposal_file_name_display" style="font-size: 14px; color: #1554b9; font-weight: 500;">
+                                        <?php if (!empty($formData['draft_proposal_original_name']) && !empty($proposalFileHref)) { ?>
+                                            <a href="<?php echo htmlspecialchars($proposalFileHref, ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">
+                                                已上傳企劃書：<?php echo htmlspecialchars((string)$formData['draft_proposal_original_name'], ENT_QUOTES, 'UTF-8'); ?>
+                                            </a>
+                                        <?php } elseif (!empty($formData['draft_proposal_original_name'])) { ?>
+                                            已上傳企劃書：<?php echo htmlspecialchars((string)$formData['draft_proposal_original_name'], ENT_QUOTES, 'UTF-8'); ?>
+                                        <?php } ?>
+                                    </span>
                                 </div>
 
                                 <div class="form-group" style="margin-top: 10px;">
@@ -827,7 +844,7 @@ $initialCartItemsJson = json_encode($currentCartItems, JSON_UNESCAPED_UNICODE);
                                     </div>
                                     <div class="form-group" style="flex: 1; min-width: 150px;">
                                         <label for="staff_count">工作人員人數 <span style="color:red">*</span></label>
-                                        <input type="number" id="staff_count" name="staff_count" class="form-control" placeholder="請輸入人數" min="1" required>
+                                        <input type="number" id="staff_count" name="staff_count" class="form-control" placeholder="請輸入人數" min="1" required value="<?php echo htmlspecialchars((string)($formData['staff_count'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
                                 </div>
                              
@@ -4127,6 +4144,18 @@ document.addEventListener('DOMContentLoaded', function () {
         if (display) display.innerText = '';
     }
 
+    function hasExistingProposalState() {
+        const fileInput = document.getElementById('draft_proposal_file');
+        const nameInput = document.getElementById('draft_proposal_original_name');
+        const display = document.getElementById('proposal_file_name_display');
+
+        return Boolean(
+            (fileInput && fileInput.value && fileInput.value.trim() !== '') ||
+            (nameInput && nameInput.value && nameInput.value.trim() !== '') ||
+            (display && display.innerText && display.innerText.trim() !== '')
+        );
+    }
+
     function setProposalState(file, originalName, uploadedAt) {
         const fileInput = document.getElementById('draft_proposal_file');
         const nameInput = document.getElementById('draft_proposal_original_name');
@@ -4148,6 +4177,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function restoreProposalState() {
         if (!isProposalDraftMode()) {
+            if (hasExistingProposalState()) {
+                return;
+            }
             clearProposalStateForNewApplication();
             return;
         }
@@ -4171,15 +4203,17 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function hasProposalForSubmit() {
-        if (isDraftMode) {
-            restoreProposalState();
-        }
         const currentDraftId =
             document.getElementById('current_draft_id')?.value || '';
 
         const isDraftMode =
             currentDraftId !== '' &&
             currentDraftId !== '0';
+
+        if (isDraftMode) {
+            restoreProposalState();
+        }
+
         const proposalInput = document.getElementById('proposal_file');
         const draftProposalInput = document.getElementById('draft_proposal_file');
 
@@ -4256,6 +4290,8 @@ document.addEventListener('DOMContentLoaded', function () {
     function bindProposalWeld() {
         if (isProposalDraftMode()) {
             restoreProposalState();
+        } else if (hasExistingProposalState()) {
+            restoreProposalState();
         } else {
             clearProposalStateForNewApplication();
         }
@@ -4286,7 +4322,9 @@ document.addEventListener('DOMContentLoaded', function () {
         if (isProposalDraftMode()) {
         setInterval(restoreProposalState, 500);
     } else {
-        clearProposalStateForNewApplication();
+        if (!hasExistingProposalState()) {
+            clearProposalStateForNewApplication();
+        }
     }
     }
 })();
@@ -4308,6 +4346,16 @@ document.addEventListener('DOMContentLoaded', function () {
         (currentDraftId !== '' && currentDraftId !== '0');
 
     if (!isDraftMode) {
+        const hasExistingProposal = Boolean(
+            document.getElementById('draft_proposal_file')?.value ||
+            document.getElementById('draft_proposal_original_name')?.value ||
+            document.getElementById('proposal_file_name_display')?.innerText?.trim()
+        );
+
+        if (hasExistingProposal) {
+            return;
+        }
+
         sessionStorage.removeItem('draft_proposal_file');
         sessionStorage.removeItem('draft_proposal_original_name');
         sessionStorage.removeItem('draft_proposal_uploaded_at');
@@ -4327,4 +4375,3 @@ document.addEventListener('DOMContentLoaded', function () {
 
 </body>
 </html>
-

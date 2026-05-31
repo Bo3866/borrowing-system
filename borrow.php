@@ -238,6 +238,8 @@ $formData = [
     'has_alcohol' => '',
     'has_fire' => '',
     'has_sales' => '',
+    'sales_location' => '',
+    'sales_count' => '',
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -274,6 +276,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['has_alcohol'] = isset($_POST['has_alcohol']) ? '1' : '';
     $formData['has_fire'] = isset($_POST['has_fire']) ? '1' : '';
     $formData['has_sales'] = isset($_POST['has_sales']) ? '1' : '';
+    $formData['sales_location'] = trim((string)($_POST['sales_location'] ?? ''));
+    $formData['sales_count'] = trim((string)($_POST['sales_count'] ?? ''));
     $formData['space_id'] = trim((string)($_POST['space_id'] ?? ''));
     $formData['borrow_start_date'] = trim((string)($_POST['borrow_start_date'] ?? ''));
     
@@ -823,12 +827,14 @@ SQL;
                     'proposal_file' => "VARCHAR(255) NULL COMMENT '企劃書路徑'",
                     'proposal_uploaded_at' => "DATETIME NULL COMMENT '企劃書上傳時間'",
                     'certificate_id' => "BIGINT UNSIGNED NULL COMMENT '證照編號'",
-'fire_activity_name' => "VARCHAR(255) NULL COMMENT '明火活動名稱'",
-    'fire_date' => "DATE NULL COMMENT '明火日期'",
-    'fire_start_time' => "TIME NULL COMMENT '明火開始時間'",
-    'fire_end_time' => "TIME NULL COMMENT '明火結束時間'",
-    'fire_location' => "VARCHAR(255) NULL COMMENT '明火地點'",
-    'fire_staff_json' => "JSON NULL COMMENT '明火工作人員清單'"
+                    'fire_activity_name' => "VARCHAR(255) NULL COMMENT '明火活動名稱'",
+                    'fire_date' => "DATE NULL COMMENT '明火日期'",
+                    'fire_start_time' => "TIME NULL COMMENT '明火開始時間'",
+                    'fire_end_time' => "TIME NULL COMMENT '明火結束時間'",
+                    'fire_location' => "VARCHAR(255) NULL COMMENT '明火地點'",
+                    'fire_staff_json' => "JSON NULL COMMENT '明火工作人員清單'",
+                    'sales_location' => "VARCHAR(50) NULL COMMENT '攤位地點'",
+                    'sales_count' => "INT NULL DEFAULT 0 COMMENT '攤位數量'"
                 ];
 
                 foreach ($requiredReservationColumns as $columnName => $columnDefinition) {
@@ -921,7 +927,9 @@ SQL;
                     'fire_security' => ['type' => 's', 'value' => $formData['fire_security']],
                     'fire_emergency' => ['type' => 's', 'value' => $formData['fire_emergency']],
                     'fire_medical' => ['type' => 's', 'value' => $formData['fire_medical']],
-                    'fire_staff_json' => ['type' => 's', 'value' => $formData['fire_staff_json']]
+                    'fire_staff_json' => ['type' => 's', 'value' => $formData['fire_staff_json']],
+                    'sales_location' => ['type' => 's', 'value' => $formData['sales_location'] !== '' ? $formData['sales_location'] : null],
+                    'sales_count' => ['type' => 'i', 'value' => $formData['sales_count'] !== '' ? (int)$formData['sales_count'] : null]
                 ];
 
                 foreach ($optionalReservationValues as $columnName => $config) {
@@ -2266,7 +2274,47 @@ SQL;
                                     </div>
                                 </div>
                                 <!-- 👆 明火申請表 HTML 結束 👆 -->
-
+                                <div id="salesDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:8px;">
+                                    <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
+                                        一般臨時攤位申請
+                                    </div>
+                                    <div style="padding: 20px;">
+                                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start; margin-bottom:15px;">
+                                            <div>
+                                                <label>申請單位</label>
+                                                <input type="text" id="sales_organization_name" name="sales_organization_name" class="form-control" readonly style="background:#f8fafc;" value="<?php echo htmlspecialchars($formData['organization_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                            </div>
+                                            <div>
+                                                <label>日期</label>
+                                                <div style="display:flex; gap:8px; align-items:center;">
+                                                    <input type="date" id="sales_use_start" name="sales_use_start" class="form-control" readonly style="background:#f8fafc;" value="<?php echo htmlspecialchars($formData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                                    <span>至</span>
+                                                    <input type="date" id="sales_use_end" name="sales_use_end" class="form-control" readonly style="background:#f8fafc;" value="<?php echo htmlspecialchars($formData['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
+                                            <div class="form-group" style="flex: 2; min-width: 250px;">
+                                                <label>攤位地點 <span style="color:red">*</span></label>
+                                                <div style="display: flex; gap: 15px; margin-top: 8px; flex-wrap: wrap;">
+                                                    <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
+                                                        <input type="radio" name="sales_location" value="風華再現廣場 - 單側" style="margin: 0;" <?php echo (($formData['sales_location'] ?? '') === '風華再現廣場 - 單側') ? 'checked' : ''; ?>> 風華再現廣場 - 單側
+                                                    </label>
+                                                    <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
+                                                        <input type="radio" name="sales_location" value="風華再現廣場 - 雙側" style="margin: 0;" <?php echo (($formData['sales_location'] ?? '') === '風華再現廣場 - 雙側') ? 'checked' : ''; ?>> 風華再現廣場 - 雙側
+                                                    </label>
+                                                    <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
+                                                        <input type="radio" name="sales_location" value="真善美聖廣場" style="margin: 0;" <?php echo (($formData['sales_location'] ?? '') === '真善美聖廣場') ? 'checked' : ''; ?>> 真善美聖廣場
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            <div class="form-group" style="flex: 1; min-width: 150px;">
+                                                <label for="sales_count">攤位數量 (至多20) <span style="color:red">*</span></label>
+                                                <input type="number" id="sales_count" name="sales_count" class="form-control" placeholder="請輸入數量" max="20" min="1" value="<?php echo htmlspecialchars($formData['sales_count'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" oninput="if(this.value>20)this.value=20;if(this.value<0)this.value=1;">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                                 <script>
                                 function addFireStaffRow(tableId, inputName) {
                                     const tbody = document.getElementById(tableId).querySelector('tbody');
@@ -2373,12 +2421,68 @@ const checkbox = document.querySelector('input[name="has_fire"]');
                                     });
                                 }
 
-                                function validateFireForm() {
+function validateFireForm() {
                                     if (!isFireEnabled()) return true;
                                     // 之後如果有明火表單內容的必填欄位，可在此撰寫驗證邏輯
                                     return true;
                                 }
                                 // 👆 明火驗證 Javascript 結束 👆
+
+                                // 👇 攤位驗證 Javascript 開始 👇
+                                function isSalesEnabled() {
+                                    const checkbox = document.querySelector('input[name="has_sales"]');
+                                    return checkbox ? checkbox.checked : false;
+                                }
+
+                                function toggleSalesDetails() {
+                                    const salesSection = document.getElementById('salesDetailsSection');
+                                    if (!salesSection) return;
+                                    const show = isSalesEnabled();
+                                    salesSection.style.display = show ? 'block' : 'none';
+                                    
+                                    salesSection.querySelectorAll('input, select').forEach(function(el) {
+                                        if (show) {
+                                            el.removeAttribute('disabled');
+                                            if (el.id === 'sales_organization_name' || el.id === 'sales_use_start' || el.id === 'sales_use_end') {
+                                                el.setAttribute('readonly', 'readonly'); // 保證這三格永遠鎖死
+                                            }
+                                        } else {
+                                            el.setAttribute('disabled', 'disabled');
+                                        }
+                                    });
+                                    if (show) syncSalesForm();
+                                }
+
+                                function syncSalesForm() {
+                                    if (!isSalesEnabled()) return;
+                                    const orgSrc = document.getElementById('organization_name');
+                                    const orgDst = document.getElementById('sales_organization_name');
+                                    if (orgSrc && orgDst) orgDst.value = orgSrc.value || '';
+
+                                    const startSrc = document.getElementById('borrow_start_date');
+                                    const startDst = document.getElementById('sales_use_start');
+                                    if (startSrc && startDst) startDst.value = startSrc.value || '';
+
+                                    const endSrc = document.getElementById('borrow_end_date');
+                                    const endDst = document.getElementById('sales_use_end');
+                                    if (endSrc && endDst) endDst.value = endSrc.value || '';
+                                }
+
+                                function validateSalesForm() {
+                                    if (!isSalesEnabled()) return true;
+                                    const locationChecked = document.querySelector('input[name="sales_location"]:checked');
+                                    if (!locationChecked) {
+                                        alert('請選擇攤位地點。');
+                                        return false;
+                                    }
+                                    const count = document.getElementById('sales_count');
+                                    if (!count || !count.value || parseInt(count.value) < 1 || parseInt(count.value) > 20) {
+                                        alert('請輸入有效的攤位數量 (1-20)。');
+                                        return false;
+                                    }
+                                    return true;
+                                }
+                                // 👆 攤位驗證 Javascript 結束 👆
 
                                 function isFlagEnabled() {
                                     const checkedFlag = document.querySelector('input[name="setup_flags"]:checked');
@@ -2539,18 +2643,25 @@ const checkbox = document.querySelector('input[name="has_fire"]');
                                         });
                                     });
 
-                                    ['borrow_start_date', 'borrow_end_date', 'organization_name', 'activity_name', 'coordinator_phone', 'activity_coordinator', 'participant_count'].forEach(function (id) {
+['borrow_start_date', 'borrow_end_date', 'organization_name', 'activity_name', 'coordinator_phone', 'activity_coordinator', 'participant_count'].forEach(function (id) {
                                         const el = document.getElementById(id);
                                         if (el) {
                                             if (id === 'borrow_start_date' || id === 'participant_count') {
                                                 el.addEventListener('change', function() {
                                                     validateStartDate();
                                                     syncFlagForm();
+                                                    if(typeof syncSalesForm === 'function') syncSalesForm();
                                                 });
                                             } else {
-                                                el.addEventListener('change', syncFlagForm);
+                                                el.addEventListener('change', function() {
+                                                    syncFlagForm();
+                                                    if(typeof syncSalesForm === 'function') syncSalesForm();
+                                                });
                                             }
-                                            el.addEventListener('input', syncFlagForm);
+                                            el.addEventListener('input', function() {
+                                                syncFlagForm();
+                                                if(typeof syncSalesForm === 'function') syncSalesForm();
+                                            });
                                         }
                                     });
 
@@ -2565,6 +2676,9 @@ const checkbox = document.querySelector('input[name="has_fire"]');
                                                 if (name === 'has_fire' && typeof toggleFireDetails === 'function') {
                                                     toggleFireDetails();
                                                 }
+                                                if (name === 'has_sales' && typeof toggleSalesDetails === 'function') {
+                                                    toggleSalesDetails();
+                                                }
                                             });
                                         }
                                     });
@@ -2575,6 +2689,9 @@ const checkbox = document.querySelector('input[name="has_fire"]');
                                     }
                                     if (typeof toggleFireDetails === 'function') {
                                         toggleFireDetails();
+                                    }
+                                    if (typeof toggleSalesDetails === 'function') {
+                                        toggleSalesDetails();
                                     }
                                     // 👆 綁定結束 👆
 
@@ -2768,10 +2885,10 @@ const checkbox = document.querySelector('input[name="has_fire"]');
                                 <textarea id="purpose" name="purpose" rows="4" required><?php echo htmlspecialchars($formData['purpose'], ENT_QUOTES, 'UTF-8'); ?></textarea>
                             </div>
 
-                            <div class="step-actions">
-                                <button type="button" class="btn btn-secondary" onclick="goToStep(2)"> ⬅ 回上一步</button>
-                                <button type="submit" class="btn btn-primary btn-next" id="borrowSubmitBtn">確認借用</button>
-                            </div>
+                                <div class="step-actions">
+                                    <button type="button" class="btn btn-secondary" onclick="goToStep(1)"> ⬅ 回上一步</button>
+                                    <button type="button" class="btn btn-primary btn-next" onclick="if(validateAlcoholForm() && validateFireForm() && validateSalesForm()) { goToStep(3); }">下一步 ➔ 挑選器材與場地</button>
+                                </div>
 
                             <div class="draft-action-row">
                                 <button type="button" class="draft-btn save-btn saveDraftBtn">
@@ -3645,12 +3762,13 @@ const draft = data.draft || {};
                 }
                 // --- 在這裡加入我們說的強制觸發區塊 ---
     
-    // 強制 UI 更新，確保載入後的顯示正確
+// 強制 UI 更新，確保載入後的顯示正確
     setTimeout(() => {
         console.log('執行強制 UI 更新檢查...');
         if (typeof toggleAlcoholDetails === 'function') toggleAlcoholDetails();
         if (typeof toggleFireDetails === 'function') toggleFireDetails();
         if (typeof toggleFlagDetails === 'function') toggleFlagDetails();
+        if (typeof toggleSalesDetails === 'function') toggleSalesDetails();
     }, 500);
             } catch (error) {
                 console.error(error);
@@ -4580,8 +4698,11 @@ document.addEventListener('DOMContentLoaded', function () {
 if (typeof window.toggleAlcoholDetails === 'function') {
             window.toggleAlcoholDetails();
         }
-        if (typeof window.toggleFireDetails === 'function') {
+if (typeof window.toggleFireDetails === 'function') {
             window.toggleFireDetails();
+        }
+        if (typeof window.toggleSalesDetails === 'function') {
+            window.toggleSalesDetails();
         }
         if (typeof window.syncFlagForm === 'function') {
             window.syncFlagForm();

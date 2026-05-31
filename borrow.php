@@ -2274,47 +2274,97 @@ SQL;
                                     </div>
                                 </div>
                                 <!-- 👆 明火申請表 HTML 結束 👆 -->
-                                <div id="salesDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:8px;">
-                                    <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
-                                        一般臨時攤位申請
-                                    </div>
-                                    <div style="padding: 20px;">
-                                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start; margin-bottom:15px;">
-                                            <div>
-                                                <label>申請單位</label>
-                                                <input type="text" id="sales_organization_name" name="sales_organization_name" class="form-control" readonly style="background:#f8fafc;" value="<?php echo htmlspecialchars($formData['organization_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                            </div>
-                                            <div>
-                                                <label>日期</label>
-                                                <div style="display:flex; gap:8px; align-items:center;">
-                                                    <input type="date" id="sales_use_start" name="sales_use_start" class="form-control" readonly style="background:#f8fafc;" value="<?php echo htmlspecialchars($formData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                                    <span>至</span>
-                                                    <input type="date" id="sales_use_end" name="sales_use_end" class="form-control" readonly style="background:#f8fafc;" value="<?php echo htmlspecialchars($formData['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
-                                            <div class="form-group" style="flex: 2; min-width: 250px;">
-                                                <label>攤位地點 <span style="color:red">*</span></label>
-                                                <div style="display: flex; gap: 15px; margin-top: 8px; flex-wrap: wrap;">
-                                                    <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
-                                                        <input type="radio" name="sales_location" value="風華再現廣場 - 單側" style="margin: 0;" <?php echo (($formData['sales_location'] ?? '') === '風華再現廣場 - 單側') ? 'checked' : ''; ?>> 風華再現廣場 - 單側
-                                                    </label>
-                                                    <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
-                                                        <input type="radio" name="sales_location" value="風華再現廣場 - 雙側" style="margin: 0;" <?php echo (($formData['sales_location'] ?? '') === '風華再現廣場 - 雙側') ? 'checked' : ''; ?>> 風華再現廣場 - 雙側
-                                                    </label>
-                                                    <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
-                                                        <input type="radio" name="sales_location" value="真善美聖廣場" style="margin: 0;" <?php echo (($formData['sales_location'] ?? '') === '真善美聖廣場') ? 'checked' : ''; ?>> 真善美聖廣場
-                                                    </label>
-                                                </div>
-                                            </div>
-                                            <div class="form-group" style="flex: 1; min-width: 150px;">
-                                                <label for="sales_count">攤位數量 (至多20) <span style="color:red">*</span></label>
-                                                <input type="number" id="sales_count" name="sales_count" class="form-control" placeholder="請輸入數量" max="20" min="1" value="<?php echo htmlspecialchars($formData['sales_count'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" oninput="if(this.value>20)this.value=20;if(this.value<0)this.value=1;">
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+<div id="salesDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:8px;">
+    <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
+        一般臨時攤位申請
+    </div>
+    <div style="padding: 20px;">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start; margin-bottom:15px;">
+            <div class="form-group">
+                <label style="font-weight: bold; color: #333;">申請單位 (自動帶入)</label>
+                <input type="text" id="sales_organization_name" name="sales_organization_name" class="form-control" readonly style="background:#f8fafc;" value="<?php echo htmlspecialchars($formData['organization_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+            </div>
+            <div class="form-group">
+                <label style="font-weight: bold; color: #333;">日期 (自動帶入)</label>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <input type="date" id="sales_use_start" name="sales_use_start" class="form-control" readonly style="background:#f8fafc;" value="<?php echo htmlspecialchars($formData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                    <span>至</span>
+                    <input type="date" id="sales_use_end" name="sales_use_end" class="form-control" readonly style="background:#f8fafc;" value="<?php echo htmlspecialchars($formData['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                </div>
+            </div>
+        </div>
+        
+        <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
+            <div class="form-group" style="flex: 2; min-width: 250px;">
+                <label style="font-weight: bold; color: #333;">攤位地點 <span style="color:red">*</span></label>
+                <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 10px;">
+                    <label style="display: inline-flex; align-items: center; justify-content: flex-start; gap: 8px; font-weight: normal; cursor: pointer; margin: 0; width: fit-content; text-align: left;">
+                        <input type="radio" name="sales_location" value="風華再現廣場 - 單側" style="margin: 0;" <?php echo (($formData['sales_location'] ?? '') === '風華再現廣場 - 單側') ? 'checked' : ''; ?>> 
+                        <span>風華再現廣場 - 單側</span>
+                    </label>
+                    <label style="display: inline-flex; align-items: center; justify-content: flex-start; gap: 8px; font-weight: normal; cursor: pointer; margin: 0; width: fit-content; text-align: left;">
+                        <input type="radio" name="sales_location" value="風華再現廣場 - 雙側" style="margin: 0;" <?php echo (($formData['sales_location'] ?? '') === '風華再現廣場 - 雙側') ? 'checked' : ''; ?>> 
+                        <span>風華再現廣場 - 雙側</span>
+                    </label>
+                    <label style="display: inline-flex; align-items: center; justify-content: flex-start; gap: 8px; font-weight: normal; cursor: pointer; margin: 0; width: fit-content; text-align: left;">
+                        <input type="radio" name="sales_location" value="真善美聖廣場" style="margin: 0;" <?php echo (($formData['sales_location'] ?? '') === '真善美聖廣場') ? 'checked' : ''; ?>> 
+                        <span>真善美聖廣場</span>
+                    </label>
+                </div>
+            </div>
+            <div class="form-group" style="flex: 1; min-width: 150px;">
+                <label for="sales_count" style="font-weight: bold; color: #333;">攤位數量 (至多20) <span style="color:red">*</span></label>
+                <input type="number" id="sales_count" name="sales_count" class="form-control" placeholder="請輸入數量" max="20" min="1" value="<?php echo htmlspecialchars($formData['sales_count'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" oninput="if(this.value>20)this.value=20;if(this.value<0)this.value=1;">
+            </div>
+        </div>
+
+        <hr style="margin: 25px 0; border: 0; border-top: 1px solid #e2e8f0;">
+        
+        <div class="form-group" style="margin-bottom: 25px;">
+            <h4 style="margin: 0 0 10px 0; color: #1e40af; font-size: 16px; font-weight: bold;">上傳攤位圖冊</h4>
+            <p style="color: #64748b; font-size: 14px; margin-bottom: 10px;">請上傳您的攤位配置圖或相關圖冊 (接受 JPG, PNG 格式)。</p>
+            <input type="file" id="sales_layout_map" name="sales_layout_map" class="form-control" accept="image/png, image/jpeg, image/jpg" style="padding: 6px;">
+        </div>
+
+        <div class="sales-roster-wrapper" style="margin-bottom: 15px; padding: 20px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
+            <h4 style="margin: 0 0 10px 0; color: #1e40af; font-size: 16px; font-weight: bold;">攤位清冊</h4>
+            <p style="color: #64748b; font-size: 14px; margin-bottom: 15px;">請列出各攤位的負責人與販售內容。可點擊「＋新增攤位」增加列數。</p>
+            
+            <style>
+                #table_sales_roster { width: 100%; background: #fff; border-collapse: collapse; text-align: left; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border-radius: 8px; overflow: hidden; }
+                #table_sales_roster th { background-color: #f1f5f9; color: #1e293b; padding: 12px 15px; font-weight: bold; border: 1px solid #e2e8f0; text-align: left; white-space: nowrap; }
+                #table_sales_roster td { padding: 12px 15px; border: 1px solid #e2e8f0; vertical-align: middle; }
+                #table_sales_roster .form-control { width: 100%; box-sizing: border-box; padding: 10px 12px; font-size: 14px; border-radius: 6px; border: 1px solid #cbd5e1; background-color: #fff; transition: border-color 0.2s, box-shadow 0.2s; margin: 0; }
+                #table_sales_roster .form-control:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); outline: none; }
+            </style>
+            
+            <table id="table_sales_roster">
+                <thead>
+                    <tr>
+                        <th style="width: 15%;">攤位編號</th>
+                        <th style="width: 25%;">攤位名稱</th>
+                        <th style="width: 15%;">現場負責人</th>
+                        <th style="width: 20%;">聯絡電話</th>
+                        <th style="width: 25%;">內容</th>
+                        <th style="width: 80px; text-align: center;">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><input type="text" name="sales_booth_no[]" class="form-control" placeholder="例: A1"></td>
+                        <td><input type="text" name="sales_booth_name[]" class="form-control" placeholder="請輸入名稱"></td>
+                        <td><input type="text" name="sales_booth_manager[]" class="form-control" placeholder="姓名"></td>
+                        <td><input type="text" name="sales_booth_phone[]" class="form-control" placeholder="電話"></td>
+                        <td><input type="text" name="sales_booth_content[]" class="form-control" placeholder="販售內容..."></td>
+                        <td style="text-align: center;"><button type="button" class="btn-del-staff" onclick="removeSalesRow(this)" style="padding: 6px 12px;">刪除</button></td>
+                    </tr>
+                </tbody>
+            </table>
+            <button type="button" class="btn-add-staff" onclick="addSalesRow()" style="margin-top: 15px; padding: 8px 16px; font-size: 14px;">＋ 新增攤位</button>
+        </div>
+
+    </div>
+</div>
                                 <script>
                                 function addFireStaffRow(tableId, inputName) {
                                     const tbody = document.getElementById(tableId).querySelector('tbody');
@@ -2335,8 +2385,38 @@ SQL;
                                     }
                                     tr.remove();
                                 }
-                                </script>
+                                
 
+
+                                </script>
+<script>
+// 新增攤位清冊的列
+function addSalesRow() {
+    const tbody = document.getElementById('table_sales_roster').querySelector('tbody');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td><input type="text" name="sales_booth_no[]" class="form-control" placeholder="例: A1"></td>
+        <td><input type="text" name="sales_booth_name[]" class="form-control" placeholder="請輸入名稱"></td>
+        <td><input type="text" name="sales_booth_manager[]" class="form-control" placeholder="姓名"></td>
+        <td><input type="text" name="sales_booth_phone[]" class="form-control" placeholder="電話"></td>
+        <td><input type="text" name="sales_booth_content[]" class="form-control" placeholder="販售內容..."></td>
+        <td style="text-align: center;"><button type="button" class="btn-del-staff" onclick="removeSalesRow(this)" style="padding: 6px 12px;">刪除</button></td>
+    `;
+    tbody.appendChild(tr);
+}
+
+// 移除攤位清冊的列
+function removeSalesRow(btn) {
+    const tr = btn.closest('tr');
+    const tbody = tr.parentNode;
+    // 防呆：如果刪到剩最後一筆，只清空內容不刪除整列
+    if (tbody.querySelectorAll('tr').length <= 1) {
+        tr.querySelectorAll('input').forEach(input => input.value = '');
+        return;
+    }
+    tr.remove();
+}
+</script>
                                 <script>
                                 // 👇 這裡幫你把遺失的【酒精驗證 Javascript】補回來了 👇
                                 function toggleAllAlcoholAgreements(source) {

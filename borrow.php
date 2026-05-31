@@ -1695,9 +1695,111 @@ SQL;
                                     <span id="proposal_file_name_display" style="font-size: 14px; color: #1554b9; font-weight: 500;"></span>
                                 </div>
 
-                                <div class="form-group" style="margin-top: 10px;">
+<div class="form-group" style="margin-top: 10px;">
                                     <label for="organization_name">單位名稱 / 主辦社團 <span style="color:red">*</span></label>
-                                    <input type="text" id="organization_name" name="organization_name" class="" placeholder="請輸入主辦單位名稱" value="<?php echo htmlspecialchars($formData['organization_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
+                                    <div style="display: flex; gap: 10px;">
+                                        <select id="org_type_selector" class="form-control" style="flex: 1;" required>
+                                            <option value="">請選擇類型</option>
+                                            <option value="系所">系所</option>
+                                            <option value="社團">社團</option>
+                                        </select>
+                                        <select id="organization_name" name="organization_name" class="form-control" style="flex: 2;" required>
+                                            <option value="">請先選擇類型</option>
+                                        </select>
+                                    </div>
+                                    <script>
+                                    (function(){
+                                        const typeSel = document.getElementById('org_type_selector');
+                                        const nameSel = document.getElementById('organization_name');
+                                        
+                                        // 【選項放置區】等一下您可以把大量的選項直接填入這個物件對應的陣列中
+                                        const optionsData = {
+                                            "系所": [
+                                                "文學院", "中國文學系", "歷史學系", "哲學系",
+                                                "藝術學院", "音樂學系", "應用美術學系", "景觀設計學系", "藝術與文化創意學士學位學程",
+                                                "傳播學院", "影像傳播學系", "新聞傳播學系", "廣告傳播學系", "大眾傳播學研究所", "大眾傳播學士學位學程",
+                                                "教育學院", "體育學系", "圖書資訊學系", "教育領導與發展研究所", "師資培育中心", "教育領導與科技發展學士學位學程", "運動休閒管理學士學位學程",
+                                                "醫學院", "醫學系", "護理學系", "公共衛生學系", "臨床心理學系", "職能治療學系", "呼吸治療學系", "生物醫學暨藥學研究所", "跨專業長期照護碩士學位學程", "生技醫藥博士學位學程", "生物醫學海量資料分析碩士學位學程", "跨醫療思考服務設計微學分學程",
+                                                "理工學院", "數學系", "物理學系", "化學系", "生命科學系", "資訊工程學系", "電機工程學系", "醫學資訊與創新應用學士學位學程", "應用科學與工程研究所博士班", "軟體工程與數位創意學士學位學程", "醫學資訊與健康科技進修學士學位學程",
+                                                "外國語文學院", "英國語文學系", "德語語文學系", "法國語文學系", "西班牙語文學系", "日本語文學系", "義大利語文學系", "跨文化研究所",
+                                                "民生學院", "兒童與家庭學系、所", "餐旅管理學系、所", "食品科學系", "營養科學系", "食品營養博士學位學程",
+                                                "法律學院", "法律學系、所", "財經法律學系、所", "學士後法律學系",
+                                                "社會科學院", "社會學系、所", "社會工作學系、所", "經濟學系、所", "宗教學系、所", "心理學系、所", "天主教研修學士學位學程", "非營利組織管理碩士學位學程",
+                                                "管理學院", "企業管理學系", "會計學系", "統計資訊學系", "金融與國際企業學系", "資訊管理學系", "商學研究所", "科技管理碩士學位學程", "國際創業與經營管理碩士學位學程", "三邊雙聯國際創業與經營管理碩士學位學程", "國際經營管理碩士班", "社會企業碩士學位學程", "商業管理學士學位學程",
+                                                "織品服裝學院", "織品服裝學系", "博物館學研究所", "品牌與時尚經營管理碩士學位學程"
+                                            ],
+                                            "社團": [
+                                                "健言社", "大千社", "天文社", "中華醫藥研習社", "國際經濟商管學生會", "占星塔羅社", "信望愛社", "淨仁社", "學園團契社", "禪學社", "聖經研究社", "教育學程學會", "福智青年社", "性別研究社", "永續影響力大使社", "創新創業社", "租稅研究社", "光鹽社", "金融投資研究社",
+                                                "僑生聯誼會", "高中校友聯合總會", "轉學生聯誼會", "野營社", "魔術社", "棋藝社", "飲料調製社", "努瑪社", "國際菁英學生會", "桌上遊戲社", "電子競技社", "二輪社", "咖啡研究社", "韓國流行文化研究社",
+                                                "登山社", "國術社", "跆拳道社", "柔道社", "劍道社", "擊劍社", "羽球社", "桌球社", "網球社", "射箭社", "同心救生社", "空手道社", "黑輪社", "合氣道社", "歐洲劍術社", "撞球社", "Kali武術社", "自由潛水社", "跑步社", "袋棍球社",
+                                                "書法社", "攝影社", "熱舞社", "戲劇社", "國際標準舞蹈社", "廣播演藝社", "動漫電玩研習社", "影片創作社", "弓道社", "光火藝術社", "民俗體育社", "生活花藝設計社",
+                                                "國樂社", "管弦樂社", "民謠吉他社", "搖滾音樂研究社", "鋼琴社", "數位音樂創作研習社", "烏克麗麗社", "嘻哈文化社", "爵士鋼琴社",
+                                                "同舟共濟服務社", "醒新愛愛服務社", "急救康輔社", "崇德志工服務社", "基層文化服務社", "慈濟青年社", "繪本服務學習社", "勵德青少年服務社"
+                                            ]
+                                        };
+
+                                        // 負責根據類型渲染第二個下拉選單的函數
+                                        function renderOptions(type, forceValue = '') {
+                                            nameSel.innerHTML = '<option value="">' + (type ? '請選擇單位名稱' : '請先選擇類型') + '</option>';
+                                            if (optionsData[type]) {
+                                                optionsData[type].forEach(function(optText) {
+                                                    const opt = document.createElement('option');
+                                                    opt.value = optText;
+                                                    opt.textContent = optText;
+                                                    nameSel.appendChild(opt);
+                                                });
+                                            }
+                                            // 預防舊資料或是草稿紀錄的值不在選單內時，強制新增讓其可見
+                                            if (forceValue && (!optionsData[type] || !optionsData[type].includes(forceValue))) {
+                                                const opt = document.createElement('option');
+                                                opt.value = forceValue;
+                                                opt.textContent = forceValue;
+                                                nameSel.appendChild(opt);
+                                            }
+                                        }
+
+                                        // 第一層被選擇時的連動事件
+                                        typeSel.addEventListener('change', function(){
+                                            renderOptions(this.value);
+                                            nameSel.value = ''; 
+                                            // 手動觸發事件以連動原本的「旗幟表單」等其他JS程式
+                                            nameSel.dispatchEvent(new Event('change', { bubbles: true }));
+                                            nameSel.dispatchEvent(new Event('input', { bubbles: true }));
+                                        });
+
+                                        // 【核心相容處理】攔截 value 的設定操作，確保草稿一鍵載入功能依然可以完美運作，完全不需要動到草稿腳本
+                                        const originalDescriptor = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+                                        Object.defineProperty(nameSel, 'value', {
+                                            set: function(val) {
+                                                let foundType = '';
+                                                for (let t in optionsData) {
+                                                    if (optionsData[t].includes(val)) {
+                                                        foundType = t;
+                                                        break;
+                                                    }
+                                                }
+                                                if (foundType) {
+                                                    typeSel.value = foundType;
+                                                    renderOptions(foundType);
+                                                } else if (val) {
+                                                    renderOptions('', val);
+                                                }
+                                                originalDescriptor.set.call(this, val);
+                                                this.dispatchEvent(new Event('change', { bubbles: true }));
+                                                this.dispatchEvent(new Event('input', { bubbles: true }));
+                                            },
+                                            get: function() {
+                                                return originalDescriptor.get.call(this);
+                                            }
+                                        });
+
+                                        // 處理頁面刷新或PHP傳回的初始值
+                                        const initVal = "<?php echo htmlspecialchars($formData['organization_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>";
+                                        if (initVal) {
+                                            nameSel.value = initVal; // 觸發上方設定的 setter 自動歸類
+                                        }
+                                    })();
+                                    </script>
                                 </div>
                                 <div class="form-group">
                                     <label for="activity_name">活動名稱 <span style="color:red">*</span></label>

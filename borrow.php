@@ -1327,8 +1327,25 @@ SQL;
                                 $mail->addAddress($userEmail, $displayName);
                                 $mail->isHTML(true);
                                 $mail->Subject = '【系統通知】預約申請已成功送出';
-                                $mail->Body    = "您好，{$displayName}：<br><br>您的預約申請（單號：{$idsStr}）已經成功送出，目前狀態為<b>「審核中」</b>。<br><br>系統管理員將會儘速處理您的申請，審核結果出爐後會再次以 Email 通知您。<br><br>感謝您的使用！";
-                                $mail->AltBody = "您好，{$displayName}：\n\n您的預約申請（單號：{$idsStr}）已經成功送出，目前狀態為「審核中」。\n\n系統管理員將會儘速處理您的申請，審核結果出爐後會再次以 Email 通知您。\n\n感謝您的使用！";
+                                // 檢查是否有需繳費用（holiday_fee）
+                                $totalDue = 0;
+                                if (!empty($createdReservationIds)) {
+                                    $safeIds = array_map('intval', $createdReservationIds);
+                                    $idsList = implode(',', $safeIds);
+                                    $feeSql = "SELECT COALESCE(SUM(holiday_fee),0) AS total_due FROM reservations WHERE reservation_id IN ({$idsList})";
+                                    $feeRes = mysqli_query($link, $feeSql);
+                                    if ($feeRes) {
+                                        $frow = mysqli_fetch_assoc($feeRes);
+                                        $totalDue = isset($frow['total_due']) ? (int)$frow['total_due'] : 0;
+                                    }
+                                }
+                                if ($totalDue > 0) {
+                                    $mail->Body    = "您好，{$displayName}：<br><br>您的預約申請（單號：{$idsStr}）已經成功送出，目前狀態為<b>「審核中」</b>。<br><br>※ 本次申請需繳費：<b>新台幣 {$totalDue} 元</b>（例假日場地費或其他系統記錄之額外費用）。<br><br>系統管理員將會儘速處理您的申請，審核結果出爐後會再次以 Email 通知您。<br><br>感謝您的使用！";
+                                    $mail->AltBody = "您好，{$displayName}：\n\n您的預約申請（單號：{$idsStr}）已經成功送出，目前狀態為「審核中」。\n\n※ 本次申請需繳費：新台幣 {$totalDue} 元（例假日場地費或其他系統記錄之額外費用）。\n\n系統管理員將會儘速處理您的申請，審核結果出爐後會再次以 Email 通知您。\n\n感謝您的使用！";
+                                } else {
+                                    $mail->Body    = "您好，{$displayName}：<br><br>您的預約申請（單號：{$idsStr}）已經成功送出，目前狀態為<b>「審核中」</b>。<br><br>系統管理員將會儘速處理您的申請，審核結果出爐後會再次以 Email 通知您。<br><br>感謝您的使用！";
+                                    $mail->AltBody = "您好，{$displayName}：\n\n您的預約申請（單號：{$idsStr}）已經成功送出，目前狀態為「審核中」。\n\n系統管理員將會儘速處理您的申請，審核結果出爐後會再次以 Email 通知您。\n\n感謝您的使用！";
+                                }
                                 $mail->send();
                                 @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " 預約成功信件已寄送至: " . $userEmail . "\n", FILE_APPEND | LOCK_EX);
                             } catch (Exception $e) {

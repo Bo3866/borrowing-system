@@ -434,6 +434,68 @@ if ($dbError === '') {
                     }
                 mysqli_commit($link);
                 $borrowSuccess = '申請已更新。';
+
+                // 重新計算並更新例假日費用（若資料表有相關欄位）
+                try {
+                    $HOLIDAY_RATE = 200;
+                    $feeCount = 0;
+                    $feeAmount = 0;
+                    $fetchStmt = mysqli_prepare($link, 'SELECT borrow_start_at, borrow_end_at FROM reservations WHERE reservation_id = ? LIMIT 1');
+                    if ($fetchStmt) {
+                        mysqli_stmt_bind_param($fetchStmt, 'i', $reservationId);
+                        mysqli_stmt_execute($fetchStmt);
+                        $fres = mysqli_stmt_get_result($fetchStmt);
+                        $frow = $fres ? mysqli_fetch_assoc($fres) : null;
+                        mysqli_stmt_close($fetchStmt);
+                        if ($frow && !empty($frow['borrow_start_at']) && !empty($frow['borrow_end_at'])) {
+                            $start = date('Y-m-d', strtotime($frow['borrow_start_at']));
+                            $end = date('Y-m-d', strtotime($frow['borrow_end_at']));
+                            $startDate = DateTime::createFromFormat('Y-m-d', $start);
+                            $endDate = DateTime::createFromFormat('Y-m-d', $end);
+                            if ($startDate && $endDate && $startDate <= $endDate) {
+                                $holidayDates = [];
+                                $holTableRes = mysqli_query($link, "SHOW TABLES LIKE 'holidays'");
+                                if ($holTableRes && mysqli_num_rows($holTableRes) > 0) {
+                                    $safeStart = mysqli_real_escape_string($link, $startDate->format('Y-m-d'));
+                                    $safeEnd = mysqli_real_escape_string($link, $endDate->format('Y-m-d'));
+                                    $holRes = mysqli_query($link, "SELECT `date` FROM `holidays` WHERE `date` BETWEEN '{$safeStart}' AND '{$safeEnd}'");
+                                    if ($holRes) {
+                                        while ($h = mysqli_fetch_assoc($holRes)) { $holidayDates[] = $h['date']; }
+                                    }
+                                }
+                                $d = clone $startDate;
+                                while ($d <= $endDate) {
+                                    $ymd = $d->format('Y-m-d');
+                                    $weekday = (int)$d->format('w');
+                                    $isHoliday = in_array($ymd, $holidayDates, true);
+                                    if (empty($holidayDates) && ($weekday === 0 || $weekday === 6)) $isHoliday = true;
+                                    if ($isHoliday) $feeCount++;
+                                    $d->modify('+1 day');
+                                }
+                                $feeAmount = $feeCount * $HOLIDAY_RATE;
+                            }
+                        }
+                    }
+                    if (in_array('holiday_fee', $availableCols, true) || in_array('holiday_fee_count', $availableCols, true)) {
+                        $updCols = [];
+                        $types = '';
+                        $vals = [];
+                        if (in_array('holiday_fee_count', $availableCols, true)) { $updCols[] = 'holiday_fee_count = ?'; $types .= 'i'; $vals[] = $feeCount; }
+                        if (in_array('holiday_fee', $availableCols, true)) { $updCols[] = 'holiday_fee = ?'; $types .= 'i'; $vals[] = $feeAmount; }
+                        if (!empty($updCols)) {
+                            $vals[] = $reservationId; $types .= 'i';
+                            $updSql = 'UPDATE reservations SET ' . implode(', ', $updCols) . ' WHERE reservation_id = ?';
+                            $updStmt = mysqli_prepare($link, $updSql);
+                            if ($updStmt) {
+                                mysqli_stmt_bind_param($updStmt, $types, ...$vals);
+                                mysqli_stmt_execute($updStmt);
+                                mysqli_stmt_close($updStmt);
+                            }
+                        }
+                    }
+                } catch (Throwable $e) {
+                    @error_log('Holiday fee update failed for reservation ' . $reservationId . ': ' . $e->getMessage());
+                }
             } catch (Throwable $e) {
                 mysqli_rollback($link);
                 $borrowError = '更新失敗：' . $e->getMessage();

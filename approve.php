@@ -703,98 +703,86 @@ function fetchReservationDetails(mysqli $link, int $reservationId): array
                     <?php if (count($pending) === 0) { ?>
                         <p>目前沒有待審核的申請。</p>
                     <?php } else { ?>
-                        <?php foreach ($pending as $idx => $p) { ?>
-                            <div class="card admin-application-card" style="margin-bottom:1rem;">
-                                <div style="display:flex;justify-content:space-between;align-items:center;">
-                                    <div>
-                                        <strong>申請編號：</strong><?php echo implode(', ', $p['reservation_ids']); ?>
-                                        &nbsp; <strong>申請人：</strong><?php echo htmlspecialchars($p['full_name'], ENT_QUOTES, 'UTF-8'); ?> (<?php echo htmlspecialchars($p['applicant_user_id'], ENT_QUOTES, 'UTF-8'); ?>)
-                                        &nbsp; <?php $firstRid = count($p['reservation_ids'])>0 ? $p['reservation_ids'][0] : ''; ?>
-                                    </div>
-                                    <div><small>送出時間：<?php echo htmlspecialchars($p['submitted_at'], ENT_QUOTES, 'UTF-8'); ?></small></div>
-                                </div>
+                        <style>
+                            .approve-table { width:100%; border-collapse:collapse; font-family:Segoe UI,Helvetica,Arial,sans-serif; }
+                            .approve-table th, .approve-table td { padding:10px 12px; border-bottom:1px solid #eef2f7; vertical-align:middle; }
+                            .approve-table thead th { background:#f9fafb; color:#334155; font-weight:600; text-align:left; }
+                            .approve-table tbody tr:nth-child(even) { background:#fbfdfe; }
+                            .approve-actions { display:flex; flex-direction:column; gap:8px; align-items:center; }
+                            .approve-actions form { width:100%; display:flex; flex-direction:column; gap:8px; align-items:center; }
+                            .approve-actions select, .approve-actions textarea { width:180px; }
+                            .approve-actions .small-btn { width:100%; padding:6px 8px; border-radius:6px; border:none; cursor:pointer; }
+                            .approve-actions .approve-btn { background:#4f46e5; color:#fff; }
+                            .approve-actions .revise-btn { background:#f59e0b; color:#000; }
+                            .approve-actions .reject-btn { background:#e2e8f0; color:#000; }
+                            .detail-box { background:#0ea5e9; color:#fff; padding:8px 12px; border-radius:8px; font-weight:600; border:none; cursor:pointer; box-shadow:0 2px 6px rgba(14,165,233,0.18); }
+                            .detail-box:hover { opacity:0.95; }
+                            .detail-link { display:inline-block; background:#0ea5e9; color:#fff; padding:6px 10px; border-radius:8px; font-weight:700; text-decoration:none; }
+                            .detail-link:hover { opacity:0.95; }
+                        </style>
 
-                                <!-- 在申請編號與審核表單之間插入同頁展開按鈕 -->
-                                <div style="text-align:center;margin:0.5rem 0;">
-                                    <a class="btn-primary" href="approve_detail.php?reservation_id=<?php echo htmlspecialchars($firstRid, ENT_QUOTES, 'UTF-8'); ?>">申請詳細資料</a>
-                                </div>
-
-                                <form method="post" class="action-form">
-                                    <input type="hidden" name="reservation_ids" value="<?php echo implode(',', $p['reservation_ids']); ?>">
-                                    <div class="action-comment">
-                                        <label>審核備註（可選）：</label>
-                                        <div style="display:flex;gap:0.5rem;align-items:flex-start;">
-                                            <select id="canned_message" class="canned-select" style="min-width:220px;padding:0.4rem;border-radius:4px;border:1px solid #ccc;background:#fff;">
-                                                <option value="">— 退回原因 —</option>
-                                                <option value="活動用途不明">活動用途不明</option>
-                                                <option value="活動企劃書資訊不足">活動企劃書資訊不足</option>
-                                            </select>
-                                            <textarea name="comment" rows="2" class="comment-textarea" id="comment_textarea"></textarea>
-                                        </div>
-                                    </div>
-                                    <div class="action-buttons">
-                                        <button type="submit" name="action" value="approve" class="btn-primary" onclick="return confirm('確認要核准此批申請？')">核准</button>
-                                        <button type="submit" name="action" value="request_revision" class="btn-warning" onclick="return confirm('確認要退回要求補件？\n(可於左側選填要求補件的審核備註)')">要求補件</button>
-                                        <button type="submit" name="action" value="reject" class="btn-secondary" onclick="return confirm('確認要拒絕此批申請？')">拒絕</button>
-                                    </div>
-                                </form>
-                                <!-- old external detail link removed; using in-page toggle above -->
-                                <?php if (!empty($p['details'])) { ?>
-                                    <div id="details-panel-<?php echo $idx; ?>" class="detail-panel" style="display:none;margin-top:0.5rem;">
-                                        <strong>申請內容：</strong>
-                                        <?php foreach ($p['details'] as $rid => $det) { ?>
-                                            <div style="border:1px solid #eee;padding:0.5rem;margin-top:0.5rem;">
-                                                <div><strong>申請編號：</strong><?php echo htmlspecialchars($rid, ENT_QUOTES, 'UTF-8'); ?></div>
-                                                <table style="width:100%;border-collapse:collapse;margin-top:0.5rem;">
-                                                    <?php
-                                                    $order = [
-                                                        'organization_name','activity_name','participant_count','staff_count','club_president',
-                                                        'activity_coordinator','coordinator_department','coordinator_phone','coordinator_other_contact',
-                                                        'vehicle_entry','setup_flags','purpose','borrow_start_at','borrow_end_at','space_id',
-                                                        'flag_count','flag_organization_name','flag_activity_name','flag_responsible_person','flag_contact_phone',
-                                                        'proposal_file','proposal_uploaded_at','revision_data_json','rejection_reason'
-                                                    ];
-                                                    foreach ($order as $k) {
-                                                        if (!array_key_exists($k, $det)) continue;
-                                                        $v = $det[$k];
-                                                        $label = ucwords(str_replace('_', ' ', $k));
-                                                        if ($k === 'proposal_file' && !empty($v)) {
-                                                            $basename = basename((string)$v);
-                                                            $display = '<a href="' . htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8') . '" target="_blank" rel="noopener">' . htmlspecialchars($basename, ENT_QUOTES, 'UTF-8') . '</a>';
-                                                        } elseif ($k === 'revision_data_json' && !empty($v)) {
-                                                            $decoded = json_decode((string)$v, true);
-                                                            if (is_array($decoded)) {
-                                                                $display = '<pre style="white-space:pre-wrap;margin:0;">' . htmlspecialchars(json_encode($decoded, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT), ENT_QUOTES, 'UTF-8') . '</pre>';
-                                                            } else {
-                                                                $display = nl2br(htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'));
-                                                            }
-                                                        } else {
-                                                            $display = $v === null ? '<em>無</em>' : nl2br(htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'));
-                                                        }
-                                                    ?>
-                                                        <tr>
-                                                            <td style="vertical-align:top;padding:0.25rem 0.5rem;width:30%;background:#fafafa;border:1px solid #f0f0f0;"><strong><?php echo htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?></strong></td>
-                                                            <td style="vertical-align:top;padding:0.25rem 0.5rem;border:1px solid #f0f0f0;"><?php echo $display; ?></td>
-                                                        </tr>
-                                                    <?php } // end order loop ?>
-                                                    <?php // render any additional keys not in order
-                                                    foreach ($det as $k => $v) {
-                                                        if (in_array($k, $order, true)) continue;
-                                                        $label = ucwords(str_replace('_', ' ', $k));
-                                                        $display = $v === null ? '<em>無</em>' : nl2br(htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'));
-                                                    ?>
-                                                        <tr>
-                                                            <td style="vertical-align:top;padding:0.25rem 0.5rem;width:30%;background:#fafafa;border:1px solid #f0f0f0;"><strong><?php echo htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?></strong></td>
-                                                            <td style="vertical-align:top;padding:0.25rem 0.5rem;border:1px solid #f0f0f0;"><?php echo $display; ?></td>
-                                                        </tr>
-                                                    <?php } ?>
-                                                </table>
+                        <div class="borrow-table-wrapper overflow-x-auto">
+                            <table class="approve-table return-management-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width:60px;text-align:center">進度</th>
+                                        <th>申請人</th>
+                                        <th>借用時段</th>
+                                        <th>借用項目</th>
+                                        <th>申請詳情</th>
+                                        <th style="width:220px;text-align:center">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($pending as $p) {
+                                        $firstRid = count($p['reservation_ids'])>0 ? (int)$p['reservation_ids'][0] : 0;
+                                        $resourceParts = [];
+                                        if (!empty($p['items'])) {
+                                            $names = [];
+                                            foreach ($p['items'] as $it) {
+                                                $names[] = $it['item_name'] ?? $it['item_code'] ?? '';
+                                            }
+                                            if (!empty($names)) $resourceParts[] = '器材: ' . implode(', ', array_unique($names));
+                                        }
+                                        $resourceText = count($resourceParts) > 0 ? implode(' | ', $resourceParts) : '-';
+                                    ?>
+                                    <tr id="row-<?php echo $firstRid; ?>" data-id="<?php echo $firstRid; ?>">
+                                        <td style="text-align:center;">▶</td>
+                                        <td>
+                                            <div style="font-weight:600;color:#0f172a"><?php echo htmlspecialchars($p['full_name'] . ' (' . $p['applicant_user_id'] . ')', ENT_QUOTES, 'UTF-8'); ?></div>
+                                            <div style="color:#64748b;font-size:12px"><?php echo htmlspecialchars((string)($p['email'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></div>
+                                        </td>
+                                        <td style="font-size:13px;color:#0f172a;">
+                                            <?php echo htmlspecialchars((string)($p['borrow_start_at'] ?? ''), ENT_QUOTES, 'UTF-8'); ?><br>
+                                            ～ <?php echo htmlspecialchars((string)($p['borrow_end_at'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>
+                                        </td>
+                                        <td style="font-size:13px;color:#0f172a;max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><?php echo htmlspecialchars($resourceText, ENT_QUOTES, 'UTF-8'); ?></td>
+                                        <td style="font-size:13px;">
+                                            <?php $detailUrl = 'approve_detail.php?reservation_id=' . urlencode((string)$firstRid); ?>
+                                            <a class="detail-link" href="<?php echo htmlspecialchars($detailUrl, ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener">查看申請詳情</a>
+                                            <div style="font-size:12px;color:#64748b;margin-top:6px;"></div>
+                                        </td>
+                                        <td style="text-align:center;vertical-align:middle;">
+                                            <div class="approve-actions">
+                                                <form method="post" onclick="event.stopPropagation();">
+                                                    <input type="hidden" name="reservation_ids" value="<?php echo htmlspecialchars(implode(',', $p['reservation_ids']), ENT_QUOTES, 'UTF-8'); ?>">
+                                                    <select name="canned_message">
+                                                        <option value="">— 退回原因 —</option>
+                                                        <option value="活動用途不明">活動用途不明</option>
+                                                        <option value="活動企劃書資訊不足">活動企劃書資訊不足</option>
+                                                    </select>
+                                                    <textarea name="comment" rows="2" placeholder="審核備註（可選）"></textarea>
+                                                    <button type="submit" name="action" value="approve" class="small-btn approve-btn" onclick="return confirm('確認要核准此批申請？')">核准</button>
+                                                    <button type="submit" name="action" value="request_revision" class="small-btn revise-btn" onclick="return confirm('確認要要求補件？')">要求補件</button>
+                                                    <button type="submit" name="action" value="reject" class="small-btn reject-btn" onclick="return confirm('確認要拒絕？')">拒絕</button>
+                                                </form>
                                             </div>
-                                        <?php } ?>
-                                    </div>
-                                <?php } ?>
-                            </div>
-                        <?php } ?>
+                                        </td>
+                                    </tr>
+                                    <?php } ?>
+                                </tbody>
+                            </table>
+                        </div>
                     <?php } ?>
 
                 <?php } ?>
@@ -851,4 +839,10 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 });
+</script>
+<script>
+function openDetail(id) {
+    if (!id) return;
+    window.location.href = 'approve_detail.php?reservation_id=' + encodeURIComponent(id);
+}
 </script>

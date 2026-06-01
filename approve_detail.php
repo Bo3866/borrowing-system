@@ -300,6 +300,64 @@ if ($spStmt) {
                 } // end if has_fire
                 ?>
 
+                <?php
+                // 顯示販售/攤販相關欄位（僅在 reservations.has_sales === '1' 時顯示）
+                $hasSalesCol = in_array('has_sales', $cols, true) ? 'has_sales' : null;
+                if ($hasSalesCol && ((string)($row[$hasSalesCol] ?? '') === '1')) {
+                    $salesLocation = trim((string)($row['sales_location'] ?? ''));
+                    $salesCount = trim((string)($row['sales_count'] ?? ''));
+                    $salesLayoutMap = trim((string)($row['sales_layout_map'] ?? ''));
+                    $salesRosterJson = trim((string)($row['sales_roster_json'] ?? ''));
+
+                    // 嘗試解析 sales_roster_json 為陣列
+                    $salesRoster = [];
+                    if ($salesRosterJson !== '') {
+                        $decodedRoster = json_decode($salesRosterJson, true);
+                        if (is_array($decodedRoster)) {
+                            // 如果是關聯陣列且含 key 'roster'，優先取它
+                            if (isset($decodedRoster['roster']) && is_array($decodedRoster['roster'])) {
+                                $salesRoster = $decodedRoster['roster'];
+                            } else {
+                                // 否則若為平面陣列，直接使用
+                                $salesRoster = $decodedRoster;
+                            }
+                        }
+                    }
+
+                ?>
+                <div>
+                    <label>攤位位置</label>
+                    <input type="text" value="<?php echo safe_html($salesLocation, ENT_QUOTES, 'UTF-8'); ?>" disabled>
+                </div>
+                <div>
+                    <label>攤位數量</label>
+                    <input type="text" value="<?php echo safe_html($salesCount, ENT_QUOTES, 'UTF-8'); ?>" disabled>
+                </div>
+                <div style="grid-column:1/3;">
+                    <label>攤位配置圖</label>
+                    <?php if ($salesLayoutMap !== '') { ?>
+                        <div><a href="<?php echo safe_html($salesLayoutMap, ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener" class="btn-primary" style="display:inline-block;padding:0.4rem 0.8rem;border-radius:6px;color:#fff;text-decoration:none;background:#3b82f6;">開啟攤位配置圖</a></div>
+                    <?php } else { ?>
+                        <div><em>未提供攤位配置圖</em></div>
+                    <?php } ?>
+                </div>
+
+                <?php if (!empty($salesRoster)) { ?>
+                    <div style="grid-column:1/3;margin-top:0.5rem;padding:0.5rem;border-radius:6px;background:#fafbfd;border:1px solid #eef6ff;">
+                        <label class="meta-label">攤位人員名冊</label>
+                        <?php foreach ($salesRoster as $p) { ?>
+                            <div style="margin:6px 0;"><input type="text" value="<?php echo safe_html((string)$p, ENT_QUOTES, 'UTF-8'); ?>" disabled style="width:40%;"></div>
+                        <?php } ?>
+                    </div>
+                <?php } else { ?>
+                    <div style="grid-column:1/3;margin-top:0.5rem;padding:0.5rem;border-radius:6px;background:#fafbfd;border:1px solid #eef6ff;">
+                        <label class="meta-label">攤位人員名冊</label>
+                        <div><em>未提供名冊</em></div>
+                    </div>
+                <?php }
+                } // end if has_sales === '1'
+                ?>
+
                 <div>
                     <label>承辦單位 / 科別</label>
                     <input type="text" value="<?php echo safe_html($row['coordinator_department'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" disabled>

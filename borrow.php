@@ -224,7 +224,7 @@ $formData = [
     'has_fire' => '',
     'has_sales' => '',
     'setup_flags' => 'no',
-    'flag_count' => 1,
+    'flag_count' => null,
     'flag_agreement' => '',
     'resource_type' => 'equipment',
     'equipment_code' => '',
@@ -266,7 +266,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['has_fire'] = isset($_POST['has_fire']) ? '1' : '';
     $formData['has_sales'] = isset($_POST['has_sales']) ? '1' : '';
     $formData['setup_flags'] = trim((string)($_POST['setup_flags'] ?? 'no'));
-    $formData['flag_count'] = (int)($_POST['flag_count'] ?? 1);
+    $formData['flag_count'] = ($formData['setup_flags'] === 'yes' && isset($_POST['flag_count']) && $_POST['flag_count'] !== '')
+        ? (int)$_POST['flag_count']
+        : null;
     // Flag-specific fields (sync/backfill from step1 when not provided)
     $formData['flag_organization_name'] = trim((string)($_POST['flag_organization_name'] ?? $formData['organization_name']));
     $formData['flag_activity_name'] = trim((string)($_POST['flag_activity_name'] ?? $formData['activity_name']));
@@ -653,7 +655,7 @@ CREATE TABLE IF NOT EXISTS reservations (
     coordinator_other_contact VARCHAR(255) NULL,
     vehicle_entry VARCHAR(10) NULL DEFAULT 'no',
     setup_flags VARCHAR(10) NULL DEFAULT 'no',
-    flag_count INT NULL DEFAULT 0,
+    flag_count INT NULL DEFAULT NULL,
     purpose VARCHAR(255) NULL,
     approval_stage VARCHAR(10) NULL DEFAULT 'a',
     has_alcohol VARCHAR(1) NULL DEFAULT '',
@@ -815,7 +817,7 @@ SQL;
                     'coordinator_other_contact' => "VARCHAR(255) NULL COMMENT '其他聯絡方式'",
                     'vehicle_entry' => "VARCHAR(10) NULL DEFAULT 'no' COMMENT '是否車輛入校'",
                     'setup_flags' => "VARCHAR(10) NULL DEFAULT 'no' COMMENT '是否插旗'",
-                    'flag_count' => "INT NULL DEFAULT 0 COMMENT '旗幟數量'",
+                    'flag_count' => "INT NULL DEFAULT NULL COMMENT '旗幟數量'",
                     'purpose' => "VARCHAR(255) NULL COMMENT '用途'",
                     'submitted_at' => "DATETIME NULL COMMENT '送出時間'",
                     'approval_stage' => "VARCHAR(10) NULL DEFAULT 'a' COMMENT '審核階段'",
@@ -905,7 +907,7 @@ SQL;
                     'coordinator_other_contact' => ['type' => 's', 'value' => $formData['coordinator_other_contact']],
                     'vehicle_entry' => ['type' => 's', 'value' => $formData['vehicle_entry']],
                     'setup_flags' => ['type' => 's', 'value' => $formData['setup_flags']],
-                    'flag_count' => ['type' => 'i', 'value' => (int)$formData['flag_count']],
+                    'flag_count' => ['type' => 's', 'value' => $formData['setup_flags'] === 'yes' && $formData['flag_count'] !== null ? (string)(int)$formData['flag_count'] : null],
                     'purpose' => ['type' => 's', 'value' => $formData['purpose']],
                     'submitted_at' => ['type' => 's', 'value' => $submittedAtVal],
                     'approval_stage' => ['type' => 's', 'value' => 'a'],
@@ -2027,7 +2029,7 @@ SQL;
                                             <label>宣傳旗幟 <span style="color:red">*</span></label>
                                             <div style="display:flex; align-items:center; gap:8px;">
                                                 <span>共</span>
-                                                <input type="number" name="flag_count" id="flag_count" class="form-control" min="1" max="20" step="1" style="width:100px;height:38px;" placeholder="最多20" value="<?php echo htmlspecialchars((string)($formData['flag_count'] ?? '1'), ENT_QUOTES, 'UTF-8'); ?>">
+                                                <input type="number" name="flag_count" id="flag_count" class="form-control" min="1" max="20" step="1" style="width:100px;height:38px;" placeholder="最多20" value="<?php echo htmlspecialchars(($formData['setup_flags'] === 'yes' ? (string)($formData['flag_count'] ?? 1) : ''), ENT_QUOTES, 'UTF-8'); ?>">
                                                 <span>支</span>
                                             </div>
                                         </div>
@@ -2601,6 +2603,10 @@ function validateFireForm() {
                                     });
 
                                     if (show) {
+                                        const flagCount = document.getElementById('flag_count');
+                                        if (flagCount && flagCount.value === '') {
+                                            flagCount.value = '1';
+                                        }
                                         syncFlagForm();
                                         validateStartDate();
                                     }

@@ -74,7 +74,7 @@ $formData = [
     'club_president' => '', 'activity_coordinator' => '', 'coordinator_department' => '',
     'coordinator_phone' => '', 'coordinator_other_contact' => '', 'vehicle_entry' => 'no',
     'has_alcohol' => '', 'has_fire' => '', 'has_sales' => '', 'setup_flags' => 'no',
-    'flag_count' => 1, 'flag_agreement' => '', 'resource_type' => 'both', 'equipment_code' => '',
+    'flag_count' => null, 'flag_agreement' => '', 'resource_type' => 'both', 'equipment_code' => '',
     'space_id' => '', 'borrow_start_date' => '', 'borrow_start_time' => '',
     'borrow_end_date' => '', 'borrow_end_time' => '', 'purpose' => '', 'phone' => '',
     'draft_proposal_file' => '', 'draft_proposal_original_name' => '', 'draft_proposal_uploaded_at' => '', 'alcohol_coordinator' => '',
@@ -249,7 +249,9 @@ if ($dbError === '') {
         foreach (['organization_name','activity_name','participant_count','staff_count','club_president','activity_coordinator','coordinator_department','coordinator_phone','coordinator_other_contact','vehicle_entry','setup_flags','purpose','alcohol_coordinator','alcohol_president'] as $k) {
             $formData[$k] = trim((string)($_POST[$k] ?? $formData[$k] ?? ''));
         }
-        $formData['flag_count'] = (int)($_POST['flag_count'] ?? 1);
+        $formData['flag_count'] = ($formData['setup_flags'] === 'yes' && isset($_POST['flag_count']) && $_POST['flag_count'] !== '')
+            ? (int)$_POST['flag_count']
+            : null;
         $formData['has_alcohol'] = isset($_POST['has_alcohol']) ? '1' : '';
         $formData['has_fire'] = isset($_POST['has_fire']) ? '1' : '';
         $formData['has_sales'] = isset($_POST['has_sales']) ? '1' : '';
@@ -330,7 +332,7 @@ if ($dbError === '') {
                     'coordinator_other_contact' => $formData['coordinator_other_contact'],
                     'vehicle_entry' => $formData['vehicle_entry'],
                     'setup_flags' => $formData['setup_flags'],
-                    'flag_count' => (int)$formData['flag_count'],
+                    'flag_count' => $formData['setup_flags'] === 'yes' && $formData['flag_count'] !== null ? (int)$formData['flag_count'] : null,
                     'purpose' => $formData['purpose'],
                     'has_alcohol' => $formData['has_alcohol'],
                     'has_fire' => $formData['has_fire'],
@@ -430,8 +432,6 @@ if ($dbError === '') {
                         mysqli_stmt_close($updateCursorStmt);
                         }
                     }
-                }
-
                 mysqli_commit($link);
                 $borrowSuccess = '申請已更新。';
             } catch (Throwable $e) {
@@ -1070,7 +1070,7 @@ $initialCartItemsJson = json_encode($currentCartItems, JSON_UNESCAPED_UNICODE);
                                             <label>宣傳旗幟 <span style="color:red">*</span></label>
                                             <div style="display:flex; align-items:center; gap:8px;">
                                                 <span>共</span>
-                                                <input type="number" name="flag_count" id="flag_count" class="form-control" min="1" max="20" step="1" style="width:100px;height:38px;" placeholder="最多20" value="<?php echo htmlspecialchars((string)($formData['flag_count'] ?? '1'), ENT_QUOTES, 'UTF-8'); ?>">
+                                                <input type="number" name="flag_count" id="flag_count" class="form-control" min="1" max="20" step="1" style="width:100px;height:38px;" placeholder="最多20" value="<?php echo htmlspecialchars(($formData['setup_flags'] === 'yes' ? (string)($formData['flag_count'] ?? 1) : ''), ENT_QUOTES, 'UTF-8'); ?>">
                                                 <span>支</span>
                                             </div>
                                         </div>
@@ -1481,6 +1481,10 @@ const checkbox = document.querySelector('input[name="has_fire"]');
                                     });
 
                                     if (show) {
+                                        const flagCount = document.getElementById('flag_count');
+                                        if (flagCount && flagCount.value === '') {
+                                            flagCount.value = '1';
+                                        }
                                         syncFlagForm();
                                         validateStartDate();
                                     }

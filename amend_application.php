@@ -186,7 +186,7 @@ if ($dbError === '') {
                 
                 // 補齊路旗相關 POST 處理
                 'setup_flags'               => trim((string)($_POST['setup_flags'] ?? 'no')),
-                'flag_count'                => (int)($_POST['flag_count'] ?? 0),
+                'flag_count'                => trim((string)($_POST['flag_count'] ?? '')),
                 'flag_details'              => trim((string)($_POST['flag_details'] ?? '')),
                 'flag_applicant_unit'       => trim((string)($_POST['flag_applicant_unit'] ?? '')),
                 'flag_manager'              => trim((string)($_POST['flag_manager'] ?? '')),
@@ -264,6 +264,9 @@ if ($dbError === '') {
                     foreach ($updatedFields as $key => $value) {
                         // 確保該欄位確實在資料庫中才做更新，防止結構衝突
                         if (in_array($key, $availableCols, true)) {
+                            if ($key === 'flag_count') {
+                                $value = ($updatedFields['setup_flags'] ?? 'no') === 'yes' && $value !== '' ? (int)$value : null;
+                            }
                             $updateFields[] = "{$key} = ?";
                             $updateValues[] = $value;
                             $updateTypes .= is_int($value) ? 'i' : 's';

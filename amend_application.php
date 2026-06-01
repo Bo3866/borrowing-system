@@ -383,6 +383,21 @@ if ($dbError === '') {
         }
     }
 }
+
+// 頁面用的假日清單（JS 端會用到，若存在 holidays 資料表則輸出）
+$pageHolidayDates = [];
+if ($dbError === '') {
+    $holTableRes = mysqli_query($link, "SHOW TABLES LIKE 'holidays'");
+    if ($holTableRes && mysqli_num_rows($holTableRes) > 0) {
+        $hres = mysqli_query($link, "SELECT `date` FROM `holidays` ORDER BY `date` ASC");
+        if ($hres) {
+            while ($hrow = mysqli_fetch_assoc($hres)) {
+                $pageHolidayDates[] = $hrow['date'];
+            }
+            mysqli_free_result($hres);
+        }
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -560,6 +575,13 @@ if ($dbError === '') {
                                 </div>
                             </div>
 
+                            <div class="form-group" style="margin-top:10px;">
+                                <label>例假日加收</label>
+                                <div id="holiday-fee-display" style="padding:8px; background:#fff; border:1px solid #e6e6e6; border-radius:6px;">例假日收場地費 200 元/次。已選 0 天，費用：0 元</div>
+                                <input type="hidden" name="holiday_fee_count" id="holiday_fee_count" value="<?php echo isset($revisionData['holiday_fee_count'])?(int)$revisionData['holiday_fee_count']:0; ?>">
+                                <input type="hidden" name="holiday_fee" id="holiday_fee" value="<?php echo isset($revisionData['holiday_fee'])?(int)$revisionData['holiday_fee']:0; ?>">
+                            </div>
+
                             <?php if (!empty($revisionData['space_items'])): ?>
                                 <div class="form-group" style="margin-top: 15px;">
                                     <label>預約空間</label>
@@ -611,6 +633,66 @@ if ($dbError === '') {
         }
         document.addEventListener('DOMContentLoaded', function(){
             toggleFlagDetailsAmend();
+        });
+    </script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function(){
+            function countHolidayDaysJS(startStr, endStr) {
+                if (!startStr || !endStr) return 0;
+                const s = new Date(startStr);
+                const e = new Date(endStr);
+                if (isNaN(s.getTime()) || isNaN(e.getTime()) || s > e) return 0;
+                const holidays = (window.__PAGE_HOLIDAYS__ || []);
+                let cnt = 0;
+                for (let d = new Date(s.getFullYear(), s.getMonth(), s.getDate()); d <= e; d.setDate(d.getDate()+1)) {
+                    const y = d.getFullYear();
+                    const m = String(d.getMonth()+1).padStart(2,'0');
+                    const day = String(d.getDate()).padStart(2,'0');
+                    const key = `${y}-${m}-${day}`;
+                    if (holidays.length > 0) {
+                        if (holidays.indexOf(key) !== -1) cnt++;
+                    } else {
+                        const wd = d.getDay(); if (wd === 0 || wd === 6) cnt++;
+                    }
+                }
+                return cnt;
+            }
+
+            function getStartDate() {
+                const d1 = document.getElementById('borrow_start_date');
+                if (d1 && d1.value) return d1.value;
+                const dt = document.getElementById('borrow_start_at');
+                if (dt && dt.value) return dt.value.substring(0,10);
+                return '';
+            }
+            function getEndDate() {
+                const d1 = document.getElementById('borrow_end_date');
+                if (d1 && d1.value) return d1.value;
+                const dt = document.getElementById('borrow_end_at');
+                if (dt && dt.value) return dt.value.substring(0,10);
+                return '';
+            }
+
+            function updateHolidayFeeDisplay() {
+                const start = getStartDate();
+                const end = getEndDate();
+                const cnt = countHolidayDaysJS(start, end);
+                const fee = cnt * 200;
+                const disp = document.getElementById('holiday-fee-display');
+                if (disp) disp.textContent = `例假日收場地費 200 元/次。已選 ${cnt} 天，費用：${fee} 元`;
+                const hfCnt = document.getElementById('holiday_fee_count');
+                const hf = document.getElementById('holiday_fee');
+                if (hfCnt) hfCnt.value = cnt;
+                if (hf) hf.value = fee;
+            }
+
+            try { window.__PAGE_HOLIDAYS__ = <?php echo json_encode($pageHolidayDates, JSON_HEX_TAG); ?> || []; } catch(e){ window.__PAGE_HOLIDAYS__ = []; }
+
+            document.getElementById('borrow_start_at')?.addEventListener('change', updateHolidayFeeDisplay);
+            document.getElementById('borrow_end_at')?.addEventListener('change', updateHolidayFeeDisplay);
+            document.getElementById('borrow_start_date')?.addEventListener('change', updateHolidayFeeDisplay);
+            document.getElementById('borrow_end_date')?.addEventListener('change', updateHolidayFeeDisplay);
+            updateHolidayFeeDisplay();
         });
     </script>
 </body>

@@ -2077,22 +2077,20 @@ SQL;
                                             </label>
                                         </div>
 
-                                        <div style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 20px; align-items: center; background: #f8fafc; padding: 20px; border-radius: 6px; border: 1px solid #e2e8f0;">
-                                            <div style="display: flex; align-items: center; gap: 8px;">
+                                       <div style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 20px; align-items: center; background: #f8fafc; padding: 20px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                                            <!-- <div style="display: flex; align-items: center; gap: 8px;">
                                                 <label for="alcohol_coordinator" style="margin: 0; font-size: 15px; font-weight: bold; white-space: nowrap;">活動負責人</label>
                                                 <input type="text" id="alcohol_coordinator" name="alcohol_coordinator" placeholder="姓名" value="<?php echo htmlspecialchars($formData['alcohol_coordinator'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" style="width: 150px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
-                                            </div>
-                                            <div style="display: flex; align-items: center; gap: 8px;">
+                                            </div> -->
+                                            <!-- <div style="display: flex; align-items: center; gap: 8px;">
                                                 <label for="alcohol_president" style="margin: 0; font-size: 15px; font-weight: bold; white-space: nowrap;">社長</label>
                                                 <input type="text" id="alcohol_president" name="alcohol_president" placeholder="姓名" value="<?php echo htmlspecialchars($formData['alcohol_president'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" style="width: 150px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
-                                            </div>
-                                            <span style="font-size: 15px; color: #1e293b; font-weight: bold;">已知悉以上事項，願負一切責任。</span>
+                                            </div> -->
+                                            <span style="font-size: 15px; color: #1e293b; font-weight: bold;">(一) 活動負責人與社長已知悉以上事項，願負一切責任。</span>
+                                            <span style="font-size: 15px; color: #1e293b; font-weight: bold;">(二) 活動時所有接觸酒精飲品與會者請親自簽署《酒精飲品活動理性飲酒同意書》，請於活動結束翌日(遇例假日順延)送課指組備查。</span>
+
                                         </div>
-                                        
-                                        <p style="color: #000; font-size: 15px; font-weight: bold; margin-bottom: 0; text-align: center;">
-                                            活動時所有接觸酒精飲品與會者請親自簽署《酒精飲品活動理性飲酒同意書》，請於活動結束翌日(遇例假日順延)送課指組備查。
-                                        </p>
-                                    </div>
+
                                 </div>
                                 <!-- 👆 酒精申請表 HTML 結束 👆 -->
 
@@ -2322,13 +2320,13 @@ SQL;
         
         <div class="form-group" style="margin-bottom: 25px;">
             <h4 style="margin: 0 0 10px 0; color: #1e40af; font-size: 16px; font-weight: bold;">上傳攤位圖冊</h4>
-            <p style="color: #64748b; font-size: 14px; margin-bottom: 10px;">請上傳您的攤位配置圖或相關圖冊 (接受 JPG, PNG 格式)。</p>
+            <p style="color: #64748b; font-size: 14px; margin-bottom: 10px;">請上傳您的攤位配置圖 (接受 JPG, PNG 格式)。</p>
             <input type="file" id="sales_layout_map" name="sales_layout_map" class="form-control" accept="image/png, image/jpeg, image/jpg" style="padding: 6px;">
         </div>
 
         <div class="sales-roster-wrapper" style="margin-bottom: 15px; padding: 20px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
             <h4 style="margin: 0 0 10px 0; color: #1e40af; font-size: 16px; font-weight: bold;">攤位清冊</h4>
-            <p style="color: #64748b; font-size: 14px; margin-bottom: 15px;">請列出各攤位的負責人與販售內容。可點擊「＋新增攤位」增加列數。</p>
+            <p style="color: #64748b; font-size: 14px; margin-bottom: 15px;">請列出各攤位名冊。可點擊「＋新增攤位」增加列數。</p>
             
             <style>
                 #table_sales_roster { width: 100%; background: #fff; border-collapse: collapse; text-align: left; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border-radius: 8px; overflow: hidden; }
@@ -2351,8 +2349,8 @@ SQL;
                 </thead>
                 <tbody>
                     <tr>
-                        <td><input type="text" name="sales_booth_no[]" class="form-control" placeholder="例: A1"></td>
-                        <td><input type="text" name="sales_booth_name[]" class="form-control" placeholder="請輸入名稱"></td>
+                        <td><input type="text" name="sales_booth_no[]" class="form-control" placeholder="數字"></td>
+                        <td><input type="text" name="sales_booth_name[]" class="form-control" placeholder="名稱"></td>
                         <td><input type="text" name="sales_booth_manager[]" class="form-control" placeholder="姓名"></td>
                         <td><input type="text" name="sales_booth_phone[]" class="form-control" placeholder="電話"></td>
                         <td><input type="text" name="sales_booth_content[]" class="form-control" placeholder="販售內容..."></td>
@@ -5520,5 +5518,4 @@ document.addEventListener('DOMContentLoaded', function () {
 
 </body>
 </html>
-
 

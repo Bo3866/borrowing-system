@@ -207,6 +207,18 @@ if ($dbError === '') {
 
 $reservationApplicantColumn = 'user_id';
 
+// 讀取 holidays 表供前端顯示（若存在）
+$pageHolidayDates = [];
+$holTableResPage = mysqli_query($link, "SHOW TABLES LIKE 'holidays'");
+if ($holTableResPage && mysqli_num_rows($holTableResPage) > 0) {
+    $holResPage = mysqli_query($link, "SELECT `date` FROM `holidays` ORDER BY `date` ASC");
+    if ($holResPage) {
+        while ($hrow = mysqli_fetch_assoc($holResPage)) {
+            $pageHolidayDates[] = $hrow['date'];
+        }
+    }
+}
+
 $borrowError = '';
 $borrowSuccess = '';
 $formData = [
@@ -891,6 +903,46 @@ SQL;
                 
                 $submittedAtVal = date('Y-m-d H:i:s'); // 保證同一批次提交時間一致
 
+                // 計算例假日天數與費用（伺服器端）
+                $holiday_fee_count = 0;
+                $holiday_fee = 0;
+                $HOLIDAY_RATE = 200;
+                $startDateStr = $formData['borrow_start_date'] ?? '';
+                $endDateStr = $formData['borrow_end_date'] ?? '';
+                if ($startDateStr !== '' && $endDateStr !== '') {
+                    $startDate = DateTime::createFromFormat('Y-m-d', $startDateStr);
+                    $endDate = DateTime::createFromFormat('Y-m-d', $endDateStr);
+                    if ($startDate && $endDate && $startDate <= $endDate) {
+                        // 讀取 holidays 表（若存在）
+                        $holidayDates = [];
+                        $holTableRes = mysqli_query($link, "SHOW TABLES LIKE 'holidays'");
+                        if ($holTableRes && mysqli_num_rows($holTableRes) > 0) {
+                            $safeStart = mysqli_real_escape_string($link, $startDate->format('Y-m-d'));
+                            $safeEnd = mysqli_real_escape_string($link, $endDate->format('Y-m-d'));
+                            $holRes = mysqli_query($link, "SELECT `date` FROM `holidays` WHERE `date` BETWEEN '{$safeStart}' AND '{$safeEnd}'");
+                            if ($holRes) {
+                                while ($hrow = mysqli_fetch_assoc($holRes)) {
+                                    $holidayDates[] = $hrow['date'];
+                                }
+                            }
+                        }
+
+                        // 若沒有 holidays table，將週末視為假日（fallback）
+                        $d = clone $startDate;
+                        while ($d <= $endDate) {
+                            $ymd = $d->format('Y-m-d');
+                            $weekday = (int)$d->format('w'); // 0 = Sunday, 6 = Saturday
+                            $isHoliday = in_array($ymd, $holidayDates, true);
+                            if (empty($holidayDates) && ($weekday === 0 || $weekday === 6)) {
+                                $isHoliday = true;
+                            }
+                            if ($isHoliday) $holiday_fee_count++;
+                            $d->modify('+1 day');
+                        }
+                        $holiday_fee = $holiday_fee_count * $HOLIDAY_RATE;
+                    }
+                }
+
                 $insertCols = [$applicantColumn, 'borrow_start_at', 'borrow_end_at'];
                 $bindValuesTemplate = [$userId, $borrowStartAtSql, $borrowEndAtSql];
                 $bindTypesTemplate = 'sss';
@@ -932,6 +984,10 @@ SQL;
                     'fire_staff_json' => ['type' => 's', 'value' => $formData['fire_staff_json']],
                     'sales_location' => ['type' => 's', 'value' => $formData['sales_location'] !== '' ? $formData['sales_location'] : null],
                     'sales_count' => ['type' => 'i', 'value' => $formData['sales_count'] !== '' ? (int)$formData['sales_count'] : null]
+                    ,
+                    // 假日費用欄位（若存在資料表則會自動加入）
+                    'holiday_fee_count' => ['type' => 'i', 'value' => $holiday_fee_count],
+                    'holiday_fee' => ['type' => 'i', 'value' => $holiday_fee]
                 ];
 
                 foreach ($optionalReservationValues as $columnName => $config) {
@@ -1939,6 +1995,12 @@ SQL;
                                         </select>
                                         <span>分</span>
                                     </div>
+                                    <div class="form-group" style="margin-top:10px;">
+                                        <label>例假日加收</label>
+                                        <div id="holiday-fee-display" style="padding:8px; background:#fff; border:1px solid #e6e6e6; border-radius:6px;">例假日收場地費 200 元/次。已選 0 天，費用：0 元</div>
+                                        <input type="hidden" name="holiday_fee_count" id="holiday_fee_count" value="<?php echo isset($holiday_fee_count)?(int)$holiday_fee_count:((int)($formData['holiday_fee_count'] ?? 0)); ?>">
+                                        <input type="hidden" name="holiday_fee" id="holiday_fee" value="<?php echo isset($holiday_fee)?(int)$holiday_fee:((int)($formData['holiday_fee'] ?? 0)); ?>">
+                                    </div>
                                 </div>
 
                                 <div class="step-actions">
@@ -2719,6 +2781,54 @@ function validateFireForm() {
                                             syncFlagForm();
                                         });
                                     });
+
+                                    // 假日費用顯示同步
+                                    function countHolidayDaysJS(startStr, endStr) {
+                                        if (!startStr || !endStr) return 0;
+                                        const s = new Date(startStr);
+                                        const e = new Date(endStr);
+                                        if (isNaN(s.getTime()) || isNaN(e.getTime()) || s > e) return 0;
+                                        // holidays from server (YYYY-MM-DD strings)
+                                        const holidays = (window.__PAGE_HOLIDAYS__ || []);
+                                        let cnt = 0;
+                                        for (let d = new Date(s.getFullYear(), s.getMonth(), s.getDate()); d <= e; d.setDate(d.getDate()+1)) {
+                                            const y = d.getFullYear();
+                                            const m = String(d.getMonth()+1).padStart(2,'0');
+                                            const day = String(d.getDate()).padStart(2,'0');
+                                            const key = `${y}-${m}-${day}`;
+                                            if (holidays.length > 0) {
+                                                if (holidays.indexOf(key) !== -1) cnt++;
+                                            } else {
+                                                // fallback: treat weekends as holidays
+                                                const wd = d.getDay();
+                                                if (wd === 0 || wd === 6) cnt++;
+                                            }
+                                        }
+                                        return cnt;
+                                    }
+
+                                    function updateHolidayFeeDisplay() {
+                                        const start = document.getElementById('borrow_start_date')?.value || '';
+                                        const end = document.getElementById('borrow_end_date')?.value || '';
+                                        const cnt = countHolidayDaysJS(start, end);
+                                        const fee = cnt * 200;
+                                        const disp = document.getElementById('holiday-fee-display');
+                                        if (disp) disp.textContent = `例假日收場地費 200 元/次。已選 ${cnt} 天，費用：${fee} 元`;
+                                        const hfCnt = document.getElementById('holiday_fee_count');
+                                        const hf = document.getElementById('holiday_fee');
+                                        if (hfCnt) hfCnt.value = cnt;
+                                        if (hf) hf.value = fee;
+                                    }
+
+                                    // expose server holidays to JS
+                                    try {
+                                        window.__PAGE_HOLIDAYS__ = <?php echo json_encode($pageHolidayDates, JSON_HEX_TAG); ?> || [];
+                                    } catch(e) { window.__PAGE_HOLIDAYS__ = []; }
+
+                                    document.getElementById('borrow_start_date')?.addEventListener('change', updateHolidayFeeDisplay);
+                                    document.getElementById('borrow_end_date')?.addEventListener('change', updateHolidayFeeDisplay);
+                                    // 首次載入顯示
+                                    updateHolidayFeeDisplay();
 
 ['borrow_start_date', 'borrow_end_date', 'organization_name', 'activity_name', 'coordinator_phone', 'activity_coordinator', 'participant_count'].forEach(function (id) {
                                         const el = document.getElementById(id);

@@ -33,6 +33,17 @@ function pickExistingColumn(array $columns, array $candidates): ?string
     return null;
 }
 
+function reservationSelectExpr(array $columns, string $columnName, ?string $alias = null): string
+{
+    $alias = $alias ?? $columnName;
+
+    if (in_array($columnName, $columns, true)) {
+        return 'r.`' . $columnName . '` AS `' . $alias . '`';
+    }
+
+    return 'NULL AS `' . $alias . '`';
+}
+
 $actionMsg = '';
 $rows = [];
 
@@ -265,6 +276,62 @@ if ($dbError === '') {
     }
 
     if ($dbError === '') {
+        $selectExpressions = [
+            'r.reservation_id',
+            'r.`' . $applicantColumn . '` AS applicant_user_id',
+            'u.full_name',
+            'u.email',
+            'r.`' . $borrowStartColumn . '` AS borrow_start_at',
+            'r.`' . $borrowEndColumn . '` AS borrow_end_at',
+            'r.approval_status',
+            'r.approval_stage',
+            'r.rejection_reason',
+            'r.revision_deadline',
+            'r.submitted_at',
+            'r.updated_at',
+            '(r.returned_at IS NOT NULL) AS return_confirmed',
+            'r.returned_at AS return_confirmed_at',
+            'r.checked_in_at AS checked_in_at',
+            '(r.checked_in_at IS NOT NULL) AS checked_in',
+            reservationSelectExpr($reservationColumns, 'organization_name'),
+            reservationSelectExpr($reservationColumns, 'activity_name'),
+            reservationSelectExpr($reservationColumns, 'participant_count'),
+            reservationSelectExpr($reservationColumns, 'staff_count'),
+            reservationSelectExpr($reservationColumns, 'club_president'),
+            reservationSelectExpr($reservationColumns, 'activity_coordinator'),
+            reservationSelectExpr($reservationColumns, 'coordinator_department'),
+            reservationSelectExpr($reservationColumns, 'coordinator_phone'),
+            reservationSelectExpr($reservationColumns, 'coordinator_other_contact'),
+            reservationSelectExpr($reservationColumns, 'vehicle_entry'),
+            reservationSelectExpr($reservationColumns, 'setup_flags'),
+            reservationSelectExpr($reservationColumns, 'flag_count'),
+            reservationSelectExpr($reservationColumns, 'purpose'),
+            reservationSelectExpr($reservationColumns, 'proposal_file'),
+            reservationSelectExpr($reservationColumns, 'proposal_original_name'),
+            reservationSelectExpr($reservationColumns, 'proposal_uploaded_at'),
+            reservationSelectExpr($reservationColumns, 'has_alcohol'),
+            reservationSelectExpr($reservationColumns, 'has_fire'),
+            reservationSelectExpr($reservationColumns, 'has_sales'),
+            reservationSelectExpr($reservationColumns, 'alcohol_coordinator'),
+            reservationSelectExpr($reservationColumns, 'alcohol_president'),
+            reservationSelectExpr($reservationColumns, 'fire_activity_name'),
+            reservationSelectExpr($reservationColumns, 'fire_date'),
+            reservationSelectExpr($reservationColumns, 'fire_start_time'),
+            reservationSelectExpr($reservationColumns, 'fire_end_time'),
+            reservationSelectExpr($reservationColumns, 'fire_location'),
+            reservationSelectExpr($reservationColumns, 'fire_performers'),
+            reservationSelectExpr($reservationColumns, 'fire_oilers'),
+            reservationSelectExpr($reservationColumns, 'fire_extinguishers'),
+            reservationSelectExpr($reservationColumns, 'fire_security'),
+            reservationSelectExpr($reservationColumns, 'fire_emergency'),
+            reservationSelectExpr($reservationColumns, 'fire_medical'),
+            reservationSelectExpr($reservationColumns, 'fire_staff_json'),
+            reservationSelectExpr($reservationColumns, 'sales_location'),
+            reservationSelectExpr($reservationColumns, 'sales_count'),
+            reservationSelectExpr($reservationColumns, 'holiday_fee_count'),
+            reservationSelectExpr($reservationColumns, 'holiday_fee'),
+        ];
+
         $listWhere = "r.approval_status IN ('pending', 'approved', 'rejected', 'need_revision', 'revision_overdue')";
         $safeUserId = mysqli_real_escape_string($link, $currentUserId);
         $listWhere .= " AND r.`{$applicantColumn}` = '{$safeUserId}'";
@@ -274,32 +341,14 @@ if ($dbError === '') {
 
         $listSql = "
             SELECT
-                r.reservation_id,
-                r.`{$applicantColumn}` AS applicant_user_id,
-                u.full_name,
-                u.email,
-                r.`{$borrowStartColumn}` AS borrow_start_at,
-                r.`{$borrowEndColumn}` AS borrow_end_at,
-                r.approval_status,
-                r.approval_stage,
-                r.rejection_reason,
-                r.revision_deadline,
-                r.submitted_at,
-                r.updated_at,
-                (r.returned_at IS NOT NULL) AS return_confirmed,
-                r.returned_at AS return_confirmed_at,
-                r.checked_in_at AS checked_in_at,
-                (r.checked_in_at IS NOT NULL) AS checked_in,
-                r.coordinator_phone,
-                r.organization_name,
-                r.activity_name,
+                " . implode(",\n                ", $selectExpressions) . ",
                 (
-                    SELECT GROUP_CONCAT(DISTINCT ec.equipment_code ORDER BY ec.equipment_code SEPARATOR ', ')
+                    SELECT GROUP_CONCAT(DISTINCT ec.equipment_name ORDER BY ec.equipment_name SEPARATOR ', ')
                     FROM equipment_reservation_items eri
                     JOIN equipments e ON e.equipment_id = eri.equipment_id
                     JOIN equipment_categories ec ON ec.equipment_code = e.equipment_code
                     WHERE eri.reservation_id = r.reservation_id
-                ) AS equipment_codes,
+                ) AS equipment_names,
                 (
                     SELECT GROUP_CONCAT(DISTINCT sri.space_id ORDER BY sri.space_id SEPARATOR ', ')
                     FROM space_reservation_items sri
@@ -335,6 +384,47 @@ if ($dbError === '' && count($rows) > 0) {
         $rows[$idx]['_stage_times'] = [];
         $rows[$idx]['_stage_results'] = [];
         $rows[$idx]['_stage_comments'] = [];
+        $rows[$idx]['_detail_payload'] = [
+            'borrow_start_at' => (string)($r['borrow_start_at'] ?? ''),
+            'borrow_end_at' => (string)($r['borrow_end_at'] ?? ''),
+            'organization_name' => (string)($r['organization_name'] ?? ''),
+            'activity_name' => (string)($r['activity_name'] ?? ''),
+            'participant_count' => (string)($r['participant_count'] ?? ''),
+            'staff_count' => (string)($r['staff_count'] ?? ''),
+            'club_president' => (string)($r['club_president'] ?? ''),
+            'activity_coordinator' => (string)($r['activity_coordinator'] ?? ''),
+            'coordinator_department' => (string)($r['coordinator_department'] ?? ''),
+            'coordinator_phone' => (string)($r['coordinator_phone'] ?? ''),
+            'coordinator_other_contact' => (string)($r['coordinator_other_contact'] ?? ''),
+            'vehicle_entry' => (string)($r['vehicle_entry'] ?? ''),
+            'setup_flags' => (string)($r['setup_flags'] ?? ''),
+            'flag_count' => (string)($r['flag_count'] ?? ''),
+            'purpose' => (string)($r['purpose'] ?? ''),
+            'proposal_file' => (string)($r['proposal_file'] ?? ''),
+            'proposal_original_name' => (string)($r['proposal_original_name'] ?? ''),
+            'proposal_uploaded_at' => (string)($r['proposal_uploaded_at'] ?? ''),
+            'has_alcohol' => (string)($r['has_alcohol'] ?? ''),
+            'has_fire' => (string)($r['has_fire'] ?? ''),
+            'has_sales' => (string)($r['has_sales'] ?? ''),
+            'alcohol_coordinator' => (string)($r['alcohol_coordinator'] ?? ''),
+            'alcohol_president' => (string)($r['alcohol_president'] ?? ''),
+            'fire_activity_name' => (string)($r['fire_activity_name'] ?? ''),
+            'fire_date' => (string)($r['fire_date'] ?? ''),
+            'fire_start_time' => (string)($r['fire_start_time'] ?? ''),
+            'fire_end_time' => (string)($r['fire_end_time'] ?? ''),
+            'fire_location' => (string)($r['fire_location'] ?? ''),
+            'fire_performers' => (string)($r['fire_performers'] ?? ''),
+            'fire_oilers' => (string)($r['fire_oilers'] ?? ''),
+            'fire_extinguishers' => (string)($r['fire_extinguishers'] ?? ''),
+            'fire_security' => (string)($r['fire_security'] ?? ''),
+            'fire_emergency' => (string)($r['fire_emergency'] ?? ''),
+            'fire_medical' => (string)($r['fire_medical'] ?? ''),
+            'fire_staff_json' => (string)($r['fire_staff_json'] ?? ''),
+            'sales_location' => (string)($r['sales_location'] ?? ''),
+            'sales_count' => (string)($r['sales_count'] ?? ''),
+            'holiday_fee_count' => (string)($r['holiday_fee_count'] ?? ''),
+            'holiday_fee' => (string)($r['holiday_fee'] ?? ''),
+        ];
 
         $logStmt = mysqli_prepare($link, 'SELECT al.reviewed_at, al.review_result, al.review_comment, u.role_name FROM approval_logs al JOIN users u ON u.user_id = al.reviewer_id WHERE al.reservation_id = ? ORDER BY al.reviewed_at ASC');
         if ($logStmt) {
@@ -632,11 +722,11 @@ if ($dbError === '' && count($rows) > 0) {
                                     <?php foreach ($rows as $row) { ?>
                                         <?php
                                             $resourceParts = [];
-                                            if (!empty($row['equipment_codes'])) {
-                                                $resourceParts[] = '器材: ' . $row['equipment_codes'];
+                                            if (!empty($row['equipment_names'])) {
+                                                $resourceParts[] = '器材: ' . $row['equipment_names'];
                                             }
-                                            if (!empty($row['space_ids'])) {
-                                                $resourceParts[] = '空間: ' . $row['space_ids'];
+                                            if (!empty($row['space_names'])) {
+                                                $resourceParts[] = '空間: ' . $row['space_names'];
                                             }
                                             $resourceText = count($resourceParts) > 0 ? implode(' | ', $resourceParts) : '-';
 
@@ -676,7 +766,8 @@ if ($dbError === '' && count($rows) > 0) {
                                             data-coordinator-phone="<?php echo htmlspecialchars((string)($row['coordinator_phone'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
                                             data-organization-name="<?php echo htmlspecialchars((string)($row['organization_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
                                             data-activity-name="<?php echo htmlspecialchars((string)($row['activity_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
-                                            data-stage="<?php echo htmlspecialchars((string)($row['approval_stage'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
+                                            data-stage="<?php echo htmlspecialchars((string)($row['approval_stage'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-application="<?php echo htmlspecialchars(json_encode($row['_detail_payload'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), ENT_QUOTES, 'UTF-8'); ?>">
                                             
                                             <td class="left-trigger-zone text-center text-indigo-600 font-bold transition" 
                                                 style="cursor: pointer; text-align: center;"
@@ -949,15 +1040,7 @@ if ($dbError === '' && count($rows) > 0) {
                             <span class="text-xs bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-mono" id="drawer-borrower-id">-</span>
                         </p>
                         <p class="text-xs text-slate-500 font-mono mt-0.5" id="drawer-borrower-email">-</p>
-                        <div class="mt-2">
-                            <p class="text-xs text-slate-400 mb-1">單位名稱 / 主辦社團</p>
-                            <p class="text-sm text-slate-800 font-medium mb-3" id="drawer-organization-name">-</p>
-
-                            <p class="text-xs text-slate-400 mb-1">活動名稱</p>
-                            <p class="text-sm text-slate-800 font-medium mb-3" id="drawer-activity-name">-</p>
-
-                            <p class="text-xs text-slate-500 font-mono mt-1"><span class="text-slate-400">聯絡電話：</span> <span id="drawer-borrower-phone">-</span></p>
-                        </div>
+                        <p class="text-xs text-slate-500 font-mono mt-1"><span class="text-slate-400">聯絡電話：</span> <span id="drawer-borrower-phone">-</span></p>
                     </div>
                 </div>
             </div>
@@ -969,29 +1052,14 @@ if ($dbError === '' && count($rows) > 0) {
                 </div>
             </div>
 
-            <!-- 申請時填寫資料區塊已移除 -->
-
             <div class="space-y-3">
-                <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">借用時序追蹤</h4>
-                <div class="relative pl-6 border-l border-slate-200 space-y-4 text-xs">
-                    <div class="relative">
-                        <div class="absolute -left-[30px] top-0.5 w-4 h-4 rounded-full bg-slate-100 border-2 border-slate-400 flex items-center justify-center text-[8px] text-slate-500"><i class="fa-solid fa-paper-plane"></i></div>
-                        <p class="font-medium text-slate-700">申請送出時間</p>
-                        <p class="text-slate-500 mt-0.5" id="drawer-submitted-time">-</p>
-                    </div>
-                    <!-- 目前不顯示審核階段資訊 -->
-                    <div class="relative">
-                        <div class="absolute -left-[30px] top-0.5 w-4 h-4 rounded-full bg-emerald-50 border-2 border-emerald-500 flex items-center justify-center text-[8px] text-emerald-600"><i class="fa-solid fa-play"></i></div>
-                        <p class="font-medium text-slate-700">借用起算時段</p>
-                        <p class="text-slate-500 mt-0.5" id="drawer-start-time">-</p>
-                    </div>
-                    <div class="relative">
-                        <div class="absolute -left-[30px] top-0.5 w-4 h-4 rounded-full bg-rose-50 border-2 border-rose-500 flex items-center justify-center text-[8px] text-rose-600"><i class="fa-solid fa-flag"></i></div>
-                        <p class="font-medium text-slate-700">預計歸還截止</p>
-                        <p class="text-slate-500 mt-0.5" id="drawer-end-time">-</p>
-                    </div>
+                <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">申請表單資料</h4>
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-4" id="drawer-application-details">
+                    <p class="text-slate-400 text-xs text-center py-2">-</p>
                 </div>
             </div>
+
+            <!-- 申請時填寫資料區塊已移除 -->
 
             <div class="grid grid-cols-2 gap-4">
                 <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
@@ -1134,11 +1202,195 @@ if ($dbError === '' && count($rows) > 0) {
                 default: return stage;
             }
         }
+
+        function formatDetailValue(value) {
+            if (value === null || value === undefined) return '-';
+            const text = String(value).trim();
+            return text === '' ? '-' : text;
+        }
+
+        function formatYesNo(value) {
+            if (value === '1' || value === 1 || value === true) return '是';
+            if (value === '0' || value === 0 || value === false) return '否';
+            const text = String(value || '').trim();
+            if (text === '' || text === '-') return '-';
+            if (text === 'yes') return '是';
+            if (text === 'no') return '否';
+            return text;
+        }
+
+        function formatTimeRange(startTime, endTime) {
+            const start = formatDetailValue(startTime);
+            const end = formatDetailValue(endTime);
+            if (start === '-' && end === '-') return '-';
+            if (start === '-') return end;
+            if (end === '-') return start;
+            return start + ' ～ ' + end;
+        }
+
+        function parseFireStaff(staffJson, fallbackFields) {
+            if (staffJson) {
+                try {
+                    const parsed = JSON.parse(staffJson);
+                    if (parsed && typeof parsed === 'object') {
+                        return parsed;
+                    }
+                } catch (e) {
+                    // ignore and use the flat columns below
+                }
+            }
+
+            return {
+                fire_performers: fallbackFields.fire_performers || '',
+                fire_oilers: fallbackFields.fire_oilers || '',
+                fire_extinguishers: fallbackFields.fire_extinguishers || '',
+                fire_security: fallbackFields.fire_security || '',
+                fire_emergency: fallbackFields.fire_emergency || '',
+                fire_medical: fallbackFields.fire_medical || '',
+            };
+        }
+
+        function buildDetailItem(label, value, extraClass = '') {
+            return `
+                <div class="rounded-xl border border-slate-200 bg-white p-3 ${extraClass}">
+                    <p class="text-[11px] font-semibold text-slate-400 mb-1">${escapeHtml(label)}</p>
+                    <p class="text-sm font-medium text-slate-800 whitespace-pre-wrap break-words">${escapeHtml(value)}</p>
+                </div>
+            `;
+        }
+
+        function buildToggleSection(title, enabled, summaryText, detailHtml) {
+            const statusLabel = enabled ? '有' : '無';
+            if (!enabled) {
+                return `
+                    <div class="rounded-xl border border-slate-200 bg-white p-3">
+                        <div class="flex items-center justify-between gap-3">
+                            <p class="text-[11px] font-semibold text-slate-400">${escapeHtml(title)}</p>
+                            <span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">${statusLabel}</span>
+                        </div>
+                    </div>
+                `;
+            }
+
+            return `
+                <details class="rounded-xl border border-slate-200 bg-white p-3 group">
+                    <summary class="flex list-none cursor-pointer items-center justify-between gap-3">
+                        <div>
+                            <p class="text-[11px] font-semibold text-slate-400">${escapeHtml(title)}</p>
+                            <p class="text-sm font-medium text-slate-800">${escapeHtml(summaryText)}</p>
+                        </div>
+                        <span class="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-500 transition-transform duration-200 group-open:rotate-180">
+                            <i class="fa-solid fa-chevron-down text-xs"></i>
+                        </span>
+                    </summary>
+                    <div class="mt-3 space-y-2 border-t border-slate-100 pt-3">
+                        ${detailHtml}
+                    </div>
+                </details>
+            `;
+        }
+
+        function escapeHtml(value) {
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function buildApplicationDetails(data) {
+            if (!data) {
+                return '<p class="text-slate-400 text-xs text-center py-2">-</p>';
+            }
+
+            const fireStaff = parseFireStaff(data.fire_staff_json, data);
+            const proposalHref = formatDetailValue(data.proposal_file);
+            const proposalName = formatDetailValue(data.proposal_original_name || proposalHref.split('/').pop().split('\\').pop());
+            const hasAlcohol = String(data.has_alcohol || '').trim() === '1';
+            const hasFire = String(data.has_fire || '').trim() === '1';
+            const hasSales = String(data.has_sales || '').trim() === '1';
+            const hasFlags = String(data.setup_flags || '').trim() === 'yes';
+            const fireStaffHtml = [
+                ['表演組', fireStaff.fire_performers],
+                ['加油組', fireStaff.fire_oilers],
+                ['滅火組', fireStaff.fire_extinguishers],
+                ['安全組', fireStaff.fire_security],
+                ['緊急應變組', fireStaff.fire_emergency],
+                ['醫護組', fireStaff.fire_medical],
+            ].map(([label, value]) => buildDetailItem(label, formatDetailValue(value))).join('');
+
+            const alcoholDetailHtml = `
+                ${buildDetailItem('酒精活動負責人', formatDetailValue(data.alcohol_coordinator))}
+                ${buildDetailItem('酒精活動社長', formatDetailValue(data.alcohol_president))}
+            `;
+
+            const fireDetailHtml = `
+                ${buildDetailItem('明火活動名稱', formatDetailValue(data.fire_activity_name))}
+                ${buildDetailItem('明火日期', formatDetailValue(data.fire_date))}
+                ${buildDetailItem('明火時間', formatTimeRange(data.fire_start_time, data.fire_end_time))}
+                ${buildDetailItem('明火地點', formatDetailValue(data.fire_location))}
+                <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p class="text-[11px] font-semibold text-slate-400 mb-2">明火工作人員</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        ${fireStaffHtml}
+                    </div>
+                </div>
+            `;
+
+            const salesDetailHtml = `
+                ${buildDetailItem('攤位地點', formatDetailValue(data.sales_location))}
+                ${buildDetailItem('攤位數量', formatDetailValue(data.sales_count))}
+            `;
+
+            const flagsDetailHtml = `
+                ${buildDetailItem('旗幟數量', formatDetailValue(data.flag_count))}
+            `;
+
+            return `
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    ${buildDetailItem('活動開始／結束時間', formatTimeRange(data.borrow_start_at, data.borrow_end_at), 'md:col-span-2')}
+                    ${buildDetailItem('單位名稱 / 主辦社團', formatDetailValue(data.organization_name))}
+                    ${buildDetailItem('活動名稱', formatDetailValue(data.activity_name))}
+                    ${buildDetailItem('活動對象人數', formatDetailValue(data.participant_count))}
+                    ${buildDetailItem('工作人員人數', formatDetailValue(data.staff_count))}
+                    ${buildDetailItem('活動負責人', formatDetailValue(data.activity_coordinator))}
+                    ${buildDetailItem('系級', formatDetailValue(data.coordinator_department))}
+                    ${buildDetailItem('聯絡電話', formatDetailValue(data.coordinator_phone))}
+                    ${buildDetailItem('其他聯絡方式', formatDetailValue(data.coordinator_other_contact))}
+                    ${buildDetailItem('是否車輛入校', formatYesNo(data.vehicle_entry))}
+                    ${buildDetailItem('用途說明', formatDetailValue(data.purpose), 'md:col-span-2')}
+                    <div class="md:col-span-2 space-y-3">
+                        ${buildToggleSection('酒精', hasAlcohol, '有', alcoholDetailHtml)}
+                        ${buildToggleSection('明火', hasFire, '有', fireDetailHtml)}
+                        ${buildToggleSection('擺攤', hasSales, '有', salesDetailHtml)}
+                        ${buildToggleSection('旗幟', hasFlags, '有', flagsDetailHtml)}
+                    </div>
+                    <div class="md:col-span-2 rounded-xl border border-slate-200 bg-white p-3">
+                        <p class="text-[11px] font-semibold text-slate-400 mb-1">企畫書</p>
+                        ${proposalHref !== '-' ? `<a href="${escapeHtml(proposalHref)}" target="_blank" rel="noopener" class="text-sm font-medium text-indigo-600 hover:text-indigo-800 hover:underline break-all">${escapeHtml(proposalName)}</a>` : `<p class="text-sm font-medium text-slate-800 whitespace-pre-wrap break-words">${escapeHtml(proposalName)}</p>`}
+                    </div>
+                    ${buildDetailItem('企劃書上傳時間', formatDetailValue(data.proposal_uploaded_at))}
+                    ${buildDetailItem('假日天數', formatDetailValue(data.holiday_fee_count))}
+                    ${buildDetailItem('假日費用', formatDetailValue(data.holiday_fee))}
+                </div>
+            `;
+        }
         
         /**
          * 只有點擊「查看詳情」按鈕才會觸發此開窗函式
          */
         function openDrawer(element) {
+            const applicationRaw = element.getAttribute('data-application') || '';
+            let applicationData = null;
+            if (applicationRaw.trim() !== '') {
+                try {
+                    applicationData = JSON.parse(applicationRaw);
+                } catch (e) {
+                    applicationData = null;
+                }
+            }
+
             const id = element.getAttribute('data-id');
             const name = element.getAttribute('data-borrower-name') || '-';
             const bId = element.getAttribute('data-borrower-id') || '-';
@@ -1178,9 +1430,6 @@ if ($dbError === '' && count($rows) > 0) {
                 }
             }
 
-            document.getElementById('drawer-organization-name').innerText = orgName && orgName.trim() !== '' ? orgName : '-';
-            document.getElementById('drawer-activity-name').innerText = activityName && activityName.trim() !== '' ? activityName : '-';
-
             const phoneEl = document.getElementById('drawer-borrower-phone');
             if (phoneEl) phoneEl.innerHTML = phone && phone.trim() !== '' ? ('<a href="tel:' + encodeURIComponent(phone) + '" class="text-indigo-600 font-medium">' + phone + '</a>') : '-';
 
@@ -1189,6 +1438,11 @@ if ($dbError === '' && count($rows) > 0) {
                 resourcesContainer.innerHTML = '<p class="font-bold text-slate-800 text-xs">' + resources + '</p>';
             } else {
                 resourcesContainer.innerHTML = '<p class="text-slate-400 text-xs text-center py-2">-</p>';
+            }
+
+            const applicationDetailsEl = document.getElementById('drawer-application-details');
+            if (applicationDetailsEl) {
+                applicationDetailsEl.innerHTML = buildApplicationDetails(applicationData);
             }
 
             // 原始申請資料顯示功能已移除

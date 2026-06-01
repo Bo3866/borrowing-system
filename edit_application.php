@@ -2197,6 +2197,8 @@ function startApplication() {
     
     // 記得我們上一回合說要補上的變數宣告（在 initializeBorrowForm 裡面）也要加喔！
     initializeBorrowForm();
+    // 確保根據現有欄位狀態同步顯示/隱藏表單區塊（例如第2步的酒精/明火/旗幟表單）
+    if (typeof initializeFormVisibility === 'function') initializeFormVisibility();
     
     // 啟用草稿管理模組
     initializeDraftManagement();
@@ -3855,6 +3857,67 @@ if (typeof window.toggleAlcoholDetails === 'function') {
         setTimeout(restoreFlagFormAfterDraftLoad, 300);
     });
 })();
+</script>
+
+<!-- 若從 reservations 讀到明火人員（fire_staff_json 或個別欄位），載入時填回表格 -->
+<?php
+$__reservation_fire_staff = [
+    'fire_performers' => [],
+    'fire_oilers' => [],
+    'fire_extinguishers' => [],
+    'fire_security' => [],
+    'fire_emergency' => [],
+    'fire_medical' => []
+];
+if (!empty($formData['fire_staff_json'])) {
+    $decoded = json_decode((string)$formData['fire_staff_json'], true);
+    if (is_array($decoded)) {
+        foreach ($__reservation_fire_staff as $k => $_) {
+            if (isset($decoded[$k]) && is_array($decoded[$k])) $__reservation_fire_staff[$k] = array_values($decoded[$k]);
+        }
+    }
+} else {
+    foreach ($__reservation_fire_staff as $k => $_) {
+        if (!empty($formData[$k])) {
+            $parts = preg_split('/[,;、\n\r]+/u', (string)$formData[$k]);
+            $parts = array_map('trim', $parts);
+            $parts = array_filter($parts, function($v){ return $v !== ''; });
+            $__reservation_fire_staff[$k] = array_values($parts);
+        }
+    }
+}
+?>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    try {
+        const staff = <?php echo json_encode($__reservation_fire_staff, JSON_UNESCAPED_UNICODE); ?> || {};
+
+        function fillTable(tableId, inputName, values) {
+            if (!Array.isArray(values) || values.length === 0) return;
+            const table = document.getElementById(tableId);
+            if (!table) return;
+            const tbody = table.querySelector('tbody');
+            if (!tbody) return;
+            while (tbody.querySelectorAll('tr').length < values.length) {
+                if (typeof addFireStaffRow === 'function') addFireStaffRow(tableId, inputName);
+                else break;
+            }
+            const inputs = document.querySelectorAll('[name="' + inputName + '"]');
+            values.forEach(function (v, i) {
+                if (inputs[i]) inputs[i].value = v;
+            });
+        }
+
+        fillTable('table_staff_performer', 'fire_staff_performer[]', staff.fire_performers || []);
+        fillTable('table_staff_oiler', 'fire_staff_oiler[]', staff.fire_oilers || []);
+        fillTable('table_staff_extinguisher', 'fire_staff_extinguisher[]', staff.fire_extinguishers || []);
+        fillTable('table_staff_security', 'fire_staff_security[]', staff.fire_security || []);
+        fillTable('table_staff_emergency', 'fire_staff_emergency[]', staff.fire_emergency || []);
+        fillTable('table_staff_medical', 'fire_staff_medical[]', staff.fire_medical || []);
+    } catch (e) {
+        console.error('restore fire staff failed', e);
+    }
+});
 </script>
 
 

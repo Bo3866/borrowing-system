@@ -381,6 +381,65 @@ if ($dbError === '') {
                 }
             }
         }
+            // 寄送修改成功通知（含需繳金額）
+            if ($amendSuccess !== '' && isset($reservationId) && $reservationId > 0) {
+                $userEmail = null;
+                $userEmailStmt = mysqli_prepare($link, 'SELECT email FROM users WHERE user_id = ? LIMIT 1');
+                if ($userEmailStmt) {
+                    mysqli_stmt_bind_param($userEmailStmt, 's', $currentUserId);
+                    mysqli_stmt_execute($userEmailStmt);
+                    $ures = mysqli_stmt_get_result($userEmailStmt);
+                    if ($urow = mysqli_fetch_assoc($ures)) {
+                        $userEmail = $urow['email'];
+                    }
+                    mysqli_stmt_close($userEmailStmt);
+                }
+                if (!empty($userEmail)) {
+                    if (!class_exists('PHPMailer\PHPMailer\PHPMailer')) {
+                        require_once __DIR__ . '/lib/PHPMailer/Exception.php';
+                        require_once __DIR__ . '/lib/PHPMailer/PHPMailer.php';
+                        require_once __DIR__ . '/lib/PHPMailer/SMTP.php';
+                    }
+                    require_once __DIR__ . '/config/mail.php';
+                    $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
+                    try {
+                        if (empty($MAIL_ENABLED) || empty($MAIL_USERNAME) || empty($MAIL_PASSWORD)) {
+                            throw new RuntimeException('郵件設定未啟用或未完成，請檢查 config/mail.php');
+                        }
+                        $mailFrom = !empty($MAIL_FROM) ? $MAIL_FROM : $MAIL_USERNAME;
+                        $mail->isSMTP();
+                        $mail->Host       = 'smtp.gmail.com';
+                        $mail->SMTPAuth   = true;
+                        $mail->Username   = $MAIL_USERNAME;
+                        $mail->Password   = $MAIL_PASSWORD;
+                        $mail->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
+                        $mail->Port       = 465;
+                        $mail->CharSet    = 'UTF-8';
+                        $mail->setFrom($mailFrom, $MAIL_FROM_NAME ?? '器材借用系統');
+                        $mail->addAddress($userEmail, $displayName);
+                        $mail->isHTML(true);
+                        $mail->Subject = '【系統通知】申請修改已提交';
+
+                        // 取得此申請的 holiday_fee 總和
+                        $totalDue = 0;
+                        $feeSql = "SELECT COALESCE(SUM(holiday_fee),0) AS total_due FROM reservations WHERE reservation_id = " . intval($reservationId);
+                        $feeRes = mysqli_query($link, $feeSql);
+                        if ($feeRes) { $frow = mysqli_fetch_assoc($feeRes); $totalDue = isset($frow['total_due']) ? (int)$frow['total_due'] : 0; }
+
+                        if ($totalDue > 0) {
+                            $mail->Body = "您好，{$displayName}：<br><br>您的申請（單號：{$reservationId}）已修改成功，目前狀態為<b>「審核中」</b>。<br><br>※ 本次申請需繳費：<b>新台幣 {$totalDue} 元</b>。<br><br>管理團隊將儘速處理，審核結果會再通知您。<br><br>感謝您的使用！";
+                            $mail->AltBody = "您好，{$displayName}：\n\n您的申請（單號：{$reservationId}）已修改成功，目前狀態為「審核中」。\n\n※ 本次申請需繳費：新台幣 {$totalDue} 元。\n\n管理團隊將儘速處理，審核結果會再通知您。\n\n感謝您的使用！";
+                        } else {
+                            $mail->Body = "您好，{$displayName}：<br><br>您的申請（單號：{$reservationId}）已修改成功，目前狀態為<b>「審核中」</b>。管理團隊將儘速處理，審核結果會再通知您。<br><br>感謝您的使用！";
+                            $mail->AltBody = "您好，{$displayName}：\n\n您的申請（單號：{$reservationId}）已修改成功，目前狀態為「審核中」。管理團隊將儘速處理，審核結果會再通知您。\n\n感謝您的使用！";
+                        }
+                        $mail->send();
+                        @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " 補件/修改成功通知已寄送至: " . $userEmail . "\n", FILE_APPEND | LOCK_EX);
+                    } catch (Exception $e) {
+                        @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " 補件/修改成功通知寄送失敗 (to: {$userEmail}): " . $e->getMessage() . " | ErrorInfo: " . $mail->ErrorInfo . "\n", FILE_APPEND | LOCK_EX);
+                    }
+                }
+            }
     }
 }
 

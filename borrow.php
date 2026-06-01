@@ -1830,7 +1830,10 @@ SQL;
                                         <input type="number" id="staff_count" name="staff_count" class="form-control" placeholder="請輸入人數" min="1" required>
                                     </div>
                                 </div>
-                             
+                                <div class="form-group">
+                                    <label style="font-weight: bold; color: #333;">活動負責人 <span style="color:red">*</span></label>
+                                    <input type="text" id="activity_coordinator" name="activity_coordinator" class="form-control" placeholder="請輸入活動負責人姓名" required value="<?php echo htmlspecialchars($formData['activity_coordinator'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                </div>                             
                                 <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
                                     <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                                         <label for="coordinator_department">系級<span style="color:red">*</span></label>
@@ -1990,11 +1993,12 @@ SQL;
                                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start; margin-bottom:12px; padding: 20px 20px 0 20px;">
                                         <div>
                                             <label>申請單位 <span style="color:red">*</span></label>
-                                            <input type="text" id="flag_organization_name" name="flag_organization_name" class="form-control" value="<?php echo htmlspecialchars($formData['flag_organization_name'] ?? $formData['organization_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                            <input type="text" id="flag_organization_name" name="flag_organization_name" class="form-control" readonly style="background-color: #e2e8f0; cursor: not-allowed; value="<?php echo htmlspecialchars($formData['flag_organization_name'] ?? $formData['organization_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?> >
                                         </div>
                                         <div>
+
                                             <label>活動名稱 <span style="color:red">*</span></label>
-                                            <input type="text" id="flag_activity_name" name="flag_activity_name" class="form-control" value="<?php echo htmlspecialchars($formData['flag_activity_name'] ?? $formData['activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                            <input type="text" id="flag_activity_name" name="flag_activity_name" class="form-control" readonly style="background-color: #e2e8f0; cursor: not-allowed; value="<?php echo htmlspecialchars($formData['flag_activity_name'] ?? $formData['activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>>
                                         </div>
                                         <div>
                                             <label>負責人 <span style="color:red">*</span></label>
@@ -2091,18 +2095,14 @@ SQL;
 
                                         </div>
 
-                                </div>
-                                <!-- 👆 酒精申請表 HTML 結束 👆 -->
-
-                                <!-- 👇 明火申請表 HTML 開始 👇 -->
-                                <div id="fireDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:8px;">
+                                      </div>
                                     <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
                                         輔仁大學學生活動上火確認表(火舞)
                                     </div>
                                     <div style="padding: 20px;">
                                         <div class="form-group" style="margin-bottom: 15px;">
                                             <label for="fire_activity_name">活動名稱 <span style="color:red">*</span></label>
-                                            <input type="text" id="fire_activity_name" name="fire_activity_name" class="form-control" placeholder="請輸入活動名稱" value="<?php echo htmlspecialchars($formData['fire_activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                        <input type="text" id="fire_activity_name" name="fire_activity_name" class="form-control" readonly style="background-color: #e2e8f0; cursor: not-allowed;">
                                         </div>
 
                                         <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
@@ -2447,35 +2447,28 @@ function removeSalesRow(btn) {
                                     });
                                 }
 
-                                function validateAlcoholForm() {
-                                    if (!isAlcoholEnabled()) return true;
-                                    
-                                    const checkboxes = document.querySelectorAll('#alcoholDetailsSection input[type="checkbox"]');
-                                    let allChecked = true;
-                                    checkboxes.forEach(function(cb) {
-                                        if (!cb.checked) allChecked = false;
-                                    });
-                                    
-                                    const coordinator = document.getElementById('alcohol_coordinator').value.trim();
-                                    const president = document.getElementById('alcohol_president').value.trim();
-                                    
-                                    if (!allChecked) {
-                                        alert('請先勾選並確認遵守「酒精飲品活動須知」的所有規範事項。');
-                                        return false;
-                                    }
-                                    
-                                    if (!coordinator) {
-                                        alert('請填寫「酒精飲品活動須知」的活動負責人。');
-                                        return false;
-                                    }
-                                    
-                                    if (!president) {
-                                        alert('請填寫「酒精飲品活動須知」的社長。');
-                                        return false;
-                                    }
-                                    
-                                    return true;
-                                }
+function validateAlcoholForm() {
+    if (!isAlcoholEnabled()) return true;
+    
+    const checkboxes = document.querySelectorAll('#alcoholDetailsSection input[type="checkbox"]');
+    let allChecked = true;
+    checkboxes.forEach(function(cb) {
+        if (!cb.checked) allChecked = false;
+    });
+    
+    // 👇 已經刪除 coordinator 和 president 的變數宣告
+    
+    if (!allChecked) {
+        alert('請先勾選並確認遵守「酒精飲品活動須知」的所有規範事項。');
+        return false;
+    }
+    
+    // 👇 已經刪除底下這兩個 if 判斷式
+    // if (!coordinator) { ... }
+    // if (!president) { ... }
+    
+    return true;
+}
                                 // 👆 酒精驗證 Javascript 結束 👆
 
                                 // 👇 明火驗證 Javascript 開始 👇
@@ -2814,11 +2807,10 @@ function validateFireForm() {
                                 });
                                 </script>
 
-                                <div class="step-actions">
-                                    <button type="button" class="btn btn-secondary" onclick="goToStep(1)"> ⬅ 回上一步</button>
-                                    <!-- 👇 這裡也幫你把進入第三步前的檢查條件加回來了 👇 -->
-                                    <button type="button" class="btn btn-primary btn-next" onclick="if(validateAlcoholForm() && validateFireForm()) { goToStep(3); }">下一步 ➔ 挑選器材與場地</button>
-                                </div>
+                                    <div class="step-actions">
+                                        <button type="button" class="btn btn-secondary" onclick="goToStep(1)"> ⬅ 回上一步</button>
+                                        <button type="button" class="btn btn-primary btn-next" onclick="if(validateAlcoholForm() && validateFireForm() && validateSalesForm()) { goToStep(3); }">下一步 ➔ 挑選器材與場地</button>
+                                    </div>
 
                                 <div class="draft-action-row">
                                     <button type="button" class="draft-btn save-btn saveDraftBtn">
@@ -2829,7 +2821,8 @@ function validateFireForm() {
                                     </button>
                                 </div>
                                 <div id="submitDebugMsg" class="draft-message"></div>
-                            </div>                            <!-- ========== 步驟 3 內容區 ========== -->
+                            </div>                            
+                            <!-- ========== 步驟 3 內容區 ========== -->
                             <div class="step-content" id="step-content-3">
                                 <h3 class="step-title" style="margin-bottom: 10px;">第三步：器材與場地</h3>
                                 
@@ -2963,10 +2956,10 @@ function validateFireForm() {
                                 <textarea id="purpose" name="purpose" rows="4" required><?php echo htmlspecialchars($formData['purpose'], ENT_QUOTES, 'UTF-8'); ?></textarea>
                             </div>
 
-                                <div class="step-actions">
-                                    <button type="button" class="btn btn-secondary" onclick="goToStep(1)"> ⬅ 回上一步</button>
-                                    <button type="button" class="btn btn-primary btn-next" onclick="if(validateAlcoholForm() && validateFireForm() && validateSalesForm()) { goToStep(3); }">下一步 ➔ 挑選器材與場地</button>
-                                </div>
+<div class="step-actions">
+    <button type="button" class="btn btn-secondary" onclick="goToStep(2)"> ⬅ 回上一步</button>
+    <button type="submit" id="borrowSubmitBtn" class="btn btn-primary btn-next">✅ 送出申請</button>
+</div>
 
                             <div class="draft-action-row">
                                 <button type="button" class="draft-btn save-btn saveDraftBtn">
@@ -5514,7 +5507,47 @@ document.addEventListener('DOMContentLoaded', function () {
         if (display) display.innerText = '';
     }
 });
+
+document.addEventListener("DOMContentLoaded", function() {
+// 1. 第一步的來源欄位 ID (抓取使用者一開始輸入的格子)
+const primaryOrgInput = document.getElementById('organization_name'); 
+const primaryActInput = document.getElementById('activity_name');     
+
+// 2. 第二步要被自動帶入的目標欄位 ID (改成你目前 HTML 實際的 id)
+const flagOrg = document.getElementById('flag_organization_name'); // 對應旗幟的申請單位
+const flagAct = document.getElementById('flag_activity_name');     // 對應旗幟的活動名稱
+const fireOrg = document.getElementById('fire_organization_name'); // 對應上火的申請單位
+const fireAct = document.getElementById('fire_activity_name');     // 對應上火的活動名稱
+
+    // 3. 設定同步動態監聽
+    if (primaryOrgInput) {
+        primaryOrgInput.addEventListener('input', function() {
+            if (flagOrg) flagOrg.value = this.value;
+            if (fireOrg) fireOrg.value = this.value;
+        });
+        // 初始執行一次防止頁面重新整理或草稿帶入時沒抓到
+        if (flagOrg) flagOrg.value = primaryOrgInput.value;
+        if (fireOrg) fireOrg.value = primaryOrgInput.value;
+    }
+
+    if (primaryActInput) {
+        primaryActInput.addEventListener('input', function() {
+            if (flagAct) flagAct.value = this.value;
+            if (fireAct) fireAct.value = this.value;
+        });
+        // 初始執行一次
+        if (flagAct) flagAct.value = primaryActInput.value;
+        if (fireAct) fireAct.value = primaryActInput.value;
+    }
+});
+
+// 假設你控制進入下一步的按鈕是透過點擊事件 (請根據你實際的按鈕 id 或 class 綁定)
+// 如果你的表單本來就是靠 HTML 內建的 required 阻擋，這段可以不加；
+// 但如果你的「下一步」是 JS 寫的，請把這段加入你的「切換步驟函數」裡面：
+
+
 </script>
+
 
 </body>
 </html>

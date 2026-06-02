@@ -37,6 +37,8 @@ $todayCheckedIn = 0;
 $q = '';
 $statusFilter = 'all';
 $typeFilter = 'all';
+$startDate = '';
+$endDate = '';
 
 // Gather dynamic counts and filtered rows when DB is available
 if ($dbError === '') {
@@ -46,23 +48,63 @@ if ($dbError === '') {
     $overdueCount = 0;
     $todayCheckedIn = 0;
 
-    $cRes = mysqli_query($link, "SELECT COUNT(*) AS c FROM reservations WHERE approval_status <> 'pending'");
+    // 2.4 借用紀錄查詢：只統計「審核完成且借用結束時間已過」的歷史借用紀錄
+    $historyBaseWhere = "approval_status = 'approved' AND borrow_end_at <= NOW() AND checked_in_at IS NOT NULL";
+
+    $cRes = mysqli_query($link, "SELECT COUNT(*) AS c FROM reservations WHERE {$historyBaseWhere}");
     if ($cRes) { $totalCount = (int)mysqli_fetch_assoc($cRes)['c']; mysqli_free_result($cRes); }
-    $nrRes = mysqli_query($link, "SELECT COUNT(*) AS c FROM reservations WHERE approval_status = 'need_revision'");
+    $nrRes = mysqli_query($link, "SELECT COUNT(*) AS c FROM reservations WHERE {$historyBaseWhere} AND returned_at IS NOT NULL");
     if ($nrRes) { $needRevisionCount = (int)mysqli_fetch_assoc($nrRes)['c']; mysqli_free_result($nrRes); }
-    $odRes = mysqli_query($link, "SELECT COUNT(*) AS c FROM reservations WHERE approval_status <> 'pending' AND borrow_end_at < NOW() AND returned_at IS NULL");
+    $odRes = mysqli_query($link, "SELECT COUNT(*) AS c FROM reservations WHERE {$historyBaseWhere} AND returned_at IS NULL");
     if ($odRes) { $overdueCount = (int)mysqli_fetch_assoc($odRes)['c']; mysqli_free_result($odRes); }
-    $ciRes = mysqli_query($link, "SELECT COUNT(*) AS c FROM reservations WHERE approval_status <> 'pending' AND DATE(checked_in_at) = CURDATE()");
+    $ciRes = mysqli_query($link, "SELECT COUNT(*) AS c FROM reservations WHERE {$historyBaseWhere} AND DATE(returned_at) = CURDATE()");
     if ($ciRes) { $todayCheckedIn = (int)mysqli_fetch_assoc($ciRes)['c']; mysqli_free_result($ciRes); }
 
     // read filters from GET
     $q = trim((string)($_GET['q'] ?? ''));
     $statusFilter = (string)($_GET['status'] ?? 'all');
     $typeFilter = (string)($_GET['type'] ?? 'all');
+    $startDate = trim((string)($_GET['start_date'] ?? ''));
+    $endDate = trim((string)($_GET['end_date'] ?? ''));
 
-    $where = [ "r.approval_status <> 'pending'" ];
-    if ($statusFilter !== 'all' && $statusFilter !== '') {
-        $where[] = "r.approval_status = '" . mysqli_real_escape_string($link, $statusFilter) . "'";
+    // 動態確認 reservations 實際欄位，避免不同版本資料庫欄位名稱不一致導致活動/單位/電話抓不到
+    $reservationColumns = [];
+    $colRes = mysqli_query($link, "SHOW COLUMNS FROM reservations");
+    if ($colRes) {
+        while ($col = mysqli_fetch_assoc($colRes)) {
+            $reservationColumns[(string)$col['Field']] = true;
+        }
+        mysqli_free_result($colRes);
+    }
+
+    $pickReservationColumn = function(array $candidates) use ($reservationColumns): string {
+        foreach ($candidates as $columnName) {
+            if (isset($reservationColumns[$columnName])) {
+                return "r.`" . str_replace('`', '``', $columnName) . "`";
+            }
+        }
+        return "''";
+    };
+
+    // 主要使用目前系統的欄位名稱，後面是舊版/不同命名的備援欄位
+    $organizationExpr = $pickReservationColumn(['organization_name', 'applicant_unit', 'unit_name', 'club_name', 'department_name', 'organization']);
+    $activityExpr = $pickReservationColumn(['activity_name', 'event_name', 'project_name', 'event_title', 'activity_title']);
+    $phoneExpr = $pickReservationColumn(['coordinator_phone', 'contact_phone', 'applicant_phone', 'phone', 'tel', 'mobile']);
+
+    // 基本規則：此頁只顯示「審核完成」、「已實際報到/領取」且「借用結束時間已過」的歷史借用紀錄
+    $where = [ "r.approval_status = 'approved'", "r.borrow_end_at <= NOW()", "r.checked_in_at IS NOT NULL" ];
+
+    // 此下拉選單為借用/歸還狀態篩選，不再篩選審核中、已駁回等非歷史借用案件
+    if ($statusFilter === 'returned') {
+        $where[] = "r.returned_at IS NOT NULL";
+    } elseif ($statusFilter === 'overdue') {
+        $where[] = "r.returned_at IS NULL";
+    }
+    if ($startDate !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate)) {
+        $where[] = "DATE(r.borrow_start_at) >= '" . mysqli_real_escape_string($link, $startDate) . "'";
+    }
+    if ($endDate !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDate)) {
+        $where[] = "DATE(r.borrow_end_at) <= '" . mysqli_real_escape_string($link, $endDate) . "'";
     }
     if ($typeFilter === 'space') {
         $where[] = "EXISTS (SELECT 1 FROM space_reservation_items sri WHERE sri.reservation_id = r.reservation_id)";
@@ -71,7 +113,7 @@ if ($dbError === '') {
     }
     if ($q !== '') {
         $esc = mysqli_real_escape_string($link, $q);
-        $where[] = "(u.full_name LIKE '%{$esc}%' OR r.user_id LIKE '%{$esc}%' OR u.email LIKE '%{$esc}%' OR r.coordinator_phone LIKE '%{$esc}%' OR r.organization_name LIKE '%{$esc}%' OR r.activity_name LIKE '%{$esc}%' OR EXISTS (SELECT 1 FROM equipment_reservation_items eri JOIN equipments e ON e.equipment_id = eri.equipment_id JOIN equipment_categories ec ON ec.equipment_code = e.equipment_code WHERE eri.reservation_id = r.reservation_id AND ec.equipment_name LIKE '%{$esc}%') OR EXISTS (SELECT 1 FROM space_reservation_items sri JOIN spaces s ON s.space_id = sri.space_id WHERE sri.reservation_id = r.reservation_id AND s.space_name LIKE '%{$esc}%'))";
+        $where[] = "(u.full_name LIKE '%{$esc}%' OR r.user_id LIKE '%{$esc}%' OR u.email LIKE '%{$esc}%' OR {$phoneExpr} LIKE '%{$esc}%' OR {$organizationExpr} LIKE '%{$esc}%' OR {$activityExpr} LIKE '%{$esc}%' OR EXISTS (SELECT 1 FROM equipment_reservation_items eri JOIN equipments e ON e.equipment_id = eri.equipment_id JOIN equipment_categories ec ON ec.equipment_code = e.equipment_code WHERE eri.reservation_id = r.reservation_id AND ec.equipment_name LIKE '%{$esc}%') OR EXISTS (SELECT 1 FROM space_reservation_items sri JOIN spaces s ON s.space_id = sri.space_id WHERE sri.reservation_id = r.reservation_id AND s.space_name LIKE '%{$esc}%'))";
     }
 
     $whereSql = implode(' AND ', $where);
@@ -88,15 +130,15 @@ if ($dbError === '') {
                 r.submitted_at,
                 r.checked_in_at,
                 r.returned_at,
-                r.coordinator_phone,
-                r.organization_name,
-                r.activity_name,
+                {$phoneExpr} AS coordinator_phone,
+                {$organizationExpr} AS organization_name,
+                {$activityExpr} AS activity_name,
                 (SELECT GROUP_CONCAT(CONCAT(ec.equipment_name, ' (', e.equipment_id, ')') SEPARATOR ', ') FROM equipment_reservation_items eri JOIN equipments e ON e.equipment_id = eri.equipment_id LEFT JOIN equipment_categories ec ON ec.equipment_code = e.equipment_code WHERE eri.reservation_id = r.reservation_id) AS equipment_names,
                 (SELECT GROUP_CONCAT(CONCAT(s.space_name, ' (', sri.space_id, ')') SEPARATOR ', ') FROM space_reservation_items sri JOIN spaces s ON s.space_id = sri.space_id WHERE sri.reservation_id = r.reservation_id) AS space_names
             FROM reservations r
             LEFT JOIN users u ON u.user_id = r.user_id
             WHERE {$whereSql}
-            ORDER BY r.borrow_start_at DESC
+            ORDER BY r.borrow_end_at DESC
             LIMIT 2000";
 
     $res = mysqli_query($link, $sql);
@@ -216,7 +258,7 @@ $stageMap = [
         .history-list-header,
         .history-list-row {
             display: grid;
-            grid-template-columns: 140px minmax(220px, 1.1fr) minmax(320px, 1.5fr) 150px;
+            grid-template-columns: 120px minmax(190px, 1fr) minmax(180px, .9fr) minmax(300px, 1.4fr) 145px;
             gap: 1rem;
             align-items: center;
         }
@@ -310,6 +352,212 @@ $stageMap = [
             font-size: 1rem !important;
             line-height: 1.25 !important;
         }
+
+
+        /* 右側詳情面板：簡潔乾淨版 */
+        #detail-drawer {
+            background: #f8fafc !important;
+        }
+        .drawer-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 18px;
+            padding: 18px;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, .04);
+        }
+        .drawer-section-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0 0 12px;
+            font-size: .98rem !important;
+            font-weight: 800;
+            color: #334155;
+            letter-spacing: .01em;
+        }
+        .drawer-section-title i {
+            color: #64748b;
+            font-size: .9rem;
+        }
+        .applicant-summary {
+            display: flex;
+            gap: 14px;
+            align-items: flex-start;
+        }
+        .applicant-avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
+            background: #eef2ff;
+            border: 1px solid #c7d2fe;
+            color: #4f46e5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .applicant-main {
+            min-width: 0;
+            flex: 1;
+        }
+        .applicant-name-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            font-size: 1.05rem;
+            font-weight: 800;
+            color: #0f172a;
+        }
+        .drawer-id-badge {
+            font-size: .82rem !important;
+            padding: 2px 8px;
+            border-radius: 8px;
+            background: #e2e8f0;
+            color: #475569;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        }
+        .drawer-email {
+            margin-top: 2px;
+            color: #64748b;
+            font-size: .92rem !important;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        }
+        .drawer-info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 16px;
+        }
+        .drawer-info-item {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 12px 14px;
+            min-width: 0;
+        }
+        .drawer-info-item.full {
+            grid-column: 1 / -1;
+        }
+        .drawer-label {
+            display: block;
+            color: #94a3b8;
+            font-size: .86rem !important;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .drawer-value {
+            display: block;
+            color: #0f172a;
+            font-size: 1rem !important;
+            font-weight: 700;
+            word-break: break-word;
+        }
+        .resource-list-clean {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background: transparent !important;
+            border: 0 !important;
+            padding: 0 !important;
+        }
+        .resource-item-clean {
+            padding: 13px 14px;
+            border-radius: 14px;
+            border: 1px solid #dbeafe;
+            background: #eff6ff;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .resource-item-clean.space {
+            border-color: #bbf7d0;
+            background: #f0fdf4;
+        }
+        .resource-icon-clean {
+            width: 32px;
+            height: 32px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #2563eb;
+            background: rgba(255,255,255,.75);
+            flex-shrink: 0;
+        }
+        .resource-item-clean.space .resource-icon-clean { color: #059669; }
+        .timeline-clean {
+            display: grid;
+            gap: 10px;
+        }
+        .timeline-row-clean {
+            display: grid;
+            grid-template-columns: 132px 1fr;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            background: #ffffff;
+        }
+        .timeline-row-clean span:first-child {
+            color: #64748b;
+            font-weight: 700;
+        }
+        .timeline-row-clean span:last-child {
+            color: #0f172a;
+            font-weight: 700;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+            text-align: right;
+        }
+        .status-grid-clean {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .status-card-clean {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            padding: 15px 16px;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+        .status-card-clean.full { grid-column: auto; }
+        .status-icon-clean {
+            width: 34px;
+            height: 34px;
+            border-radius: 12px;
+            background: #ecfdf5;
+            color: #059669;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+        .status-content-clean {
+            min-width: 0;
+            flex: 1;
+        }
+        .status-label-clean {
+            color: #94a3b8;
+            font-size: .86rem !important;
+            font-weight: 700;
+            margin-bottom: 6px;
+            display: block;
+        }
+        .status-card-clean p {
+            margin: 0;
+            line-height: 1.45;
+            word-break: break-word;
+        }
+        @media (max-width: 640px) {
+            .drawer-info-grid { grid-template-columns: 1fr; }
+            .timeline-row-clean { grid-template-columns: 1fr; gap: 4px; }
+            .timeline-row-clean span:last-child { text-align: left; }
+        }
     </style>
 </head>
 <body class="history-page">
@@ -337,9 +585,9 @@ $stageMap = [
             <div class="card">
                 <div style="display:flex;justify-content:space-between;align-items:center;">
                     <div>
-                        <p style="color:#64748b;margin:0;font-weight:600;">總借用次數</p>
+                        <p style="color:#64748b;margin:0;font-weight:600;">歷史借用紀錄</p>
                         <h3 style="font-size:1.5rem;margin:6px 0;color:var(--text-color);font-weight:700;"><?php echo number_format($totalCount); ?></h3>
-                        <p style="font-size:0.85rem;color:#94a3b8;margin:0;">不含待審核資料</p>
+                        <p style="font-size:0.85rem;color:#94a3b8;margin:0;">審核完成、已報到且借用結束</p>
                     </div>
                     <div style="width:44px;height:44px;border-radius:10px;background:#f8fafc;display:flex;align-items:center;justify-content:center;color:#64748b;border:1px solid rgba(44,62,80,0.06);">
                         <i class="fa-solid fa-list-ol"></i>
@@ -349,12 +597,12 @@ $stageMap = [
             <div class="card">
                 <div style="display:flex;justify-content:space-between;align-items:center;">
                     <div>
-                        <p style="color:#64748b;margin:0;font-weight:600;">需要補件</p>
+                        <p style="color:#64748b;margin:0;font-weight:600;">已歸還</p>
                         <h3 style="font-size:1.5rem;margin:6px 0;color:#d97706;font-weight:700;"><?php echo number_format($needRevisionCount); ?> <span style="font-size:0.9rem;color:#94a3b8;font-weight:400;">件</span></h3>
-                        <p style="font-size:0.85rem;color:#d97706;margin:0;">待修改</p>
+                        <p style="font-size:0.85rem;color:#d97706;margin:0;">已完成點收</p>
                     </div>
                     <div style="width:44px;height:44px;border-radius:10px;background:#fff7ed;display:flex;align-items:center;justify-content:center;color:#d97706;border:1px solid rgba(217,119,6,0.08);">
-                        <i class="fa-solid fa-file-pen"></i>
+                        <i class="fa-solid fa-circle-check"></i>
                     </div>
                 </div>
             </div>
@@ -373,9 +621,9 @@ $stageMap = [
             <div class="card">
                 <div style="display:flex;justify-content:space-between;align-items:center;">
                     <div>
-                        <p style="color:#64748b;margin:0;font-weight:600;">今日已完成報到</p>
+                        <p style="color:#64748b;margin:0;font-weight:600;">今日歸還點收</p>
                         <h3 style="font-size:1.5rem;margin:6px 0;color:#059669;font-weight:700;"><?php echo number_format($todayCheckedIn); ?> <span style="font-size:0.9rem;color:#94a3b8;font-weight:400;">場次</span></h3>
-                        <p style="font-size:0.85rem;color:#059669;margin:0;">今日簽到</p>
+                        <p style="font-size:0.85rem;color:#059669;margin:0;">今日完成歸還</p>
                     </div>
                     <div style="width:44px;height:44px;border-radius:10px;background:#ecfdf5;display:flex;align-items:center;justify-content:center;color:#059669;border:1px solid rgba(5,150,105,0.08);">
                         <i class="fa-solid fa-clipboard-user"></i>
@@ -405,16 +653,16 @@ $stageMap = [
             <div class="flex items-center gap-3 w-full lg:w-auto lg:flex-1 lg:max-w-xl">
                 <div class="relative flex-1">
                     <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
-                          <input id="q" type="text" <?php if ($q !== '') { echo 'value="' . htmlspecialchars($q, ENT_QUOTES, 'UTF-8') . '"'; } ?> placeholder="搜尋姓名/學號/Email/器材/場地" 
+                          <input id="q" type="text" <?php if ($q !== '') { echo 'value="' . htmlspecialchars($q, ENT_QUOTES, 'UTF-8') . '"'; } ?> placeholder="搜尋申請人/學號/單位/活動/器材/場地" 
                               class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition">
                 </div>
                 <select id="statusFilter" class="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-lg px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:bg-white cursor-pointer shrink-0">
-                    <option value="all" <?php echo ($statusFilter==='all')? 'selected':''; ?>>所有審核狀態</option>
-                    <option value="approved" <?php echo ($statusFilter==='approved')? 'selected':''; ?>>審核完成</option>
-                    <option value="need_revision" <?php echo ($statusFilter==='need_revision')? 'selected':''; ?>>需要補件</option>
-                    <option value="revision_overdue" <?php echo ($statusFilter==='revision_overdue')? 'selected':''; ?>>補件逾期</option>
-                    <option value="rejected" <?php echo ($statusFilter==='rejected')? 'selected':''; ?>>審核未通過</option>
+                    <option value="all" <?php echo ($statusFilter==='all')? 'selected':''; ?>>所有借用狀態</option>
+                    <option value="returned" <?php echo ($statusFilter==='returned')? 'selected':''; ?>>已歸還</option>
+                    <option value="overdue" <?php echo ($statusFilter==='overdue')? 'selected':''; ?>>逾期未歸還</option>
                 </select>
+                <input id="startDate" type="date" value="<?php echo htmlspecialchars($startDate, ENT_QUOTES, 'UTF-8'); ?>" class="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-lg px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:bg-white cursor-pointer shrink-0" title="借用開始日期">
+                <input id="endDate" type="date" value="<?php echo htmlspecialchars($endDate, ENT_QUOTES, 'UTF-8'); ?>" class="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-lg px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:bg-white cursor-pointer shrink-0" title="借用結束日期">
             </div>
         </div>
 
@@ -422,6 +670,7 @@ $stageMap = [
         <div class="history-list-header mt-4">
             <div>單號</div>
             <div>申請人</div>
+            <div>申請單位</div>
             <div>借用時段</div>
             <div class="text-center">操作</div>
         </div>
@@ -445,6 +694,10 @@ $stageMap = [
                         'label' => $statusKey, 
                         'class' => 'bg-slate-50 text-slate-700 border-slate-200'
                     ];
+                    $borrowStatusLabel = !empty($r['returned_at']) ? '已歸還' : '逾期未歸還';
+                    $borrowStatusClass = !empty($r['returned_at'])
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200/60'
+                        : 'bg-rose-50 text-rose-700 border-rose-200/60';
                 ?>
                     <div 
                          class="history-list-row group"
@@ -460,6 +713,7 @@ $stageMap = [
                          data-activity-name="<?php echo htmlspecialchars((string)($r['activity_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
                          data-status="<?php echo htmlspecialchars($statusKey, ENT_QUOTES, 'UTF-8'); ?>"
                          data-status-label="<?php echo htmlspecialchars($statusConf['label'], ENT_QUOTES, 'UTF-8'); ?>"
+                         data-borrow-status-label="<?php echo htmlspecialchars($borrowStatusLabel, ENT_QUOTES, 'UTF-8'); ?>"
                          data-checkin="<?php echo $r['checked_in_at'] ? htmlspecialchars((string)$r['checked_in_at'], ENT_QUOTES, 'UTF-8') : '—'; ?>"
                          data-return="<?php echo $r['returned_at'] ? htmlspecialchars((string)$r['returned_at'], ENT_QUOTES, 'UTF-8') : '—'; ?>"
                          data-equipments="<?php echo htmlspecialchars((string)$r['equipment_names'], ENT_QUOTES, 'UTF-8'); ?>"
@@ -485,13 +739,20 @@ $stageMap = [
                             </div>
                         </div>
 
-                        <!-- 3. 借用時段 -->
+                        <!-- 3. 申請單位 -->
+                        <div class="min-w-0">
+                            <p class="font-semibold text-slate-700 truncate">
+                                <?php echo htmlspecialchars((string)(($r['organization_name'] ?? '') !== '' ? $r['organization_name'] : '未填寫'), ENT_QUOTES, 'UTF-8'); ?>
+                            </p>
+                        </div>
+
+                        <!-- 4. 借用時段 -->
                         <div class="time-range-box text-xs leading-tight">
                             <div><i class="fa-regular fa-clock text-[10px] text-slate-400 mr-1.5"></i><?php echo htmlspecialchars((string)$r['borrow_start_at'], ENT_QUOTES, 'UTF-8'); ?></div>
                             <div class="end-time">至 <?php echo htmlspecialchars((string)$r['borrow_end_at'], ENT_QUOTES, 'UTF-8'); ?></div>
                         </div>
 
-                        <!-- 4. 操作提示 -->
+                        <!-- 5. 操作提示 -->
                         <div class="text-center">
                             <button class="detail-button" onclick="event.stopPropagation(); openDrawer(event, this.closest('.history-list-row'))">查看詳情 <i class="fa-solid fa-chevron-right text-xs"></i></button>
                         </div>
@@ -527,89 +788,89 @@ $stageMap = [
             <!-- 補件提示區已移除 -->
 
             <!-- 申請人詳情卡片 -->
-            <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-                <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">申請人帳戶資訊</h4>
-                <div class="flex items-center gap-3">
-                    <div class="w-12 h-12 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 text-lg font-bold">
+            <div class="drawer-card">
+                <h4 class="drawer-section-title"><i class="fa-solid fa-user"></i>申請人與活動資訊</h4>
+                <div class="applicant-summary">
+                    <div class="applicant-avatar">
                         <i class="fa-solid fa-id-card"></i>
                     </div>
-                    <div>
-                        <p class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                    <div class="applicant-main">
+                        <div class="applicant-name-row">
                             <span id="drawer-borrower-name">-</span>
-                            <span class="text-xs bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-mono" id="drawer-borrower-id">-</span>
-                        </p>
-                        <p class="text-xs text-slate-500 font-mono mt-0.5" id="drawer-borrower-email">-</p>
-                        <div class="mt-2">
-                            <p class="text-xs text-slate-400 mb-1">單位名稱 / 主辦社團</p>
-                            <p class="text-sm text-slate-800 font-medium mb-3" id="drawer-organization-name">-</p>
+                            <span class="drawer-id-badge" id="drawer-borrower-id">-</span>
+                        </div>
+                        <div class="drawer-email" id="drawer-borrower-email">-</div>
 
-                            <p class="text-xs text-slate-400 mb-1">活動名稱</p>
-                            <p class="text-sm text-slate-800 font-medium mb-3" id="drawer-activity-name">-</p>
-
-                            <p class="text-xs text-slate-500 font-mono mt-1"><span class="text-slate-400">聯絡電話：</span> <span id="drawer-borrower-phone">-</span></p>
+                        <div class="drawer-info-grid">
+                            <div class="drawer-info-item">
+                                <span class="drawer-label">申請單位 / 主辦單位</span>
+                                <span class="drawer-value" id="drawer-organization-name">-</span>
+                            </div>
+                            <div class="drawer-info-item">
+                                <span class="drawer-label">聯絡電話</span>
+                                <span class="drawer-value" id="drawer-borrower-phone">-</span>
+                            </div>
+                            <div class="drawer-info-item full">
+                                <span class="drawer-label">活動名稱</span>
+                                <span class="drawer-value" id="drawer-activity-name">-</span>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
             <!-- 資源清單模組 -->
-            <div class="space-y-3">
-                <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">申借之資源項目</h4>
-                <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs space-y-3" id="drawer-resources-list">
+            <div class="drawer-card">
+                <h4 class="drawer-section-title"><i class="fa-solid fa-box-open"></i>申借之資源項目</h4>
+                <div class="resource-list-clean text-xs" id="drawer-resources-list">
                     <!-- 動態由 JS 塞入場地或器材列表 -->
                 </div>
             </div>
 
-            <!-- 時間軸 -->
-            <div class="space-y-3">
-                <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">借用時序追蹤</h4>
-                <div class="relative pl-6 border-l border-slate-200 space-y-4 text-xs">
-                    <div class="relative">
-                        <div class="absolute -left-[30px] top-0.5 w-4 h-4 rounded-full bg-slate-100 border-2 border-slate-400 flex items-center justify-center text-[8px] text-slate-500"><i class="fa-solid fa-paper-plane"></i></div>
-                        <p class="font-medium text-slate-700">申請送出時間</p>
-                        <p class="text-slate-500 mt-0.5" id="drawer-submitted-time">-</p>
+            <!-- 簡潔版：借用時序追蹤 -->
+            <div class="drawer-card">
+                <h4 class="drawer-section-title"><i class="fa-regular fa-clock"></i>借用時序追蹤</h4>
+                <div class="timeline-clean">
+                    <div class="timeline-row-clean">
+                        <span>申請送出時間</span>
+                        <span id="drawer-submitted-time">-</span>
                     </div>
-                    <div id="drawer-stage-inline-wrap" style="display:none;">
-                        <p class="mt-1 text-sm">
-                            <span id="drawer-stage-inline-label" class="text-xs text-slate-500 mr-2" style="display:inline;">目前審核階段：</span>
-                            <span id="drawer-stage-inline" class="inline-block text-[11px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-full">-</span>
-                        </p>
+                    <div class="timeline-row-clean">
+                        <span>借用開始時間</span>
+                        <span id="drawer-start-time">-</span>
                     </div>
-                    <div class="relative">
-                        <div class="absolute -left-[30px] top-0.5 w-4 h-4 rounded-full bg-emerald-50 border-2 border-emerald-500 flex items-center justify-center text-[8px] text-emerald-600"><i class="fa-solid fa-play"></i></div>
-                        <p class="font-medium text-slate-700">借用起算時段</p>
-                        <p class="text-slate-500 mt-0.5" id="drawer-start-time">-</p>
-                    </div>
-                    <div class="relative">
-                        <div class="absolute -left-[30px] top-0.5 w-4 h-4 rounded-full bg-rose-50 border-2 border-rose-500 flex items-center justify-center text-[8px] text-rose-600"><i class="fa-solid fa-flag"></i></div>
-                        <p class="font-medium text-slate-700">預計歸還截止</p>
-                        <p class="text-slate-500 mt-0.5" id="drawer-end-time">-</p>
+                    <div class="timeline-row-clean">
+                        <span>借用結束時間</span>
+                        <span id="drawer-end-time">-</span>
                     </div>
                 </div>
             </div>
 
             <!-- 報到與歸還狀態核對 -->
-            <div class="grid grid-cols-2 gap-4">
-                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
-                    <span class="text-slate-400 block mb-1">現場報到登記</span>
-                    <p class="font-semibold text-slate-700 flex items-center gap-1.5" id="drawer-checkin-status">
-                        -
-                    </p>
-                </div>
-                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
-                    <span class="text-slate-400 block mb-1">歸還點收清點</span>
-                    <p class="font-semibold text-slate-700 flex items-center gap-1.5" id="drawer-return-status">
-                        -
-                    </p>
-                </div>
-            </div>
-
-            <!-- 審批工作階段 -->
-            <div class="border-t border-slate-150 pt-5 space-y-3">
-                <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">系統工作紀錄</h4>
-                <div class="bg-slate-50 p-3.5 rounded-lg border border-slate-200 text-xs space-y-2 text-slate-600">
-                    <div class="flex justify-between"><span class="font-medium text-slate-500">當前審核階段 (Stage)：</span><span class="text-slate-800 font-mono" id="drawer-stage">-</span></div>
-                    <div class="flex justify-between"><span class="font-medium text-slate-500">案件審核狀態：</span><span class="text-slate-800 font-semibold" id="drawer-status-label">-</span></div>
+            <div class="drawer-card">
+                <h4 class="drawer-section-title"><i class="fa-solid fa-clipboard-check"></i>借用狀態確認</h4>
+                <div class="status-grid-clean">
+                    <div class="status-card-clean full">
+                        <div class="status-icon-clean"><i class="fa-solid fa-clipboard-list"></i></div>
+                        <div class="status-content-clean">
+                            <span class="status-label-clean">借用紀錄狀態</span>
+                            <p class="font-semibold text-slate-700 flex items-center gap-1.5" id="drawer-borrow-status">-</p>
+                        </div>
+                    </div>
+                    <div class="status-card-clean">
+                        <div class="status-icon-clean"><i class="fa-solid fa-user-check"></i></div>
+                        <div class="status-content-clean">
+                            <span class="status-label-clean">現場報到登記</span>
+                            <p class="font-semibold text-slate-700 flex items-center gap-1.5" id="drawer-checkin-status">-</p>
+                        </div>
+                    </div>
+                    <div class="status-card-clean">
+                        <div class="status-icon-clean"><i class="fa-solid fa-box-archive"></i></div>
+                        <div class="status-content-clean">
+                            <span class="status-label-clean">歸還點收清點</span>
+                            <p class="font-semibold text-slate-700 flex items-center gap-1.5" id="drawer-return-status">-</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -629,7 +890,7 @@ $stageMap = [
             const type = this.getAttribute('data-filter') || 'all';
             const qv = document.getElementById('q')?.value || '';
             const sv = document.getElementById('statusFilter')?.value || 'all';
-            window.location.href = buildUrl({ q: qv, status: sv, type: type });
+            window.location.href = buildUrl({ q: qv, status: sv, type: type, start_date: document.getElementById('startDate')?.value || '', end_date: document.getElementById('endDate')?.value || '' });
         }));
 
         // 審核狀態 Select 下拉選單改動時
@@ -637,7 +898,18 @@ $stageMap = [
             const typeEl = document.querySelector('.tab.active') || document.querySelector('.tab[class*="bg-white"]');
             const type = typeEl ? typeEl.getAttribute('data-filter') : 'all';
             const qv = document.getElementById('q')?.value || '';
-            window.location.href = buildUrl({ q: qv, status: this.value, type: type });
+            window.location.href = buildUrl({ q: qv, status: this.value, type: type, start_date: document.getElementById('startDate')?.value || '', end_date: document.getElementById('endDate')?.value || '' });
+        });
+
+        // 日期區間篩選變更時
+        ['startDate', 'endDate'].forEach(id => {
+            document.getElementById(id)?.addEventListener('change', function(){
+                const typeEl = document.querySelector('.tab.active') || document.querySelector('.tab[class*="bg-white"]');
+                const type = typeEl ? typeEl.getAttribute('data-filter') : 'all';
+                const qv = document.getElementById('q')?.value || '';
+                const sv = document.getElementById('statusFilter')?.value || 'all';
+                window.location.href = buildUrl({ q: qv, status: sv, type: type, start_date: document.getElementById('startDate')?.value || '', end_date: document.getElementById('endDate')?.value || '' });
+            });
         });
 
         // 關鍵字搜尋 Enter 事件
@@ -647,7 +919,7 @@ $stageMap = [
                 const sv = document.getElementById('statusFilter')?.value || 'all';
                 const typeEl = document.querySelector('.tab.active') || document.querySelector('.tab[class*="bg-white"]');
                 const type = typeEl ? typeEl.getAttribute('data-filter') : 'all';
-                window.location.href = buildUrl({ q: this.value, status: sv, type: type });
+                window.location.href = buildUrl({ q: this.value, status: sv, type: type, start_date: document.getElementById('startDate')?.value || '', end_date: document.getElementById('endDate')?.value || '' });
             }
         });
 
@@ -667,6 +939,7 @@ $stageMap = [
             const submitted = element.getAttribute('data-submitted');
             const status = element.getAttribute('data-status');
             const statusLabel = element.getAttribute('data-status-label');
+            const borrowStatusLabel = element.getAttribute('data-borrow-status-label') || '-';
             const checkin = element.getAttribute('data-checkin');
             const returned = element.getAttribute('data-return');
             const equipmentsStr = element.getAttribute('data-equipments');
@@ -681,11 +954,22 @@ $stageMap = [
             document.getElementById('drawer-borrower-name').innerText = name;
             document.getElementById('drawer-borrower-id').innerText = bId;
             document.getElementById('drawer-borrower-email').innerText = email;
-            document.getElementById('drawer-submitted-time').innerText = submitted;
-            document.getElementById('drawer-start-time').innerText = start;
-            document.getElementById('drawer-end-time').innerText = end;
-            document.getElementById('drawer-stage').innerText = stage;
-            document.getElementById('drawer-status-label').innerText = statusLabel;
+            const submittedEl = document.getElementById('drawer-submitted-time');
+            const startEl = document.getElementById('drawer-start-time');
+            const endEl = document.getElementById('drawer-end-time');
+            if (submittedEl) submittedEl.innerText = submitted && submitted.trim() !== '' ? submitted : '-';
+            if (startEl) startEl.innerText = start && start.trim() !== '' ? start : '-';
+            if (endEl) endEl.innerText = end && end.trim() !== '' ? end : '-';
+            const borrowStatusEl = document.getElementById('drawer-borrow-status');
+            if (borrowStatusEl) {
+                if (borrowStatusLabel === '已歸還') {
+                    borrowStatusEl.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-500 mr-1.5"></i> 已歸還`;
+                } else if (borrowStatusLabel === '逾期未歸還') {
+                    borrowStatusEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-rose-500 mr-1.5"></i> 逾期未歸還`;
+                } else {
+                    borrowStatusEl.textContent = borrowStatusLabel;
+                }
+            }
             // contact / organization fields
             const phoneEl = document.getElementById('drawer-borrower-phone');
             const orgEl = document.getElementById('drawer-organization-name');
@@ -703,20 +987,6 @@ $stageMap = [
             if (actEl) {
                 actEl.innerText = activityName && activityName.trim() !== '' ? activityName : '-';
             }
-            // populate inline stage badge in the timeline (visible at top of drawer)
-            const stageInlineWrap = document.getElementById('drawer-stage-inline-wrap');
-            const stageInlineEl = document.getElementById('drawer-stage-inline');
-            const stageInlineLabel = document.getElementById('drawer-stage-inline-label');
-            if (stageInlineWrap && stageInlineEl) {
-                if (stage && stage !== 'N/A' && stage !== '') {
-                    if (stageInlineLabel) stageInlineLabel.style.display = 'inline';
-                    stageInlineEl.textContent = stage;
-                    stageInlineWrap.style.display = 'block';
-                } else {
-                    stageInlineWrap.style.display = 'none';
-                }
-            }
-
             // 信箱通知按鈕
             const mailBtn = document.getElementById('drawer-email-btn');
             if(mailBtn) {
@@ -748,15 +1018,9 @@ $stageMap = [
             equipments.forEach(eq => {
                 if (eq.trim() === '') return;
                 resourcesContainer.innerHTML += `
-                    <div class="p-3 rounded-lg border border-blue-150 bg-blue-50/50 flex items-center justify-between">
-                        <div class="flex items-center gap-2.5">
-                            <div class="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center text-sm">
-                                <i class="fa-solid fa-box"></i>
-                            </div>
-                            <div>
-                                <p class="font-bold text-slate-800 text-xs">${eq}</p>
-                            </div>
-                        </div>
+                    <div class="resource-item-clean">
+                        <div class="resource-icon-clean"><i class="fa-solid fa-box"></i></div>
+                        <p class="font-bold text-slate-800 text-xs">${eq}</p>
                     </div>
                 `;
             });
@@ -764,15 +1028,9 @@ $stageMap = [
             spaces.forEach(sp => {
                 if (sp.trim() === '') return;
                 resourcesContainer.innerHTML += `
-                    <div class="p-3 rounded-lg border border-emerald-150 bg-emerald-50/50 flex items-center justify-between">
-                        <div class="flex items-center gap-2.5">
-                            <div class="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center text-sm">
-                                <i class="fa-solid fa-map-pin"></i>
-                            </div>
-                            <div>
-                                <p class="font-bold text-slate-800 text-xs">${sp}</p>
-                            </div>
-                        </div>
+                    <div class="resource-item-clean space">
+                        <div class="resource-icon-clean"><i class="fa-solid fa-map-pin"></i></div>
+                        <p class="font-bold text-slate-800 text-xs">${sp}</p>
                     </div>
                 `;
             });

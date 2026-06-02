@@ -58,7 +58,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
     } else {
         $action = 'rejected';
     }
-    $comment = trim((string)($_POST['comment'] ?? '')) ?: null;
+    $cannedMessage = trim((string)($_POST['canned_message'] ?? ''));
+    $freeformComment = trim((string)($_POST['comment'] ?? ''));
+    $commentParts = [];
+    if ($cannedMessage !== '') {
+        $commentParts[] = $cannedMessage;
+    }
+    if ($freeformComment !== '') {
+        $commentParts[] = $freeformComment;
+    }
+    $comment = !empty($commentParts) ? implode("\n", $commentParts) : null;
 
     if ($link && !empty($reservationIds)) {
         mysqli_begin_transaction($link);
@@ -255,8 +264,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
                         if (!$logStmt) {
                             throw new RuntimeException('建立審核紀錄失敗：' . mysqli_error($link));
                         }
-                        // map review_result to 'approved' or 'rejected'
-                        $reviewResult = ($_POST['action'] === 'reject') ? 'rejected' : 'approved';
+                        // keep request_revision distinct from reject/approve in the audit log
+                        if ($_POST['action'] === 'approve') {
+                            $reviewResult = 'approved';
+                        } elseif ($_POST['action'] === 'request_revision') {
+                            $reviewResult = 'need_revision';
+                        } else {
+                            $reviewResult = 'rejected';
+                        }
                         mysqli_stmt_bind_param($logStmt, 'isss', $reservationId, $currentUserId, $reviewResult, $comment);
                         mysqli_stmt_execute($logStmt);
                         mysqli_stmt_close($logStmt);
@@ -335,7 +350,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
                     if (!$logStmt) {
                         throw new RuntimeException('建立審核紀錄失敗：' . mysqli_error($link));
                     }
-                    mysqli_stmt_bind_param($logStmt, 'isss', $reservationId, $currentUserId, $action, $comment);
+                    $reviewResult = $action;
+                    mysqli_stmt_bind_param($logStmt, 'isss', $reservationId, $currentUserId, $reviewResult, $comment);
                     mysqli_stmt_execute($logStmt);
                     mysqli_stmt_close($logStmt);
 

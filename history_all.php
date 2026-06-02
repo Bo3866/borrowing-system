@@ -352,6 +352,212 @@ $stageMap = [
             font-size: 1rem !important;
             line-height: 1.25 !important;
         }
+
+
+        /* 右側詳情面板：簡潔乾淨版 */
+        #detail-drawer {
+            background: #f8fafc !important;
+        }
+        .drawer-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 18px;
+            padding: 18px;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, .04);
+        }
+        .drawer-section-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0 0 12px;
+            font-size: .98rem !important;
+            font-weight: 800;
+            color: #334155;
+            letter-spacing: .01em;
+        }
+        .drawer-section-title i {
+            color: #64748b;
+            font-size: .9rem;
+        }
+        .applicant-summary {
+            display: flex;
+            gap: 14px;
+            align-items: flex-start;
+        }
+        .applicant-avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
+            background: #eef2ff;
+            border: 1px solid #c7d2fe;
+            color: #4f46e5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .applicant-main {
+            min-width: 0;
+            flex: 1;
+        }
+        .applicant-name-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            font-size: 1.05rem;
+            font-weight: 800;
+            color: #0f172a;
+        }
+        .drawer-id-badge {
+            font-size: .82rem !important;
+            padding: 2px 8px;
+            border-radius: 8px;
+            background: #e2e8f0;
+            color: #475569;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        }
+        .drawer-email {
+            margin-top: 2px;
+            color: #64748b;
+            font-size: .92rem !important;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        }
+        .drawer-info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 16px;
+        }
+        .drawer-info-item {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 12px 14px;
+            min-width: 0;
+        }
+        .drawer-info-item.full {
+            grid-column: 1 / -1;
+        }
+        .drawer-label {
+            display: block;
+            color: #94a3b8;
+            font-size: .86rem !important;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .drawer-value {
+            display: block;
+            color: #0f172a;
+            font-size: 1rem !important;
+            font-weight: 700;
+            word-break: break-word;
+        }
+        .resource-list-clean {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background: transparent !important;
+            border: 0 !important;
+            padding: 0 !important;
+        }
+        .resource-item-clean {
+            padding: 13px 14px;
+            border-radius: 14px;
+            border: 1px solid #dbeafe;
+            background: #eff6ff;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .resource-item-clean.space {
+            border-color: #bbf7d0;
+            background: #f0fdf4;
+        }
+        .resource-icon-clean {
+            width: 32px;
+            height: 32px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #2563eb;
+            background: rgba(255,255,255,.75);
+            flex-shrink: 0;
+        }
+        .resource-item-clean.space .resource-icon-clean { color: #059669; }
+        .timeline-clean {
+            display: grid;
+            gap: 10px;
+        }
+        .timeline-row-clean {
+            display: grid;
+            grid-template-columns: 132px 1fr;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            background: #ffffff;
+        }
+        .timeline-row-clean span:first-child {
+            color: #64748b;
+            font-weight: 700;
+        }
+        .timeline-row-clean span:last-child {
+            color: #0f172a;
+            font-weight: 700;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+            text-align: right;
+        }
+        .status-grid-clean {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .status-card-clean {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            padding: 15px 16px;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+        .status-card-clean.full { grid-column: auto; }
+        .status-icon-clean {
+            width: 34px;
+            height: 34px;
+            border-radius: 12px;
+            background: #ecfdf5;
+            color: #059669;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+        .status-content-clean {
+            min-width: 0;
+            flex: 1;
+        }
+        .status-label-clean {
+            color: #94a3b8;
+            font-size: .86rem !important;
+            font-weight: 700;
+            margin-bottom: 6px;
+            display: block;
+        }
+        .status-card-clean p {
+            margin: 0;
+            line-height: 1.45;
+            word-break: break-word;
+        }
+        @media (max-width: 640px) {
+            .drawer-info-grid { grid-template-columns: 1fr; }
+            .timeline-row-clean { grid-template-columns: 1fr; gap: 4px; }
+            .timeline-row-clean span:last-child { text-align: left; }
+        }
     </style>
 </head>
 <body class="history-page">
@@ -582,76 +788,91 @@ $stageMap = [
             <!-- 補件提示區已移除 -->
 
             <!-- 申請人詳情卡片 -->
-            <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-                <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">申請人帳戶資訊</h4>
-                <div class="flex items-center gap-3">
-                    <div class="w-12 h-12 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 text-lg font-bold">
+            <div class="drawer-card">
+                <h4 class="drawer-section-title"><i class="fa-solid fa-user"></i>申請人與活動資訊</h4>
+                <div class="applicant-summary">
+                    <div class="applicant-avatar">
                         <i class="fa-solid fa-id-card"></i>
                     </div>
-                    <div>
-                        <p class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                    <div class="applicant-main">
+                        <div class="applicant-name-row">
                             <span id="drawer-borrower-name">-</span>
-                            <span class="text-xs bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-mono" id="drawer-borrower-id">-</span>
-                        </p>
-                        <p class="text-xs text-slate-500 font-mono mt-0.5" id="drawer-borrower-email">-</p>
-                        <div class="mt-2">
-                            <p class="text-xs text-slate-400 mb-1">申請單位 / 主辦單位</p>
-                            <p class="text-sm text-slate-800 font-medium mb-3" id="drawer-organization-name">-</p>
+                            <span class="drawer-id-badge" id="drawer-borrower-id">-</span>
+                        </div>
+                        <div class="drawer-email" id="drawer-borrower-email">-</div>
 
-                            <p class="text-xs text-slate-400 mb-1">活動名稱</p>
-                            <p class="text-sm text-slate-800 font-medium mb-3" id="drawer-activity-name">-</p>
-
-                            <p class="text-xs text-slate-500 font-mono mt-1"><span class="text-slate-400">聯絡電話：</span> <span id="drawer-borrower-phone">-</span></p>
+                        <div class="drawer-info-grid">
+                            <div class="drawer-info-item">
+                                <span class="drawer-label">申請單位 / 主辦單位</span>
+                                <span class="drawer-value" id="drawer-organization-name">-</span>
+                            </div>
+                            <div class="drawer-info-item">
+                                <span class="drawer-label">聯絡電話</span>
+                                <span class="drawer-value" id="drawer-borrower-phone">-</span>
+                            </div>
+                            <div class="drawer-info-item full">
+                                <span class="drawer-label">活動名稱</span>
+                                <span class="drawer-value" id="drawer-activity-name">-</span>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
             <!-- 資源清單模組 -->
-            <div class="space-y-3">
-                <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">申借之資源項目</h4>
-                <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs space-y-3" id="drawer-resources-list">
+            <div class="drawer-card">
+                <h4 class="drawer-section-title"><i class="fa-solid fa-box-open"></i>申借之資源項目</h4>
+                <div class="resource-list-clean text-xs" id="drawer-resources-list">
                     <!-- 動態由 JS 塞入場地或器材列表 -->
                 </div>
             </div>
 
-
             <!-- 簡潔版：借用時序追蹤 -->
-            <div class="space-y-3">
-                <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">借用時序追蹤</h4>
-                <div class="bg-white border border-slate-200 rounded-xl overflow-hidden text-xs">
-                    <div class="flex justify-between gap-4 px-4 py-3 border-b border-slate-100">
-                        <span class="text-slate-500">借用開始時間</span>
-                        <span class="font-mono text-slate-700 text-right" id="drawer-start-time">-</span>
+            <div class="drawer-card">
+                <h4 class="drawer-section-title"><i class="fa-regular fa-clock"></i>借用時序追蹤</h4>
+                <div class="timeline-clean">
+                    <div class="timeline-row-clean">
+                        <span>申請送出時間</span>
+                        <span id="drawer-submitted-time">-</span>
                     </div>
-                    <div class="flex justify-between gap-4 px-4 py-3">
-                        <span class="text-slate-500">借用結束時間</span>
-                        <span class="font-mono text-slate-700 text-right" id="drawer-end-time">-</span>
+                    <div class="timeline-row-clean">
+                        <span>借用開始時間</span>
+                        <span id="drawer-start-time">-</span>
+                    </div>
+                    <div class="timeline-row-clean">
+                        <span>借用結束時間</span>
+                        <span id="drawer-end-time">-</span>
                     </div>
                 </div>
             </div>
 
             <!-- 報到與歸還狀態核對 -->
-            <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
-                <span class="text-slate-400 block mb-1">借用紀錄狀態</span>
-                <p class="font-semibold text-slate-700 flex items-center gap-1.5" id="drawer-borrow-status">-</p>
-            </div>
-
-            <div class="grid grid-cols-2 gap-4">
-                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
-                    <span class="text-slate-400 block mb-1">現場報到登記</span>
-                    <p class="font-semibold text-slate-700 flex items-center gap-1.5" id="drawer-checkin-status">
-                        -
-                    </p>
+            <div class="drawer-card">
+                <h4 class="drawer-section-title"><i class="fa-solid fa-clipboard-check"></i>借用狀態確認</h4>
+                <div class="status-grid-clean">
+                    <div class="status-card-clean full">
+                        <div class="status-icon-clean"><i class="fa-solid fa-clipboard-list"></i></div>
+                        <div class="status-content-clean">
+                            <span class="status-label-clean">借用紀錄狀態</span>
+                            <p class="font-semibold text-slate-700 flex items-center gap-1.5" id="drawer-borrow-status">-</p>
+                        </div>
+                    </div>
+                    <div class="status-card-clean">
+                        <div class="status-icon-clean"><i class="fa-solid fa-user-check"></i></div>
+                        <div class="status-content-clean">
+                            <span class="status-label-clean">現場報到登記</span>
+                            <p class="font-semibold text-slate-700 flex items-center gap-1.5" id="drawer-checkin-status">-</p>
+                        </div>
+                    </div>
+                    <div class="status-card-clean">
+                        <div class="status-icon-clean"><i class="fa-solid fa-box-archive"></i></div>
+                        <div class="status-content-clean">
+                            <span class="status-label-clean">歸還點收清點</span>
+                            <p class="font-semibold text-slate-700 flex items-center gap-1.5" id="drawer-return-status">-</p>
+                        </div>
+                    </div>
                 </div>
-                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
-                    <span class="text-slate-400 block mb-1">歸還點收清點</span>
-                    <p class="font-semibold text-slate-700 flex items-center gap-1.5" id="drawer-return-status">
-                        -
-                    </p>
-                </div>
             </div>
-
         </div>
     </div>
 
@@ -797,15 +1018,9 @@ $stageMap = [
             equipments.forEach(eq => {
                 if (eq.trim() === '') return;
                 resourcesContainer.innerHTML += `
-                    <div class="p-3 rounded-lg border border-blue-150 bg-blue-50/50 flex items-center justify-between">
-                        <div class="flex items-center gap-2.5">
-                            <div class="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center text-sm">
-                                <i class="fa-solid fa-box"></i>
-                            </div>
-                            <div>
-                                <p class="font-bold text-slate-800 text-xs">${eq}</p>
-                            </div>
-                        </div>
+                    <div class="resource-item-clean">
+                        <div class="resource-icon-clean"><i class="fa-solid fa-box"></i></div>
+                        <p class="font-bold text-slate-800 text-xs">${eq}</p>
                     </div>
                 `;
             });
@@ -813,15 +1028,9 @@ $stageMap = [
             spaces.forEach(sp => {
                 if (sp.trim() === '') return;
                 resourcesContainer.innerHTML += `
-                    <div class="p-3 rounded-lg border border-emerald-150 bg-emerald-50/50 flex items-center justify-between">
-                        <div class="flex items-center gap-2.5">
-                            <div class="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center text-sm">
-                                <i class="fa-solid fa-map-pin"></i>
-                            </div>
-                            <div>
-                                <p class="font-bold text-slate-800 text-xs">${sp}</p>
-                            </div>
-                        </div>
+                    <div class="resource-item-clean space">
+                        <div class="resource-icon-clean"><i class="fa-solid fa-map-pin"></i></div>
+                        <p class="font-bold text-slate-800 text-xs">${sp}</p>
                     </div>
                 `;
             });

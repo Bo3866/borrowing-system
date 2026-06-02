@@ -46,8 +46,13 @@
 2026-06-01T19:41:36+08:00 start GET={"reservation_id":"62"} SESSION={"user_id":"A000000001","full_name":"學務長教師","role_name":"a","email":"email1@example.com"}
 2026-06-01T19:43:35+08:00 start GET={"reservation_id":"62"} SESSION={"user_id":"A000000001","full_name":"學務長教師","role_name":"a","email":"email1@example.com"}
 2026-06-01T20:02:57+08:00 start GET={"reservation_id":"62"} SESSION={"user_id":"A000000001","full_name":"學務長教師","role_name":"a","email":"email1@example.com"}
+<<<<<<< HEAD
 2026-06-01T21:51:42+08:00 start GET={"reservation_id":"55"} SESSION={"user_id":"A000000001","full_name":"學務長教師","role_name":"a","email":"email1@example.com"}
 2026-06-01T21:52:11+08:00 start GET={"reservation_id":"67"} SESSION={"user_id":"A000000001","full_name":"學務長教師","role_name":"a","email":"email1@example.com"}
 2026-06-02T01:04:58+08:00 start GET={"reservation_id":"66"} SESSION={"user_id":"A000000001","full_name":"學務長教師","role_name":"a","email":"email1@example.com"}
 2026-06-02T01:05:02+08:00 start GET={"reservation_id":"67"} SESSION={"user_id":"A000000001","full_name":"學務長教師","role_name":"a","email":"email1@example.com"}
 2026-06-02T02:01:15+08:00 start GET={"reservation_id":"59"} SESSION={"user_id":"A000000001","full_name":"學務長教師","role_name":"a","email":"email1@example.com"}
+=======
+2026-06-02T14:53:34+08:00 start GET={"reservation_id":"100"} SESSION={"user_id":"B000000001","full_name":"軍訓室教師","role_name":"b","email":"email2@example.com"}
+2026-06-02T15:06:23+08:00 start GET={"reservation_id":"101"} SESSION={"user_id":"B000000001","full_name":"軍訓室教師","role_name":"b","email":"email2@example.com"}
+>>>>>>> b7967954f440579336107509222ca5783fcbf029

@@ -2481,6 +2481,7 @@ SQL;
             <th style="width: 20%;">現場負責人</th>
             <th style="width: 20%;">聯絡電話</th>
             <th style="width: 20%;">內容</th>
+            <th style="width: 10%; text-align: center;">操作</th>
             </tr>
     </thead>
     <tbody>
@@ -2516,9 +2517,17 @@ SQL;
 
                                 </script>
 <script>
-// 新增一列攤位的函數 (沒有刪除按鈕)
+// 新增一列攤位的函數 (包含刪除按鈕)
 function addSalesRow() {
     const tbody = document.getElementById('table_sales_roster').querySelector('tbody');
+    const currentRows = tbody.querySelectorAll('tr').length;
+    
+    // 增加防呆：最多只能加到 20 列
+    if (currentRows >= 20) {
+        alert('攤位數量最多限制 20 個喔！');
+        return;
+    }
+
     const tr = document.createElement('tr');
     tr.innerHTML = `
         <td><input type="text" name="sales_booth_no[]" class="form-control" placeholder="例: A1"></td>
@@ -2526,11 +2535,35 @@ function addSalesRow() {
         <td><input type="text" name="sales_booth_manager[]" class="form-control" placeholder="姓名"></td>
         <td><input type="text" name="sales_booth_phone[]" class="form-control" placeholder="電話"></td>
         <td><input type="text" name="sales_booth_content[]" class="form-control" placeholder="販售內容..."></td>
+        <td style="text-align: center;">
+            <button type="button" class="btn-del-staff" onclick="removeSalesRow(this)">刪除</button>
+        </td>
     `;
     tbody.appendChild(tr);
+
+    // 👇 同步將最新列數寫回上面的「攤位數量」輸入框
+    const countInput = document.getElementById('sales_count');
+    if (countInput) countInput.value = tbody.querySelectorAll('tr').length;
 }
 
-// 根據攤位數量自動調整列數
+// 移除攤位列的函數
+function removeSalesRow(btn) {
+    const tr = btn.closest('tr');
+    const tbody = tr.parentNode;
+    
+    // 防呆機制：如果刪到剩最後一筆，只清空內容不刪除整列 (避免整個表格不見)
+    if (tbody.querySelectorAll('tr').length <= 1) {
+        tr.querySelectorAll('input').forEach(input => input.value = '');
+        return;
+    }
+    tr.remove();
+
+    // 👇 同步將最新列數寫回上面的「攤位數量」輸入框
+    const countInput = document.getElementById('sales_count');
+    if (countInput) countInput.value = tbody.querySelectorAll('tr').length;
+}
+
+// 根據攤位數量自動調整列數 (保留這個好用的功能)
 function syncSalesRosterRows() {
     const countInput = document.getElementById('sales_count');
     if (!countInput) return;

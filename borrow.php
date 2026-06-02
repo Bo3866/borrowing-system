@@ -290,8 +290,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['has_alcohol'] = isset($_POST['has_alcohol']) ? '1' : '';
     $formData['has_fire'] = isset($_POST['has_fire']) ? '1' : '';
     $formData['has_sales'] = isset($_POST['has_sales']) ? '1' : '';
-    $formData['sales_location'] = trim((string)($_POST['sales_location'] ?? ''));
+$formData['sales_location'] = trim((string)($_POST['sales_location'] ?? ''));
     $formData['sales_count'] = trim((string)($_POST['sales_count'] ?? ''));
+    
+    // --- 新增：處理攤位清冊陣列轉 JSON ---
+    $salesRoster = [];
+    if (isset($_POST['sales_booth_no']) && is_array($_POST['sales_booth_no'])) {
+        foreach ($_POST['sales_booth_no'] as $index => $no) {
+            $no = trim((string)$no);
+            $name = trim((string)($_POST['sales_booth_name'][$index] ?? ''));
+            $manager = trim((string)($_POST['sales_booth_manager'][$index] ?? ''));
+            $phone = trim((string)($_POST['sales_booth_phone'][$index] ?? ''));
+            $content = trim((string)($_POST['sales_booth_content'][$index] ?? ''));
+            
+            // 只要有填寫編號或名稱，就視為有效資料
+            if ($no !== '' || $name !== '') {
+                $salesRoster[] = [
+                    'booth_no' => $no,
+                    'booth_name' => $name,
+                    'manager' => $manager,
+                    'phone' => $phone,
+                    'content' => $content
+                ];
+            }
+        }
+    }
+    $formData['sales_roster_json'] = empty($salesRoster) ? null : json_encode($salesRoster, JSON_UNESCAPED_UNICODE);
+    $formData['draft_sales_layout_map'] = trim((string)($_POST['draft_sales_layout_map'] ?? '')); // 擷取草稿的圖片路徑
+    
     $formData['space_id'] = trim((string)($_POST['space_id'] ?? ''));
     $formData['borrow_start_date'] = trim((string)($_POST['borrow_start_date'] ?? ''));
     
@@ -673,8 +699,7 @@ CREATE TABLE IF NOT EXISTS reservations (
     has_alcohol VARCHAR(1) NULL DEFAULT '',
     has_fire VARCHAR(1) NULL DEFAULT '',
     has_sales VARCHAR(1) NULL DEFAULT '',
-    alcohol_coordinator VARCHAR(50) NULL,
-    alcohol_president VARCHAR(50) NULL,
+
 
     PRIMARY KEY (reservation_id)
 ) ENGINE=InnoDB;
@@ -836,8 +861,6 @@ SQL;
                     'has_alcohol' => "VARCHAR(1) NULL DEFAULT '' COMMENT '是否含酒精'",
                     'has_fire' => "VARCHAR(1) NULL DEFAULT '' COMMENT '是否含明火'",
                     'has_sales' => "VARCHAR(1) NULL DEFAULT '' COMMENT '是否含販售/攤販'",
-                    'alcohol_coordinator' => "VARCHAR(50) NULL COMMENT '酒精活動負責人'",
-                    'alcohol_president' => "VARCHAR(50) NULL COMMENT '酒精活動社長'",
                     'proposal_file' => "VARCHAR(255) NULL COMMENT '企劃書路徑'",
                     'proposal_uploaded_at' => "DATETIME NULL COMMENT '企劃書上傳時間'",
                     'certificate_id' => "BIGINT UNSIGNED NULL COMMENT '證照編號'",
@@ -967,13 +990,12 @@ SQL;
                     'has_alcohol' => ['type' => 's', 'value' => $formData['has_alcohol']],
                     'has_fire' => ['type' => 's', 'value' => $formData['has_fire']],
                     'has_sales' => ['type' => 's', 'value' => $formData['has_sales']],
-                    'alcohol_coordinator' => ['type' => 's', 'value' => $formData['alcohol_coordinator'] ?? ''],
-                    'alcohol_president' => ['type' => 's', 'value' => $formData['alcohol_president'] ?? ''],
                     'fire_activity_name' => ['type' => 's', 'value' => $formData['fire_activity_name'] !== '' ? $formData['fire_activity_name'] : null],
                     'fire_date' => ['type' => 's', 'value' => $formData['fire_date']],
                     'fire_start_time' => ['type' => 's', 'value' => $formData['fire_start_time']],
                     'fire_end_time' => ['type' => 's', 'value' => $formData['fire_end_time']],
                     'fire_location' => ['type' => 's', 'value' => $formData['fire_location'] !== '' ? $formData['fire_location'] : null],
+                    // Individual longtext columns for backward compatibility
                     // Individual longtext columns for backward compatibility
                     'fire_performers' => ['type' => 's', 'value' => $formData['fire_performers']],
                     'fire_oilers' => ['type' => 's', 'value' => $formData['fire_oilers']],
@@ -983,9 +1005,9 @@ SQL;
                     'fire_medical' => ['type' => 's', 'value' => $formData['fire_medical']],
                     'fire_staff_json' => ['type' => 's', 'value' => $formData['fire_staff_json']],
                     'sales_location' => ['type' => 's', 'value' => $formData['sales_location'] !== '' ? $formData['sales_location'] : null],
-                    'sales_count' => ['type' => 'i', 'value' => $formData['sales_count'] !== '' ? (int)$formData['sales_count'] : null]
-                    ,
-                    // 假日費用欄位（若存在資料表則會自動加入）
+                    'sales_count' => ['type' => 'i', 'value' => $formData['sales_count'] !== '' ? (int)$formData['sales_count'] : null],
+                    'sales_roster_json' => ['type' => 's', 'value' => $formData['sales_roster_json'] ?? null],
+                    'sales_layout_map' => ['type' => 's', 'value' => null],
                     'holiday_fee_count' => ['type' => 'i', 'value' => $holiday_fee_count],
                     'holiday_fee' => ['type' => 'i', 'value' => $holiday_fee]
                 ];
@@ -1251,7 +1273,37 @@ SQL;
                 } else {
                     throw new RuntimeException('請先上傳活動企劃書！');
                 }
+// --- 新增：處理攤位圖冊 (sales_layout_map) 上傳 ---
+                $salesLayoutMapPath = null;
+                if (isset($_FILES['sales_layout_map']) && $_FILES['sales_layout_map']['error'] !== UPLOAD_ERR_NO_FILE) {
+                    $sFile = $_FILES['sales_layout_map'];
+                    if ($sFile['error'] === UPLOAD_ERR_OK) {
+                        $sExt = strtolower(pathinfo((string)$sFile['name'], PATHINFO_EXTENSION));
+                        if (in_array($sExt, ['jpg', 'jpeg', 'png'])) {
+                            $sUploadDir = __DIR__ . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'sales_maps';
+                            if (!is_dir($sUploadDir)) {
+                                mkdir($sUploadDir, 0755, true);
+                            }
+                            $sTargetName = time() . '_sales_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', pathinfo((string)$sFile['name'], PATHINFO_FILENAME)) . '.' . $sExt;
+                            $sTargetPath = $sUploadDir . DIRECTORY_SEPARATOR . $sTargetName;
+                            if (move_uploaded_file($sFile['tmp_name'], $sTargetPath)) {
+                                $salesLayoutMapPath = 'uploads/sales_maps/' . $sTargetName;
+                            }
+                        } else {
+                            throw new RuntimeException('攤位圖冊僅支援 JPG 與 PNG 格式。');
+                        }
+                    }
+                } elseif ($formData['draft_sales_layout_map'] !== '') {
+                    $salesLayoutMapPath = $formData['draft_sales_layout_map']; // 沿用草稿中的圖冊
+                }
 
+                if ($salesLayoutMapPath !== null) {
+                    $updateSalesMapStmt = mysqli_prepare($link, 'UPDATE reservations SET sales_layout_map = ? WHERE reservation_id = ?');
+                    mysqli_stmt_bind_param($updateSalesMapStmt, 'si', $salesLayoutMapPath, $commonReservationId);
+                    mysqli_stmt_execute($updateSalesMapStmt);
+                    mysqli_stmt_close($updateSalesMapStmt);
+                }
+                // --- 攤位圖冊處理結束 ---
                 if (!empty($formData['space_id'])) {
                     $spaceConflictStmt = mysqli_prepare(
                         $link,
@@ -2399,10 +2451,14 @@ SQL;
 
         <hr style="margin: 25px 0; border: 0; border-top: 1px solid #e2e8f0;">
         
-        <div class="form-group" style="margin-bottom: 25px;">
+<div class="form-group" style="margin-bottom: 25px;">
             <h4 style="margin: 0 0 10px 0; color: #1e40af; font-size: 16px; font-weight: bold;">上傳攤位圖冊</h4>
             <p style="color: #64748b; font-size: 14px; margin-bottom: 10px;">請上傳您的攤位配置圖 (接受 JPG, PNG 格式)。</p>
-            <input type="file" id="sales_layout_map" name="sales_layout_map" class="form-control" accept="image/png, image/jpeg, image/jpg" style="padding: 6px;">
+            
+            <input type="hidden" name="draft_sales_layout_map" id="draft_sales_layout_map" value="">
+            <span id="sales_layout_map_display" style="font-size: 14px; color: #1554b9; font-weight: 500; display: block; margin-bottom: 5px;"></span>
+            
+            <input type="file" id="sales_layout_map" name="sales_layout_map" class="form-control" accept="image/png, image/jpeg, image/jpg" style="padding: 6px;" onchange="if (this.files.length > 0) { document.getElementById('sales_layout_map_display').innerText = '已選擇新檔案：' + this.files[0].name; document.getElementById('draft_sales_layout_map').value = ''; } else { document.getElementById('sales_layout_map_display').innerText = ''; }">
         </div>
 
         <div class="sales-roster-wrapper" style="margin-bottom: 15px; padding: 20px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
@@ -3864,7 +3920,7 @@ const draft = data.draft || {};
                     }
 
                     // 2. 如果這個欄位存的是陣列 (例如明火表單的人員名單)
-                    if (Array.isArray(values)) {
+if (Array.isArray(values)) {
                         let tableId = '';
                         if (targetName === 'fire_staff_performer[]') tableId = 'table_staff_performer';
                         else if (targetName === 'fire_staff_oiler[]') tableId = 'table_staff_oiler';
@@ -3872,13 +3928,21 @@ const draft = data.draft || {};
                         else if (targetName === 'fire_staff_security[]') tableId = 'table_staff_security';
                         else if (targetName === 'fire_staff_emergency[]') tableId = 'table_staff_emergency';
                         else if (targetName === 'fire_staff_medical[]') tableId = 'table_staff_medical';
+                        // --- 新增這行：處理攤位清冊的回填 ---
+                        else if (['sales_booth_no[]', 'sales_booth_name[]', 'sales_booth_manager[]', 'sales_booth_phone[]', 'sales_booth_content[]'].includes(targetName)) {
+                            tableId = 'table_sales_roster';
+                        }
 
                         if (tableId) {
                             const tbody = document.getElementById(tableId).querySelector('tbody');
                             if (tbody) {
-                                // 動態把缺少的列數補齊 (確保輸入框數量等於陣列長度)
+                                // 動態把缺少的列數補齊
                                 while (tbody.querySelectorAll('tr').length < values.length) {
-                                    addFireStaffRow(tableId, targetName);
+                                    if (tableId === 'table_sales_roster') {
+                                        addSalesRow(); // 攤位清冊要呼叫它專屬的新增函數
+                                    } else {
+                                        addFireStaffRow(tableId, targetName);
+                                    }
                                 }
                                 // 重新抓取所有輸入框，依序把值填進去
                                 const inputs = document.querySelectorAll(`[name="${targetName}"]`);
@@ -3895,7 +3959,7 @@ const draft = data.draft || {};
                             });
                         }
                     } else {
-                        // 3. 一般的單一欄位處理
+                        // 一般的單一欄位處理
                         els.forEach(function (el) {
                             if (el.type === 'checkbox') {
                                 el.checked = values === '1' || values === 1 || values === true || String(values).toLowerCase() === 'yes';
@@ -3908,6 +3972,14 @@ const draft = data.draft || {};
                     }
                 });
 
+                // --- 新增這段：處理草稿中的攤位圖冊顯示 ---
+                if (formData['draft_sales_layout_map'] || formData['sales_layout_map']) {
+                    const draftMapInput = document.getElementById('draft_sales_layout_map');
+                    const mapDisplay = document.getElementById('sales_layout_map_display');
+                    const mapValue = formData['draft_sales_layout_map'] || formData['sales_layout_map'];
+                    if (draftMapInput) draftMapInput.value = mapValue;
+                    if (mapDisplay) mapDisplay.innerText = '已載入圖冊：' + mapValue.split('/').pop();
+                }
                 const currentDraftIdInput = document.getElementById('current_draft_id');
                 if (currentDraftIdInput) {
                     currentDraftIdInput.value = draft.draft_id || draft.draftId || draftId;

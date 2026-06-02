@@ -111,6 +111,30 @@ if (isset($_FILES['proposal_file']) && $_FILES['proposal_file']['error'] !== UPL
     $proposalUploadedAt = date('Y-m-d H:i:s');
 }
 
+// --- 這裡就是那段「溫馨提醒」新增的：處理草稿攤位圖冊 (sales_layout_map) 上傳 ---
+if (isset($_FILES['sales_layout_map']) && $_FILES['sales_layout_map']['error'] === UPLOAD_ERR_OK) {
+    $sFile = $_FILES['sales_layout_map'];
+    $sExt = strtolower(pathinfo((string)$sFile['name'], PATHINFO_EXTENSION));
+    
+    if (in_array($sExt, ['jpg', 'jpeg', 'png'])) {
+        $sUploadDir = dirname(__DIR__) . '/uploads/sales_maps';
+        
+        if (!is_dir($sUploadDir)) {
+            mkdir($sUploadDir, 0755, true);
+        }
+        
+        $sTargetName = time() . '_draft_sales_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', pathinfo((string)$sFile['name'], PATHINFO_FILENAME)) . '.' . $sExt;
+        $sTargetPath = $sUploadDir . '/' . $sTargetName;
+        
+        if (move_uploaded_file($sFile['tmp_name'], $sTargetPath)) {
+            // 將圖片路徑存入草稿的 formData 陣列中
+            // 這樣稍後 json_encode 存進資料庫時，前端下次讀取草稿就能抓到路徑
+            $formData['draft_sales_layout_map'] = 'uploads/sales_maps/' . $sTargetName;
+        }
+    }
+}
+// --- 處理草稿攤位圖冊結束 ---
+
 $draftJson = json_encode([
     'formData' => $formData,
     'currentStep' => $currentStep

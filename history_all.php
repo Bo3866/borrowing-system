@@ -49,7 +49,7 @@ if ($dbError === '') {
     $todayCheckedIn = 0;
 
     // 2.4 借用紀錄查詢：只統計「審核完成且借用結束時間已過」的歷史借用紀錄
-    $historyBaseWhere = "approval_status = 'approved' AND borrow_end_at <= NOW()";
+    $historyBaseWhere = "approval_status = 'approved' AND borrow_end_at <= NOW() AND checked_in_at IS NOT NULL";
 
     $cRes = mysqli_query($link, "SELECT COUNT(*) AS c FROM reservations WHERE {$historyBaseWhere}");
     if ($cRes) { $totalCount = (int)mysqli_fetch_assoc($cRes)['c']; mysqli_free_result($cRes); }
@@ -91,8 +91,8 @@ if ($dbError === '') {
     $activityExpr = $pickReservationColumn(['activity_name', 'event_name', 'project_name', 'event_title', 'activity_title']);
     $phoneExpr = $pickReservationColumn(['coordinator_phone', 'contact_phone', 'applicant_phone', 'phone', 'tel', 'mobile']);
 
-    // 基本規則：此頁只顯示「審核完成」且「借用結束時間已過」的歷史借用紀錄
-    $where = [ "r.approval_status = 'approved'", "r.borrow_end_at <= NOW()" ];
+    // 基本規則：此頁只顯示「審核完成」、「已實際報到/領取」且「借用結束時間已過」的歷史借用紀錄
+    $where = [ "r.approval_status = 'approved'", "r.borrow_end_at <= NOW()", "r.checked_in_at IS NOT NULL" ];
 
     // 此下拉選單為借用/歸還狀態篩選，不再篩選審核中、已駁回等非歷史借用案件
     if ($statusFilter === 'returned') {
@@ -587,7 +587,7 @@ $stageMap = [
                     <div>
                         <p style="color:#64748b;margin:0;font-weight:600;">歷史借用紀錄</p>
                         <h3 style="font-size:1.5rem;margin:6px 0;color:var(--text-color);font-weight:700;"><?php echo number_format($totalCount); ?></h3>
-                        <p style="font-size:0.85rem;color:#94a3b8;margin:0;">審核完成且借用結束</p>
+                        <p style="font-size:0.85rem;color:#94a3b8;margin:0;">審核完成、已報到且借用結束</p>
                     </div>
                     <div style="width:44px;height:44px;border-radius:10px;background:#f8fafc;display:flex;align-items:center;justify-content:center;color:#64748b;border:1px solid rgba(44,62,80,0.06);">
                         <i class="fa-solid fa-list-ol"></i>
@@ -797,17 +797,23 @@ $stageMap = [
                     <div class="applicant-main">
                         <div class="applicant-name-row">
                             <span id="drawer-borrower-name">-</span>
-                            <span class="text-xs bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-mono" id="drawer-borrower-id">-</span>
-                        </p>
-                        <p class="text-xs text-slate-500 font-mono mt-0.5" id="drawer-borrower-email">-</p>
-                        <div class="mt-2">
-                            <p class="text-xs text-slate-400 mb-1">單位名稱 / 主辦社團</p>
-                            <p class="text-sm text-slate-800 font-medium mb-3" id="drawer-organization-name">-</p>
+                            <span class="drawer-id-badge" id="drawer-borrower-id">-</span>
+                        </div>
+                        <div class="drawer-email" id="drawer-borrower-email">-</div>
 
-                            <p class="text-xs text-slate-400 mb-1">活動名稱</p>
-                            <p class="text-sm text-slate-800 font-medium mb-3" id="drawer-activity-name">-</p>
-
-                            <p class="text-xs text-slate-500 font-mono mt-1"><span class="text-slate-400">聯絡電話：</span> <span id="drawer-borrower-phone">-</span></p>
+                        <div class="drawer-info-grid">
+                            <div class="drawer-info-item">
+                                <span class="drawer-label">申請單位 / 主辦單位</span>
+                                <span class="drawer-value" id="drawer-organization-name">-</span>
+                            </div>
+                            <div class="drawer-info-item">
+                                <span class="drawer-label">聯絡電話</span>
+                                <span class="drawer-value" id="drawer-borrower-phone">-</span>
+                            </div>
+                            <div class="drawer-info-item full">
+                                <span class="drawer-label">活動名稱</span>
+                                <span class="drawer-value" id="drawer-activity-name">-</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -821,56 +827,50 @@ $stageMap = [
                 </div>
             </div>
 
-            <!-- 時間軸 -->
-            <div class="space-y-3">
-                <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">借用時序追蹤</h4>
-                <div class="relative pl-6 border-l border-slate-200 space-y-4 text-xs">
-                    <div class="relative">
-                        <div class="absolute -left-[30px] top-0.5 w-4 h-4 rounded-full bg-slate-100 border-2 border-slate-400 flex items-center justify-center text-[8px] text-slate-500"><i class="fa-solid fa-paper-plane"></i></div>
-                        <p class="font-medium text-slate-700">申請送出時間</p>
-                        <p class="text-slate-500 mt-0.5" id="drawer-submitted-time">-</p>
+            <!-- 簡潔版：借用時序追蹤 -->
+            <div class="drawer-card">
+                <h4 class="drawer-section-title"><i class="fa-regular fa-clock"></i>借用時序追蹤</h4>
+                <div class="timeline-clean">
+                    <div class="timeline-row-clean">
+                        <span>申請送出時間</span>
+                        <span id="drawer-submitted-time">-</span>
                     </div>
-                    <div id="drawer-stage-inline-wrap" style="display:none;">
-                        <p class="mt-1 text-sm">
-                            <span id="drawer-stage-inline-label" class="text-xs text-slate-500 mr-2" style="display:inline;">目前審核階段：</span>
-                            <span id="drawer-stage-inline" class="inline-block text-[11px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-full">-</span>
-                        </p>
+                    <div class="timeline-row-clean">
+                        <span>借用開始時間</span>
+                        <span id="drawer-start-time">-</span>
                     </div>
-                    <div class="relative">
-                        <div class="absolute -left-[30px] top-0.5 w-4 h-4 rounded-full bg-emerald-50 border-2 border-emerald-500 flex items-center justify-center text-[8px] text-emerald-600"><i class="fa-solid fa-play"></i></div>
-                        <p class="font-medium text-slate-700">借用起算時段</p>
-                        <p class="text-slate-500 mt-0.5" id="drawer-start-time">-</p>
-                    </div>
-                    <div class="relative">
-                        <div class="absolute -left-[30px] top-0.5 w-4 h-4 rounded-full bg-rose-50 border-2 border-rose-500 flex items-center justify-center text-[8px] text-rose-600"><i class="fa-solid fa-flag"></i></div>
-                        <p class="font-medium text-slate-700">預計歸還截止</p>
-                        <p class="text-slate-500 mt-0.5" id="drawer-end-time">-</p>
+                    <div class="timeline-row-clean">
+                        <span>借用結束時間</span>
+                        <span id="drawer-end-time">-</span>
                     </div>
                 </div>
             </div>
 
             <!-- 報到與歸還狀態核對 -->
-            <div class="grid grid-cols-2 gap-4">
-                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
-                    <span class="text-slate-400 block mb-1">現場報到登記</span>
-                    <p class="font-semibold text-slate-700 flex items-center gap-1.5" id="drawer-checkin-status">
-                        -
-                    </p>
-                </div>
-                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
-                    <span class="text-slate-400 block mb-1">歸還點收清點</span>
-                    <p class="font-semibold text-slate-700 flex items-center gap-1.5" id="drawer-return-status">
-                        -
-                    </p>
-                </div>
-            </div>
-
-            <!-- 審批工作階段 -->
-            <div class="border-t border-slate-150 pt-5 space-y-3">
-                <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">系統工作紀錄</h4>
-                <div class="bg-slate-50 p-3.5 rounded-lg border border-slate-200 text-xs space-y-2 text-slate-600">
-                    <div class="flex justify-between"><span class="font-medium text-slate-500">當前審核階段 (Stage)：</span><span class="text-slate-800 font-mono" id="drawer-stage">-</span></div>
-                    <div class="flex justify-between"><span class="font-medium text-slate-500">案件審核狀態：</span><span class="text-slate-800 font-semibold" id="drawer-status-label">-</span></div>
+            <div class="drawer-card">
+                <h4 class="drawer-section-title"><i class="fa-solid fa-clipboard-check"></i>借用狀態確認</h4>
+                <div class="status-grid-clean">
+                    <div class="status-card-clean full">
+                        <div class="status-icon-clean"><i class="fa-solid fa-clipboard-list"></i></div>
+                        <div class="status-content-clean">
+                            <span class="status-label-clean">借用紀錄狀態</span>
+                            <p class="font-semibold text-slate-700 flex items-center gap-1.5" id="drawer-borrow-status">-</p>
+                        </div>
+                    </div>
+                    <div class="status-card-clean">
+                        <div class="status-icon-clean"><i class="fa-solid fa-user-check"></i></div>
+                        <div class="status-content-clean">
+                            <span class="status-label-clean">現場報到登記</span>
+                            <p class="font-semibold text-slate-700 flex items-center gap-1.5" id="drawer-checkin-status">-</p>
+                        </div>
+                    </div>
+                    <div class="status-card-clean">
+                        <div class="status-icon-clean"><i class="fa-solid fa-box-archive"></i></div>
+                        <div class="status-content-clean">
+                            <span class="status-label-clean">歸還點收清點</span>
+                            <p class="font-semibold text-slate-700 flex items-center gap-1.5" id="drawer-return-status">-</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

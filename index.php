@@ -637,26 +637,32 @@ if ($link) {
             function calculateAvailableForPeriod(dateStr, startPeriodTime, endPeriodTime) {
                 let used = 0;
 
-                if (calData.selectedItemType === 'equipment') {
-                    calData.reservations.forEach(r => {
-                        const rDate = r.start.substring(0, 10);
+            if (calData.selectedItemType === 'equipment') {
+                calData.reservations.forEach(r => {
+                    // 改用 actual_pickup_at 擷取日期
+                    if (r.actual_pickup_at) {
+                        const rDate = r.actual_pickup_at.substring(0, 10);
                         if (rDate === dateStr) {
                             used += r.qty;
                         }
-                    });
-                } else {
-                    const pStart = new Date(`${dateStr}T${startPeriodTime}`).getTime();
-                    const pEnd = new Date(`${dateStr}T${endPeriodTime}`).getTime();
+                    }
+                });
+            } else {
+    const pStart = new Date(`${dateStr}T${startPeriodTime}`).getTime();
+    const pEnd = new Date(`${dateStr}T${endPeriodTime}`).getTime();
 
-                    calData.reservations.forEach(r => {
-                        const rStart = new Date(r.start.replace(' ', 'T')).getTime();
-                        const rEnd = new Date(r.end.replace(' ', 'T')).getTime();
+    calData.reservations.forEach(r => {
+        // 確保欄位有值才進行比對
+        if (r.actual_pickup_at && r.actual_return_at) {
+            const rStart = new Date(r.actual_pickup_at.replace(' ', 'T')).getTime();
+            const rEnd = new Date(r.actual_return_at.replace(' ', 'T')).getTime();
 
-                        if (!(pEnd <= rStart || pStart >= rEnd)) {
-                            used += r.qty;
-                        }
-                    });
-                }
+            if (!(pEnd <= rStart || pStart >= rEnd)) {
+                used += r.qty;
+            }
+        }
+    });
+}
 
                 const finalAvail = calData.totalCapacity - used;
                 return Math.max(0, finalAvail);
@@ -715,16 +721,19 @@ if ($link) {
                     const e = new Date(t + step);
                     let used = 0;
                     calData.reservations.forEach(r => {
-                        const rStart = new Date(r.start.replace(' ', 'T'));
-                        const rEnd = new Date(r.end.replace(' ', 'T'));
-                        if (!(e <= rStart || s >= rEnd)) {
-                            used += r.qty || 0;
+                        // 改用 actual_pickup_at 與 actual_return_at
+                        if (r.actual_pickup_at && r.actual_return_at) {
+                            const rStart = new Date(r.actual_pickup_at.replace(' ', 'T'));
+                            const rEnd = new Date(r.actual_return_at.replace(' ', 'T'));
+                            if (!(e <= rStart || s >= rEnd)) {
+                                used += r.qty || 0;
+                            }
                         }
                     });
-                    const avail = Math.max(0, calData.totalCapacity - used);
-                    if (avail > 0) allZero = false;
-                    if (avail <= 0) allPositive = false;
-                }
+    const avail = Math.max(0, calData.totalCapacity - used);
+    if (avail > 0) allZero = false;
+    if (avail <= 0) allPositive = false;
+}
 
                 if (allZero) {
                     return { text: '已借完', color: 'none' };
@@ -825,10 +834,13 @@ if ($link) {
                     // 計算此時段被預約的數量
                     let used = 0;
                     calData.reservations.forEach(r => {
-                        const rStart = new Date(r.start.replace(' ', 'T'));
-                        const rEnd = new Date(r.end.replace(' ', 'T'));
-                        if (!(e <= rStart || s >= rEnd)) {
-                            used += r.qty || 0;
+                        // 改用 actual_pickup_at 與 actual_return_at
+                        if (r.actual_pickup_at && r.actual_return_at) {
+                            const rStart = new Date(r.actual_pickup_at.replace(' ', 'T'));
+                            const rEnd = new Date(r.actual_return_at.replace(' ', 'T'));
+                            if (!(e <= rStart || s >= rEnd)) {
+                                used += r.qty || 0;
+                            }
                         }
                     });
 

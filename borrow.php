@@ -100,8 +100,8 @@ if ($dbError === '') {
         LEFT JOIN equipments e ON e.equipment_code = ec.equipment_code
         LEFT JOIN equipment_reservation_items eri ON e.equipment_id = eri.equipment_id
         LEFT JOIN reservations r ON eri.reservation_id = r.reservation_id
-            AND r.borrow_start_at <= NOW()
-            AND r.borrow_end_at > NOW()
+            AND r.actual_pickup_at <= NOW()
+            AND r.actual_return_at > NOW()
             AND r.approval_status IN ('pending', 'approved')
             AND r.returned_at IS NULL
         GROUP BY ec.equipment_code, ec.equipment_name, ec.borrow_limit_quantity
@@ -159,9 +159,9 @@ if ($dbError === '') {
             $existingReservationsSql = "
                 SELECT
                     sri.space_id,
-                    DATE(r.borrow_start_at) AS reserve_date,
-                    TIME(r.borrow_start_at) AS reserve_start,
-                    TIME(r.borrow_end_at) AS reserve_end
+                    DATE(r.actual_pickup_at) AS reserve_date,
+                    TIME(r.actual_pickup_at) AS reserve_start,
+                    TIME(r.actual_return_at) AS reserve_end
                 FROM space_reservation_items sri
                 JOIN reservations r ON r.reservation_id = sri.reservation_id
                                 WHERE r.approval_status IN ('pending', 'approved')
@@ -185,7 +185,9 @@ if ($dbError === '') {
             $existingEquipSql = "
                 SELECT
                     e.equipment_code,
-                    DATE(r.borrow_start_at) AS reserve_date
+                    DATE(r.actual_pickup_at) AS reserve_date,
+                    TIME(r.actual_pickup_at) AS reserve_start, 
+                    TIME(r.actual_return_at) AS reserve_end
                 FROM equipment_reservation_items eri
                 JOIN reservations r ON r.reservation_id = eri.reservation_id
                 JOIN equipments e ON eri.equipment_id = e.equipment_id
@@ -1119,8 +1121,8 @@ SQL;
                                FROM equipment_reservation_items eri
                                JOIN reservations r ON r.reservation_id = eri.reservation_id
                                WHERE r.approval_status IN ("pending", "approved")
-                                 AND r.borrow_start_at < ?
-                                 AND r.borrow_end_at > ?
+                                 AND r.r.actual_pickup_at < ?
+                                 AND r.actual_return_at > ?
                            )
                          ORDER BY CASE WHEN e.equipment_id > ? THEN 0 ELSE 1 END, e.equipment_id ASC LIMIT ?'
                     );
@@ -1361,7 +1363,7 @@ SQL;
                          WHERE sri.space_id = ?
                              AND r.approval_status IN ("pending", "approved")
                              AND r.returned_at IS NULL
-                             AND NOT (r.borrow_end_at < ? OR r.borrow_start_at > ?)'
+                             AND NOT (r.actual_return_at < ? OR r.actual_pickup_at > ?)'
                     );
                     if (!$spaceConflictStmt) {
                         throw new RuntimeException('檢查空間時段衝突失敗：' . mysqli_error($link));

@@ -344,8 +344,8 @@ if ($pageError === '' && $link) {
             r.user_id,
             u.full_name,
             u.email,
-            r.borrow_start_at,
-            r.borrow_end_at,
+            r.actual_pickup_at AS r.borrow_start_at,
+            r.actual_return_at AS r.borrow_end_at,
             hs.handover_id,
             hs.handover_at AS latest_handover_at,
             hs.returned_at AS latest_returned_at,
@@ -383,7 +383,7 @@ if ($pageError === '' && $link) {
           AND EXISTS (
               SELECT 1 FROM equipment_reservation_items eri WHERE eri.reservation_id = r.reservation_id
           )
-        ORDER BY r.borrow_start_at ASC
+        ORDER BY r.actual_pickup_at ASC
         LIMIT 300
     ";
 
@@ -398,14 +398,14 @@ if ($pageError === '' && $link) {
     }
 
     if ($pageError === '' && $canViewSpace) {
-        $spaceSql = "
+$spaceSql = "
             SELECT
                 r.reservation_id,
                 r.user_id,
                 u.full_name,
                 u.email,
-                r.borrow_start_at,
-                r.borrow_end_at,
+                r.actual_pickup_at AS borrow_start_at,
+                r.actual_return_at AS borrow_end_at,
                 hs.handover_id,
                 hs.opened_at AS latest_opened_at,
                 hs.note AS latest_note,
@@ -434,9 +434,9 @@ if ($pageError === '' && $link) {
               AND EXISTS (
                   SELECT 1 FROM space_reservation_items sri WHERE sri.reservation_id = r.reservation_id
               )
-            ORDER BY r.borrow_start_at ASC
+            ORDER BY r.actual_pickup_at ASC
             LIMIT 300
-        ";
+            ";
 
         $spaceResult = mysqli_query($link, $spaceSql);
         if ($spaceResult) {

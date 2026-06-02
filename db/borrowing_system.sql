@@ -33,7 +33,7 @@ CREATE TABLE `approval_logs` (
   `reservation_id` bigint(20) UNSIGNED NOT NULL COMMENT '關聯預約總表(預約編號)',
   `reviewer_id` varchar(10) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '審核人員ID(學號/教職員編號)',
   `reviewed_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '審核時間',
-  `review_result` enum('approved','rejected') COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '審核結果',
+  `review_result` enum('approved','need_revision','rejected') COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '審核結果',
   `review_comment` text COLLATE utf8mb4_unicode_ci COMMENT '詳細評論/理由',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP

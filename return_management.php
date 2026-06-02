@@ -845,11 +845,13 @@ if ($dbError === '' && count($rows) > 0) {
                                             <td colspan="7" class="p-4">
                                                 <?php
                                                     $approvedStages = [];
+                                                    $needRevisionStages = [];
                                                     $rejectedStages = [];
                                                     $stageTimes = [];
                                                     if (!empty($row['_stage_results'])) {
                                                         foreach ($row['_stage_results'] as $rRole => $rResult) {
                                                             if ($rResult === 'approved') $approvedStages[] = $rRole;
+                                                            if ($rResult === 'need_revision') $needRevisionStages[] = $rRole;
                                                             if ($rResult === 'rejected') $rejectedStages[] = $rRole;
                                                         }
                                                     }
@@ -860,8 +862,10 @@ if ($dbError === '' && count($rows) > 0) {
                                                     }
 
                                                     if (in_array('3', $approvedStages, true)) { $approvedStages[] = 'd'; }
+                                                    if (in_array('3', $needRevisionStages, true)) { $needRevisionStages[] = 'd'; }
                                                     if (in_array('3', $rejectedStages, true)) { $rejectedStages[] = 'd'; }
                                                     $approvedStages = array_values(array_unique($approvedStages));
+                                                    $needRevisionStages = array_values(array_unique($needRevisionStages));
                                                     $rejectedStages = array_values(array_unique($rejectedStages));
 
                                                     $order = ['a','b','c','d','3'];
@@ -902,8 +906,9 @@ if ($dbError === '' && count($rows) > 0) {
                                                             <span class="stepper-subtext approval-text text-[11px] block">
                                                                 <?php
                                                                     $t = $stageTimes['a'] ?? null;
-                                                                    $res = in_array('a', $approvedStages, true) ? 'approved' : (in_array('a', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['a'] ?? null));
+                                                                        $res = in_array('a', $approvedStages, true) ? 'approved' : (in_array('a', $needRevisionStages, true) ? 'need_revision' : (in_array('a', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['a'] ?? null)));
                                                                     if ($res === 'approved') echo '審核通過';
+                                                                            elseif ($res === 'need_revision') echo '要求補件';
                                                                     elseif ($res === 'rejected') echo '審核未通過';
                                                                     elseif ($approvalStage === 'a' && $approvalStatus === 'pending') echo '審核中';
                                                                 ?>
@@ -917,8 +922,9 @@ if ($dbError === '' && count($rows) > 0) {
                                                             <span class="stepper-subtext text-[11px] block">
                                                                 <?php
                                                                     $t = $stageTimes['b'] ?? null;
-                                                                    $res = in_array('b', $approvedStages, true) ? 'approved' : (in_array('b', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['b'] ?? null));
+                                                                    $res = in_array('b', $approvedStages, true) ? 'approved' : (in_array('b', $needRevisionStages, true) ? 'need_revision' : (in_array('b', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['b'] ?? null)));
                                                                     if ($res === 'approved') echo '審核通過';
+                                                                    elseif ($res === 'need_revision') echo '要求補件';
                                                                     elseif ($res === 'rejected') echo '審核未通過';
                                                                     elseif ($approvalStage === 'b' && $approvalStatus === 'pending') echo '審核中';
                                                                 ?>
@@ -932,8 +938,9 @@ if ($dbError === '' && count($rows) > 0) {
                                                             <span class="stepper-subtext text-[11px] block">
                                                                 <?php
                                                                     $t = $stageTimes['c'] ?? null;
-                                                                    $res = in_array('c', $approvedStages, true) ? 'approved' : (in_array('c', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['c'] ?? null));
+                                                                    $res = in_array('c', $approvedStages, true) ? 'approved' : (in_array('c', $needRevisionStages, true) ? 'need_revision' : (in_array('c', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['c'] ?? null)));
                                                                     if ($res === 'approved') echo '審核通過';
+                                                                    elseif ($res === 'need_revision') echo '要求補件';
                                                                     elseif ($res === 'rejected') echo '審核未通過';
                                                                     elseif ($approvalStage === 'c' && $approvalStatus === 'pending') echo '審核中';
                                                                 ?>
@@ -947,8 +954,9 @@ if ($dbError === '' && count($rows) > 0) {
                                                             <span class="stepper-subtext text-[11px] block">
                                                                 <?php
                                                                     $t = $stageTimes['d'] ?? null;
-                                                                    $res = in_array('d', $approvedStages, true) ? 'approved' : (in_array('d', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['d'] ?? null));
+                                                                    $res = in_array('d', $approvedStages, true) ? 'approved' : (in_array('d', $needRevisionStages, true) ? 'need_revision' : (in_array('d', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['d'] ?? null)));
                                                                     if ($res === 'approved') echo '審核通過';
+                                                                    elseif ($res === 'need_revision') echo '要求補件';
                                                                     elseif ($res === 'rejected') echo '審核未通過';
                                                                     elseif ($approvalStage === 'd' && $approvalStatus === 'pending') echo '審核中';
                                                                 ?>

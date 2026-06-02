@@ -85,20 +85,6 @@ if (!$link) {
 </head>
 <body class="login-body">
     <main class="login-shell">
-        <section class="login-hero">
-            <span class="hero-pill">CAMPUS RESOURCE HUB</span>
-            <h1>校園資源租借系統</h1>
-            <p>登入後即可查詢空間、器材與審核進度，讓申請流程集中在同一個系統完成。</p>
-            <div class="login-highlight">
-                <span>支援登入</span>
-                <strong>user_id + password</strong>
-            </div>
-            <div class="login-highlight">
-                <span>資料表</span>
-                <strong>users</strong>
-            </div>
-        </section>
-
         <section class="login-card">
             <h2>登入系統</h2>
             <p class="login-subtitle">請使用資料庫中已建立的帳號登入。</p>
@@ -133,6 +119,14 @@ if (!$link) {
 
                 <button type="submit" class="btn-primary login-button">登入</button>
             </form>
+
+            <div class="login-actions">
+                <a href="forgot_password.php" class="auth-link">忘記密碼</a>
+                <span class="auth-divider">·</span>
+                <a href="register.php" class="auth-link">註冊帳號</a>
+            </div>
+
+            <a href="index.php" class="btn-secondary login-home-button">返回首頁</a>
         </section>
     </main>
 </body>

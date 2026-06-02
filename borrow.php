@@ -2473,28 +2473,19 @@ SQL;
                 #table_sales_roster .form-control:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); outline: none; }
             </style>
             
-            <table id="table_sales_roster">
-                <thead>
-                    <tr>
-                        <th style="width: 15%;">攤位編號</th>
-                        <th style="width: 25%;">攤位名稱</th>
-                        <th style="width: 15%;">現場負責人</th>
-                        <th style="width: 20%;">聯絡電話</th>
-                        <th style="width: 25%;">內容</th>
-                        <th style="width: 80px; text-align: center;">操作</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td><input type="text" name="sales_booth_no[]" class="form-control" placeholder="數字"></td>
-                        <td><input type="text" name="sales_booth_name[]" class="form-control" placeholder="名稱"></td>
-                        <td><input type="text" name="sales_booth_manager[]" class="form-control" placeholder="姓名"></td>
-                        <td><input type="text" name="sales_booth_phone[]" class="form-control" placeholder="電話"></td>
-                        <td><input type="text" name="sales_booth_content[]" class="form-control" placeholder="販售內容..."></td>
-                        <td style="text-align: center;"><button type="button" class="btn-del-staff" onclick="removeSalesRow(this)" style="padding: 6px 12px;">刪除</button></td>
-                    </tr>
-                </tbody>
-            </table>
+<table id="table_sales_roster">
+    <thead>
+        <tr>
+            <th style="width: 15%;">攤位編號</th>
+            <th style="width: 25%;">攤位名稱</th>
+            <th style="width: 20%;">現場負責人</th>
+            <th style="width: 20%;">聯絡電話</th>
+            <th style="width: 20%;">內容</th>
+            </tr>
+    </thead>
+    <tbody>
+        </tbody>
+</table>
             <button type="button" class="btn-add-staff" onclick="addSalesRow()" style="margin-top: 15px; padding: 8px 16px; font-size: 14px;">＋ 新增攤位</button>
         </div>
 
@@ -2525,7 +2516,7 @@ SQL;
 
                                 </script>
 <script>
-// 新增攤位清冊的列
+// 新增一列攤位的函數 (沒有刪除按鈕)
 function addSalesRow() {
     const tbody = document.getElementById('table_sales_roster').querySelector('tbody');
     const tr = document.createElement('tr');
@@ -2535,22 +2526,47 @@ function addSalesRow() {
         <td><input type="text" name="sales_booth_manager[]" class="form-control" placeholder="姓名"></td>
         <td><input type="text" name="sales_booth_phone[]" class="form-control" placeholder="電話"></td>
         <td><input type="text" name="sales_booth_content[]" class="form-control" placeholder="販售內容..."></td>
-        <td style="text-align: center;"><button type="button" class="btn-del-staff" onclick="removeSalesRow(this)" style="padding: 6px 12px;">刪除</button></td>
     `;
     tbody.appendChild(tr);
 }
 
-// 移除攤位清冊的列
-function removeSalesRow(btn) {
-    const tr = btn.closest('tr');
-    const tbody = tr.parentNode;
-    // 防呆：如果刪到剩最後一筆，只清空內容不刪除整列
-    if (tbody.querySelectorAll('tr').length <= 1) {
-        tr.querySelectorAll('input').forEach(input => input.value = '');
-        return;
+// 根據攤位數量自動調整列數
+function syncSalesRosterRows() {
+    const countInput = document.getElementById('sales_count');
+    if (!countInput) return;
+    
+    let count = parseInt(countInput.value, 10);
+    if (isNaN(count) || count < 1) count = 1;
+    if (count > 20) count = 20; // 最大限制 20
+    
+    const tbody = document.getElementById('table_sales_roster').querySelector('tbody');
+    let currentRows = tbody.querySelectorAll('tr').length;
+    
+    // 如果目前列數小於目標數量，新增缺少的列
+    if (currentRows < count) {
+        for (let i = currentRows; i < count; i++) {
+            addSalesRow();
+        }
+    } 
+    // 如果目前列數大於目標數量，從下面開始刪除多餘的列
+    else if (currentRows > count) {
+        for (let i = currentRows; i > count; i--) {
+            tbody.removeChild(tbody.lastElementChild);
+        }
     }
-    tr.remove();
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    const countInput = document.getElementById('sales_count');
+    if (countInput) {
+        // 監聽攤位數量的改變
+        countInput.addEventListener('input', syncSalesRosterRows);
+        countInput.addEventListener('change', syncSalesRosterRows);
+        
+        // 網頁載入時先執行一次，確保初始列數正確
+        syncSalesRosterRows();
+    }
+});
 </script>
                                 <script>
                                 // 👇 這裡幫你把遺失的【酒精驗證 Javascript】補回來了 👇

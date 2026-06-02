@@ -809,30 +809,32 @@ function fetchReservationDetails(mysqli $link, int $reservationId): array
 </body>
 </html>
 <script>
-document.addEventListener('DOMContentLoaded', function() {
+function initApprovePanel() {
     const btn = document.getElementById('btnManualRemind');
-    if (!btn) return;
-    btn.addEventListener('click', function() {
-        if (!confirm('確定要立即檢查逾期並發送催繳通知嗎？（系統仍會依設定冷卻時間避免重複寄送）')) return;
-        btn.disabled = true;
-        const orig = btn.textContent;
-        btn.textContent = '處理中...';
-        fetch('manual_remind.php', { method: 'POST', credentials: 'same-origin' })
-            .then(r => r.json())
-            .then(js => {
-                let msg = '';
-                if (js.ok) {
-                    msg = js.output ? js.output : '已完成檢查（無輸出）';
-                } else {
-                    msg = '執行失敗: ' + (js.error || JSON.stringify(js));
-                }
-                alert(msg);
-            })
-            .catch(err => {
-                alert('呼叫失敗，請檢查伺服器日誌：' + err);
-            })
-            .finally(() => { btn.disabled = false; btn.textContent = orig; });
-    });
+    if (btn) {
+        btn.addEventListener('click', function() {
+            if (!confirm('確定要立即檢查逾期並發送催繳通知嗎？（系統仍會依設定冷卻時間避免重複寄送）')) return;
+            btn.disabled = true;
+            const orig = btn.textContent;
+            btn.textContent = '處理中...';
+            fetch('manual_remind.php', { method: 'POST', credentials: 'same-origin' })
+                .then(r => r.json())
+                .then(js => {
+                    let msg = '';
+                    if (js.ok) {
+                        msg = js.output ? js.output : '已完成檢查（無輸出）';
+                    } else {
+                        msg = '執行失敗: ' + (js.error || JSON.stringify(js));
+                    }
+                    alert(msg);
+                })
+                .catch(err => {
+                    alert('呼叫失敗，請檢查伺服器日誌：' + err);
+                })
+                .finally(() => { btn.disabled = false; btn.textContent = orig; });
+        });
+    }
+
     // Toggle detail panels for approval cards (supports legacy btn-link and new .detail-toggle)
     Array.from(document.querySelectorAll('button.btn-link[data-target], button.detail-toggle[data-target]')).forEach(function(b){
         b.addEventListener('click', function(){
@@ -854,7 +856,34 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
-});
+
+    // Wire canned-message selects to the comment textarea so selected reason fills the review note (editable)
+    Array.from(document.querySelectorAll('form select[name="canned_message"]')).forEach(function(sel){
+        const form = sel.closest('form');
+        if (!form) return;
+        const ta = form.querySelector('textarea[name="comment"]');
+        if (!ta) return;
+        // remember last canned text applied by this select
+        sel.dataset.prevCanned = '';
+        sel.addEventListener('change', function(){
+            const val = (sel.value || '').trim();
+            const prev = sel.dataset.prevCanned || '';
+            if (val === '') {
+                // only clear if textarea still contains the previous canned text
+                if (ta.value === prev) ta.value = '';
+            } else {
+                ta.value = val;
+            }
+            sel.dataset.prevCanned = val;
+        });
+    });
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initApprovePanel);
+} else {
+    initApprovePanel();
+}
 </script>
 <script>
 function openDetail(id) {

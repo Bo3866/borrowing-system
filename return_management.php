@@ -902,7 +902,7 @@ if ($dbError === '' && count($rows) > 0) {
 
                                                         <div class="stepper-step text-center text-xs" data-step="2" data-role="a">
                                                             <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
-                                                            <span class="stepper-text block font-medium">學務長審核</span>
+                                                            <span class="stepper-text block font-medium">輔導人員審核</span>
                                                             <span class="stepper-subtext approval-text text-[11px] block">
                                                                 <?php
                                                                     $t = $stageTimes['a'] ?? null;
@@ -934,7 +934,7 @@ if ($dbError === '' && count($rows) > 0) {
 
                                                         <div class="stepper-step text-center text-xs" data-step="4" data-role="c">
                                                             <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
-                                                            <span class="stepper-text block font-medium">輔導人員審核</span>
+                                                            <span class="stepper-text block font-medium">學務長審核</span>
                                                             <span class="stepper-subtext text-[11px] block">
                                                                 <?php
                                                                     $t = $stageTimes['c'] ?? null;

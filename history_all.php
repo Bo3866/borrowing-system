@@ -180,9 +180,9 @@ $approvalMap = [
 
 // approval stage code -> human readable label
 $stageMap = [
-    'a' => '學務長教師',
+    'a' => '輔導人員',
     'b' => '軍訓室教師',
-    'c' => '輔導人員',
+    'c' => '學務長教師',
     'd' => '課指組審核',
 ];
 ?>

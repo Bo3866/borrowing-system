@@ -331,6 +331,23 @@ $formData['sales_location'] = trim((string)($_POST['sales_location'] ?? ''));
     $bem = $_POST['borrow_end_time_m'] ?? '';
     $formData['borrow_end_time'] = ($beh !== '' && $bem !== '') ? sprintf('%02d:%02d:00', $beh, $bem) : '';
 
+
+// --- 新增：實際領取與歸還時間 ---
+    $formData['actual_pickup_date'] = trim((string)($_POST['actual_pickup_date'] ?? ''));
+    $aph = $_POST['actual_pickup_time_h'] ?? '';
+    $apm = $_POST['actual_pickup_time_m'] ?? '';
+    $formData['actual_pickup_time'] = ($aph !== '' && $apm !== '') ? sprintf('%02d:%02d:00', $aph, $apm) : '';
+    $formData['actual_pickup_time_h'] = $aph; // 保留供前端草稿回填
+    $formData['actual_pickup_time_m'] = $apm;
+
+    $formData['actual_return_date'] = trim((string)($_POST['actual_return_date'] ?? ''));
+    $arh = $_POST['actual_return_time_h'] ?? '';
+    $arm = $_POST['actual_return_time_m'] ?? '';
+    $formData['actual_return_time'] = ($arh !== '' && $arm !== '') ? sprintf('%02d:%02d:00', $arh, $arm) : '';
+    $formData['actual_return_time_h'] = $arh; // 保留供前端草稿回填
+    $formData['actual_return_time_m'] = $arm;
+
+
     $formData['purpose'] = trim((string)($_POST['purpose'] ?? ''));
     $formData['phone'] = trim((string)($_POST['phone'] ?? ''));
 
@@ -478,9 +495,13 @@ $formData['fire_date'] = !empty($_POST['fire_date']) ? trim((string)$_POST['fire
     } elseif (empty($cartEquipments) && empty($formData['space_id'])) {
         $borrowError = '請選擇至少一項器材或一個場地。';
     } else {
-        // 先計算借用時間（用於後續驗證）
+// 先計算借用時間（用於後續驗證）
         $borrowStartAtSql = '';
         $borrowEndAtSql = '';
+        
+        // --- 加上這兩行用來預設我們的新變數 ---
+        $actualPickupAtSql = null;
+        $actualReturnAtSql = null;
         
         if (
             $formData['borrow_start_date'] !== '' &&
@@ -491,6 +512,20 @@ $formData['fire_date'] = !empty($_POST['fire_date']) ? trim((string)$_POST['fire
             $borrowStartAtSql = $formData['borrow_start_date'] . ' ' . $formData['borrow_start_time'];
             $borrowEndAtSql = $formData['borrow_end_date'] . ' ' . $formData['borrow_end_time'];
             
+            // --- 在這裡插入實際領取/歸還時間的檢查 ---
+            if (
+                $formData['actual_pickup_date'] !== '' && $formData['actual_pickup_time'] !== '' &&
+                $formData['actual_return_date'] !== '' && $formData['actual_return_time'] !== ''
+            ) {
+                $actualPickupAtSql = $formData['actual_pickup_date'] . ' ' . $formData['actual_pickup_time'];
+                $actualReturnAtSql = $formData['actual_return_date'] . ' ' . $formData['actual_return_time'];
+
+                if (strtotime($actualReturnAtSql) <= strtotime($actualPickupAtSql)) {
+                    $borrowError = '實際歸還/離開時間必須晚於實際領取/進入時間。';
+                }
+            }
+            // --- 插入結束 ---
+
             if (strtotime($borrowStartAtSql) < time()) {
                 $borrowError = '借用開始時間不可為過去時間。';
             } elseif (strtotime($borrowEndAtSql) <= strtotime($borrowStartAtSql)) {
@@ -624,6 +659,15 @@ $formData['fire_date'] = !empty($_POST['fire_date']) ? trim((string)$_POST['fire
             $formData['borrow_end_time'] === ''
         ) {
             $borrowError = '請完整填寫借用起訖日期與時間。';
+        // --- 新增下面這段 ---
+        } elseif (
+            $formData['actual_pickup_date'] === '' ||
+            $formData['actual_pickup_time'] === '' ||
+            $formData['actual_return_date'] === '' ||
+            $formData['actual_return_time'] === ''
+        ) {
+            $borrowError = '請完整填寫實際領取器材與進入/離開場地之時間。';
+        // --- 新增結束 ---
         } elseif ($formData['purpose'] === '') {
             $borrowError = '請填寫用途說明。';
         } elseif (
@@ -871,7 +915,9 @@ SQL;
                     'fire_location' => "VARCHAR(255) NULL COMMENT '明火地點'",
                     'fire_staff_json' => "JSON NULL COMMENT '明火工作人員清單'",
                     'sales_location' => "VARCHAR(50) NULL COMMENT '攤位地點'",
-                    'sales_count' => "INT NULL DEFAULT 0 COMMENT '攤位數量'"
+                    'sales_count' => "INT NULL DEFAULT 0 COMMENT '攤位數量'",
+                    'actual_pickup_at' => "DATETIME NULL COMMENT '實際領取器材與進入場地時間'",
+                    'actual_return_at' => "DATETIME NULL COMMENT '實際歸還器材與離開場地時間'"
                 ];
 
                 foreach ($requiredReservationColumns as $columnName => $columnDefinition) {
@@ -1009,7 +1055,9 @@ SQL;
                     'sales_roster_json' => ['type' => 's', 'value' => $formData['sales_roster_json'] ?? null],
                     'sales_layout_map' => ['type' => 's', 'value' => null],
                     'holiday_fee_count' => ['type' => 'i', 'value' => $holiday_fee_count],
-                    'holiday_fee' => ['type' => 'i', 'value' => $holiday_fee]
+                    'holiday_fee' => ['type' => 'i', 'value' => $holiday_fee],
+                    'actual_pickup_at' => ['type' => 's', 'value' => $actualPickupAtSql],
+                    'actual_return_at' => ['type' => 's', 'value' => $actualReturnAtSql]
                 ];
 
                 foreach ($optionalReservationValues as $columnName => $config) {
@@ -2061,8 +2109,58 @@ SQL;
                                             <option value="30" <?php echo ($curBem !== '' && $curBem === 30) ? 'selected' : ''; ?>>30</option>
                                             <option value="40" <?php echo ($curBem !== '' && $curBem === 40) ? 'selected' : ''; ?>>40</option>
                                             <option value="50" <?php echo ($curBem !== '' && $curBem === 50) ? 'selected' : ''; ?>>50</option>
-                                        </select>
+</select>
                                         <span>分</span>
+                                    </div>
+
+                                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #e2e8f0;">
+                                        <label>實際領取器材與進入場地時間 <span style="color:red">*</span></label>
+                                        <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center;">
+                                            <input type="date" id="actual_pickup_date" name="actual_pickup_date" class="form-control" value="<?php echo htmlspecialchars($formData['actual_pickup_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
+                                            <?php
+                                            $curAph = $formData['actual_pickup_time_h'] ?? '';
+                                            $curApm = $formData['actual_pickup_time_m'] ?? '';
+                                            ?>
+                                            <select name="actual_pickup_time_h" class="form-control" required style="padding: 8px; width: 80px;">
+                                                <option value="">選擇</option>
+                                                <?php for($h=7; $h<=22; $h++) { ?>
+                                                    <option value="<?php echo $h; ?>" <?php echo ($curAph !== '' && (int)$curAph === $h) ? 'selected' : ''; ?>><?php echo $h; ?></option>
+                                                <?php } ?>
+                                            </select>
+                                            <span>時</span>
+                                            
+                                            <select name="actual_pickup_time_m" class="form-control" required style="padding: 8px; width: 80px;">
+                                                <option value="">選擇</option>
+                                                <?php foreach(['00','10','20','30','40','50'] as $m) { ?>
+                                                    <option value="<?php echo $m; ?>" <?php echo ($curApm !== '' && $curApm === $m) ? 'selected' : ''; ?>><?php echo $m; ?></option>
+                                                <?php } ?>
+                                            </select>
+                                            <span>分</span>
+                                        </div>
+                                        
+                                        <label>實際歸還器材與離開場地時間 <span style="color:red">*</span></label>
+                                        <div style="display: flex; gap: 10px; align-items: center;">
+                                            <input type="date" id="actual_return_date" name="actual_return_date" class="form-control" value="<?php echo htmlspecialchars($formData['actual_return_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
+                                            <?php
+                                            $curArh = $formData['actual_return_time_h'] ?? '';
+                                            $curArm = $formData['actual_return_time_m'] ?? '';
+                                            ?>
+                                            <select name="actual_return_time_h" class="form-control" required style="padding: 8px; width: 80px;">
+                                                <option value="">選擇</option>
+                                                <?php for($h=7; $h<=22; $h++) { ?>
+                                                    <option value="<?php echo $h; ?>" <?php echo ($curArh !== '' && (int)$curArh === $h) ? 'selected' : ''; ?>><?php echo $h; ?></option>
+                                                <?php } ?>
+                                            </select>
+                                            <span>時</span>
+                                            
+                                            <select name="actual_return_time_m" class="form-control" required style="padding: 8px; width: 80px;">
+                                                <option value="">選擇</option>
+                                                <?php foreach(['00','10','20','30','40','50'] as $m) { ?>
+                                                    <option value="<?php echo $m; ?>" <?php echo ($curArm !== '' && $curArm === $m) ? 'selected' : ''; ?>><?php echo $m; ?></option>
+                                                <?php } ?>
+                                            </select>
+                                            <span>分</span>
+                                        </div>
                                     </div>
                                     <div class="form-group" style="margin-top:10px;">
                                         <label>例假日加收</label>
@@ -4825,15 +4923,30 @@ const fpEndDate = flatpickr("#borrow_end_date", Object.assign({
     dateFormat: "Y-m-d"
 }, _flatpickrLocale ? { locale: _flatpickrLocale } : {}));
 
+// --- 新增：綁定新的兩個時間欄位 ---
+const fpActualPickupDate = flatpickr("#actual_pickup_date", Object.assign({
+    minDate: initialMinDate,
+    dateFormat: "Y-m-d"
+}, _flatpickrLocale ? { locale: _flatpickrLocale } : {}));
+
+const fpActualReturnDate = flatpickr("#actual_return_date", Object.assign({
+    minDate: initialMinDate,
+    dateFormat: "Y-m-d"
+}, _flatpickrLocale ? { locale: _flatpickrLocale } : {}));
+// --- 新增結束 ---
+
 // 當改變人數時，動態更新鎖定日期
 const participantSelect = document.getElementById('participant_count');
 if (participantSelect) {
-    participantSelect.addEventListener('change', function(e) {
+participantSelect.addEventListener('change', function(e) {
         const newMinDate = getMinDateByParticipantCount(e.target.value);
         
         // 更新日曆的最小可選日期
         fpStartDate.set('minDate', newMinDate);
         fpEndDate.set('minDate', newMinDate);
+        // 新增這兩行
+        if (fpActualPickupDate) fpActualPickupDate.set('minDate', newMinDate);
+        if (fpActualReturnDate) fpActualReturnDate.set('minDate', newMinDate);
         
         // 如果目前已選日期早於新規定日期，則清空重選
         const startSel = fpStartDate.selectedDates;

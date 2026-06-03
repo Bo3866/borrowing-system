@@ -599,18 +599,6 @@ h3 {
     align-items: stretch;
 }
 
-.login-card {
-    border-radius: 24px;
-    padding: 2rem;
-    box-shadow: 0 24px 60px rgba(44, 62, 80, 0.16);
-    backdrop-filter: blur(10px);
-}
-
-.login-card {
-    background: rgba(255, 255, 255, 0.9);
-    border: 1px solid rgba(44, 62, 80, 0.08);
-}
-
 .login-card h2 {
     margin-bottom: 0.5rem;
     border-bottom: none;
@@ -2343,3 +2331,205 @@ h3 {
     .stepper-simple .stepper-track { flex-wrap: nowrap !important; }
 }
 
+body.login-body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: "Microsoft JhengHei", sans-serif;
+
+    background: #f4f7fb;
+}
+
+.login-page {
+    min-height: 100vh;
+    display: flex;
+}
+
+/* 左側介紹區 */
+
+.login-left {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #1e40af;
+    color: white;
+    padding: 60px;
+}
+
+.brand-box h1 {
+    font-size: 48px;
+    margin-bottom: 20px;
+}
+
+.brand-box p {
+    font-size: 18px;
+    line-height: 1.8;
+    opacity: 0.9;
+}
+
+
+
+.login-card {
+    width: 100%;
+    max-width: 480px;
+
+    padding: 40px;
+    border-radius: 18px;
+
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(44, 62, 80, 0.08);
+
+    box-shadow: 0 20px 50px rgba(0,0,0,0.12);
+    backdrop-filter: blur(10px);
+}
+
+.login-card h2 {
+    font-size: 32px;
+    color: #1e3a8a;
+    margin-bottom: 10px;
+}
+
+.login-subtitle {
+    color: #64748b;
+    margin-bottom: 30px;
+}
+
+/* 表單 */
+
+.form-group {
+    margin-bottom: 18px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    color: #334155;
+}
+
+.form-group input {
+    width: 100%;
+    box-sizing: border-box;
+
+    padding: 14px 16px;
+
+    border:1px solid #cbd5e1;
+    background: white;
+    border-radius: 12px;
+
+    font-size: 15px;
+
+    outline: none;
+
+    transition: .25s;
+}
+
+.form-group input:focus {
+    transform: translateY(-2px);
+
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37,99,235,.15);
+}
+
+/* 登入按鈕 */
+
+.btn-login {
+    width: 100%;
+    padding: 14px;
+
+    border: none;
+    border-radius: 12px;
+
+    background: #2563eb;
+    color: white;
+
+    font-size: 16px;
+    font-weight: bold;
+
+    cursor: pointer;
+
+    transition: .25s;
+}
+
+.btn-login:hover {
+    background: #1d4ed8;
+    transform: translateY(-2px);
+}
+
+/* 錯誤訊息 */
+
+.login-alert {
+    margin-bottom: 20px;
+
+    background: #fef2f2;
+
+    border: 1px solid #fecaca;
+
+    color: #dc2626;
+
+    padding: 12px;
+    border-radius: 10px;
+}
+
+/* 連結 */
+
+.login-actions {
+    margin-top: 20px;
+
+    display: flex;
+    justify-content: space-between;
+}
+
+.login-actions a,
+.back-home {
+    display: block;
+    width: 100%;
+
+    padding: 14px;
+    margin-top: 12px;
+
+    text-align: center;
+    text-decoration: none;
+
+    border-radius: 12px;
+
+    background: white;
+    color: #2563eb;
+
+    border: 1px solid #2563eb;
+
+    box-sizing: border-box;
+
+    transition: 0.25s;
+}
+
+.back-home:hover {
+    background: #eff6ff;
+}
+
+/* 手機版 */
+
+@media (max-width: 900px) {
+
+    .login-page {
+        flex-direction: column;
+    }
+
+    .login-left {
+        display: none;
+    }
+
+    .login-right {
+        width: 100%;
+        min-height: 100vh;
+    }
+}
+
+.auth-center {
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+
+    width: 100%;
+}

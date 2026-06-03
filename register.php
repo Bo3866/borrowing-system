@@ -265,7 +265,7 @@ if (is_array($registerState)) {
     <link rel="stylesheet" href="styles.css">
 </head>
 <body class="login-body">
-    <main class="login-shell">
+    <main class="auth-center">
         <section class="login-card">
             <h2>註冊帳號</h2>
             <p class="login-subtitle">先確認帳號是否重複，再寄送驗證碼到學校信箱。</p>

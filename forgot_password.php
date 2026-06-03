@@ -216,7 +216,7 @@ if (!$showCodeForm && !$showPasswordForm) {
     <link rel="stylesheet" href="styles.css">
 </head>
 <body class="login-body">
-    <main class="login-shell">
+    <main class="auth-center">
         <section class="login-card">
             <h2>忘記密碼</h2>
             <p class="login-subtitle">先確認帳號與信箱，再輸入驗證碼後才能設定新密碼。</p>
@@ -278,6 +278,7 @@ if (!$showCodeForm && !$showPasswordForm) {
 
             <a href="login.php" class="btn-secondary login-home-button">返回登入</a>
         </section>
+        
     </main>
 </body>
 </html>

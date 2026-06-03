@@ -48,8 +48,9 @@ if ($dbError === '') {
     $overdueCount = 0;
     $todayCheckedIn = 0;
 
-    // 2.4 借用紀錄查詢：只統計「審核完成且借用結束時間已過」的歷史借用紀錄
-    $historyBaseWhere = "approval_status = 'approved' AND borrow_end_at <= NOW() AND checked_in_at IS NOT NULL";
+    // 2.4 借用紀錄查詢：只顯示「審核完成、已報到/領取、借用結束時間已到」的紀錄
+    // 是否已歸還、是否準時歸還不作為基本顯示條件。
+    $historyBaseWhere = "approval_status = 'approved' AND borrow_end_at <= NOW() AND checked_in_at IS NOT NULL AND borrow_start_at IS NOT NULL AND borrow_end_at IS NOT NULL";
 
     $cRes = mysqli_query($link, "SELECT COUNT(*) AS c FROM reservations WHERE {$historyBaseWhere}");
     if ($cRes) { $totalCount = (int)mysqli_fetch_assoc($cRes)['c']; mysqli_free_result($cRes); }
@@ -91,8 +92,15 @@ if ($dbError === '') {
     $activityExpr = $pickReservationColumn(['activity_name', 'event_name', 'project_name', 'event_title', 'activity_title']);
     $phoneExpr = $pickReservationColumn(['coordinator_phone', 'contact_phone', 'applicant_phone', 'phone', 'tel', 'mobile']);
 
-    // 基本規則：此頁只顯示「審核完成」、「已實際報到/領取」且「借用結束時間已過」的歷史借用紀錄
-    $where = [ "r.approval_status = 'approved'", "r.borrow_end_at <= NOW()", "r.checked_in_at IS NOT NULL" ];
+    // 基本規則：此頁只顯示「審核完成、已報到/領取、借用結束時間已到」的紀錄
+    // 是否已歸還、是否準時歸還不作為基本顯示條件。
+    $where = [
+        "r.approval_status = 'approved'",
+        "r.borrow_end_at <= NOW()",
+        "r.checked_in_at IS NOT NULL",
+        "r.borrow_start_at IS NOT NULL",
+        "r.borrow_end_at IS NOT NULL"
+    ];
 
     // 此下拉選單為借用/歸還狀態篩選，不再篩選審核中、已駁回等非歷史借用案件
     if ($statusFilter === 'returned') {
@@ -185,6 +193,32 @@ $stageMap = [
     'c' => '學務長教師',
     'd' => '課指組審核',
 ];
+
+function h(string $value): string
+{
+    return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
+}
+
+function statisticsIndexLink(string $q, string $typeFilter, string $startDate, string $endDate): string
+{
+    // 與 2.5 statistics_final.php 連動：
+    // 將 2.4 目前的關鍵字、資源類型與日期區間帶到統計分析頁
+    $params = [
+        'q' => $q,
+        'type' => $typeFilter,
+        'year' => 'all',
+    ];
+
+    if ($startDate !== '') {
+        $params['date_from'] = $startDate;
+    }
+
+    if ($endDate !== '') {
+        $params['date_to'] = $endDate;
+    }
+
+    return 'statistics_final.php?' . http_build_query($params);
+}
 ?>
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -201,7 +235,60 @@ $stageMap = [
         .text-[10px] { font-size: 0.85rem !important; }
         .text-2xl { font-size: 1.5rem !important; }
         .text-lg { font-size: 1.125rem !important; }
-    </style>
+    
+
+        /* 統一 2.4 / 2.5 頁面標題位置，避免切換時標題上下跳動 */
+        .container.main-content {
+            padding-top: 1.25rem !important;
+        }
+
+        .page-header.history-title-bar {
+            margin: 0 0 1.25rem 0 !important;
+            padding: 0 !important;
+            min-height: 72px;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            background: transparent !important;
+            border: 0 !important;
+            box-shadow: none !important;
+        }
+
+        .page-header.history-title-bar > div:first-child {
+            min-height: 64px;
+            display: flex;
+            align-items: center;
+        }
+
+        .page-header.history-title-bar h2 {
+            margin: 0 !important;
+            padding: 0 0 .55rem 0 !important;
+            font-size: 2rem !important;
+            line-height: 1.2 !important;
+            font-weight: 800 !important;
+            color: #0f172a !important;
+            border-bottom: 4px solid #2563eb;
+            width: fit-content;
+        }
+
+        .page-header.history-title-bar .module-switch {
+            margin: 0 !important;
+            align-self: center !important;
+        }
+
+        @media(max-width: 640px) {
+            .page-header.history-title-bar {
+                min-height: auto;
+                align-items: flex-start !important;
+            }
+            .page-header.history-title-bar > div:first-child {
+                min-height: auto;
+            }
+            .page-header.history-title-bar h2 {
+                font-size: 1.55rem !important;
+            }
+        }
+</style>
     <!-- FontAwesome 圖示庫 -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
@@ -334,6 +421,16 @@ $stageMap = [
             color: #ffffff;
             border-color: #4f46e5;
         }
+
+        .dashboard-grid .card {
+            min-height: 122px;
+            overflow: hidden;
+        }
+
+        .dashboard-grid .card > div {
+            width: 100%;
+        }
+
         @media (max-width: 900px) {
             .history-list-header { display: none; }
             .history-list-row {
@@ -558,6 +655,56 @@ $stageMap = [
             .timeline-row-clean { grid-template-columns: 1fr; gap: 4px; }
             .timeline-row-clean span:last-child { text-align: left; }
         }
+
+        /* 2.4 / 2.5 模組切換：與 2.5 同步 */
+        .history-title-bar {
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:1rem;
+            flex-wrap:wrap;
+            margin-bottom:1rem;
+        }
+        .module-switch {
+            display:flex;
+            background:#f1f5f9;
+            padding:.25rem;
+            border-radius:.75rem;
+            border:1px solid #e2e8f0;
+            width:fit-content;
+            gap:.15rem;
+        }
+        .module-switch a {
+            display:inline-flex;
+            align-items:center;
+            gap:.45rem;
+            padding:.55rem .9rem;
+            border-radius:.55rem;
+            font-size:.95rem;
+            font-weight:800;
+            text-decoration:none;
+            color:#64748b;
+            transition:.18s ease;
+            white-space:nowrap;
+        }
+        .module-switch a:hover {
+            color:#334155;
+            background:#ffffff;
+        }
+        .module-switch a.active {
+            background:#ffffff;
+            color:#0f172a;
+            box-shadow:0 4px 12px rgba(15,23,42,.06);
+            border:1px solid rgba(226,232,240,.7);
+        }
+        .module-switch .icon-history { color:#4f46e5; }
+        .module-switch .icon-stats { color:#059669; }
+        .module-switch a { min-width: 150px; justify-content: center; }
+
+        @media(max-width:640px) {
+            .module-switch { width:100%; }
+            .module-switch a { flex:1; justify-content:center; }
+        }
     </style>
 </head>
 <body class="history-page">
@@ -568,8 +715,22 @@ $stageMap = [
     <div class="container main-content">
 
         <!-- 頁面標題 -->
-        <div class="page-header mb-4">
-            <h2 class="text-2xl font-bold">借用紀錄查詢</h2>
+        <div class="page-header history-title-bar">
+            <div>
+                <h2 class="text-2xl font-bold">借用紀錄查詢</h2>
+            </div>
+
+            <div class="module-switch no-print">
+                <a href="history_all.php" class="active">
+                    <i class="fa-solid fa-clock-rotate-left icon-history"></i>
+                    借用紀錄查詢
+                </a>
+
+                <a href="<?php echo h(statisticsIndexLink($q, $typeFilter, $startDate, $endDate)); ?>">
+                    <i class="fa-solid fa-chart-column icon-stats"></i>
+                    資源統計分析
+                </a>
+            </div>
         </div>
 
         <!-- 資料庫錯誤提示區 -->
@@ -587,7 +748,7 @@ $stageMap = [
                     <div>
                         <p style="color:#64748b;margin:0;font-weight:600;">歷史借用紀錄</p>
                         <h3 style="font-size:1.5rem;margin:6px 0;color:var(--text-color);font-weight:700;"><?php echo number_format($totalCount); ?></h3>
-                        <p style="font-size:0.85rem;color:#94a3b8;margin:0;">審核完成、已報到且借用結束</p>
+                        <p style="font-size:0.85rem;color:#94a3b8;margin:0;">審核完成、已報到、時間已到</p>
                     </div>
                     <div style="width:44px;height:44px;border-radius:10px;background:#f8fafc;display:flex;align-items:center;justify-content:center;color:#64748b;border:1px solid rgba(44,62,80,0.06);">
                         <i class="fa-solid fa-list-ol"></i>
@@ -632,8 +793,9 @@ $stageMap = [
             </div>
         </div>
 
+
         <!-- 篩選控制列 (完美對齊) -->
-        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap gap-4 items-center justify-between">
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap gap-4 items-center justify-between mb-5 no-print">
             <!-- 頁籤切換 (全部/含場地/含器材) -->
             <div class="flex bg-slate-100 p-1 rounded-lg border border-slate-200 shrink-0">
                 <button class="tab px-4 py-2 text-xs font-semibold rounded-md transition <?php echo ($typeFilter==='all' || $typeFilter==='')? 'bg-white text-slate-800 shadow-xs border border-slate-200/50':'text-slate-500 hover:text-slate-800'; ?>" data-filter="all">
@@ -665,6 +827,8 @@ $stageMap = [
                 <input id="endDate" type="date" value="<?php echo htmlspecialchars($endDate, ENT_QUOTES, 'UTF-8'); ?>" class="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-lg px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:bg-white cursor-pointer shrink-0" title="借用結束日期">
             </div>
         </div>
+
+
 
         <!-- 清單表頭：外層只顯示查詢需要的重點，詳細資料點進右側面板查看 -->
         <div class="history-list-header mt-4">

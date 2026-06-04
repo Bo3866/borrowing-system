@@ -13,6 +13,8 @@ $currentRole = (string)($_SESSION['role_name'] ?? '');
 // Treat roles a, b, c as equivalent to role 3 for manager/admin interfaces
 $isManager = in_array($currentRole, ['2', '3', 'a', 'b', 'c'], true);
 
+
+
 $periodSlots = [
     'D0' => ['label' => '日間第0節', 'start' => '07:10:00', 'end' => '08:00:00'],
     'D1' => ['label' => '日間第1節', 'start' => '08:10:00', 'end' => '09:00:00'],
@@ -59,6 +61,33 @@ if ($link) {
                 'equipment_code' => $code,
                 'equipment_name' => (string)$row['equipment_name'],
             ];
+        }
+    }
+
+    // 💡 針對已登入的使用者，查詢其違規點數與器材證狀態
+    // ==========================================
+    $violationPoints = 0;
+    $isCertCancelled = false;
+
+    if ($isLoggedIn) {
+        $safeUserId = mysqli_real_escape_string($link, (string)$_SESSION['user_id']);
+        
+        // 1. 統計該學生的累積違規總點數
+        $pointsSql = "SELECT COALESCE(SUM(points), 0) AS total_points FROM violation_logs WHERE user_id = '{$safeUserId}'";
+        $pointsResult = mysqli_query($link, $pointsSql);
+        if ($pointsResult) {
+            $pointsRow = mysqli_fetch_assoc($pointsResult);
+            $violationPoints = (int)$pointsRow['total_points'];
+        }
+        
+        // 2. 檢查該學生的器材證是否處於「註銷 (cancelled)」狀態
+        $certSql = "SELECT validity_status FROM equipment_certificates WHERE holder_id = '{$safeUserId}'";
+        $certResult = mysqli_query($link, $certSql);
+        if ($certResult && mysqli_num_rows($certResult) > 0) {
+            $certRow = mysqli_fetch_assoc($certResult);
+            if (($certRow['validity_status'] ?? '') === 'cancelled') {
+                $isCertCancelled = true;
+            }
         }
     }
 
@@ -111,6 +140,60 @@ if ($link) {
 </head>
 <body>
     <?php include __DIR__ . '/nav.php'; ?>
+
+    <?php if ($isLoggedIn): ?>
+    <div style="max-w: 80rem; margin: 1rem auto 0 auto; padding: 0 1rem; font-family: system-ui, sans-serif;">
+        
+        <?php if ($isCertCancelled): ?>
+            <div style="background-color: #fef2f2; border: 2px solid #fca5a5; border-radius: 0.75rem; padding: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); display: flex; align-items: start; gap: 0.75rem;">
+                <div style="color: #ef4444; margin-top: 0.15rem; flex-shrink: 0; width: 16px; height: 16px;">
+                    <svg style="width: 16px; height: 16px; display: block;" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                    </svg>
+                </div>
+                <div style="flex: 1; display: flex; flex-direction: column; md-flex-direction: row; justify-content: space-between; gap: 1rem;">
+                    <div>
+                        <h4 style="margin: 0; font-weight: 700; font-size: 0.875rem; color: #991b1b;">您的器材證已被註銷！</h4>
+                        <p style="margin: 0.15rem 0 0 0; font-size: 0.75rem; color: #b91c1c; line-height: 1.4;">因嚴重違反器材租借管理規範（如器材逾期未領或未歸還超過兩日），課指組老師已註銷您的器材證。您目前無法使用線上預約功能。</p>
+                    </div>
+                    <a href="history.php" style="font-size: 0.75rem; font-weight: 700; color: #b91c1c; text-decoration: underline; white-space: nowrap; align-self: start;">親洽課指組辦公室 →</a>
+                </div>
+            </div>
+
+        <?php elseif ($violationPoints > 0): ?>
+            <?php if ($violationPoints >= 3): ?>
+                <div style="background-color: #fef2f2; border: 2px solid #fca5a5; border-radius: 0.75rem; padding: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); display: flex; align-items: center; justify-content: space-between; gap: 1rem;">
+                    <div style="display: flex; align-items: center; gap: 0.6rem;">
+                        <div style="color: #ef4444; flex-shrink: 0; width: 16px; height: 16px;">
+                            <svg style="width: 16px; height: 16px; display: block;" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                            </svg>
+                        </div>
+                        <div style="font-size: 0.75rem; color: #991b1b;">
+                            <span style="font-weight: 700;">租借權限受限！</span> 您目前已累計違規達 <span style="font-weight: 900; color: #dc2626; font-size: 0.875rem;"><?php echo $violationPoints; ?></span> 點，系統已自動暫停您的器材預約權限。
+                        </div>
+                    </div>
+                    <a href="history.php" style="font-size: 0.75rem; font-weight: 700; color: #b91c1c; text-decoration: underline; white-space: nowrap;">查看違規明細 →</a>
+                </div>
+            <?php else: ?>
+                <div style="background-color: #fffbeb; border: 2px solid #fcd34d; border-radius: 0.75rem; padding: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); display: flex; align-items: center; justify-content: space-between; gap: 1rem;">
+                    <div style="display: flex; align-items: center; gap: 0.6rem;">
+                        <div style="color: #f59e0b; flex-shrink: 0; width: 16px; height: 16px;">
+                            <svg style="width: 16px; height: 16px; display: block;" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                            </svg>
+                        </div>
+                        <div style="font-size: 0.75rem; color: #92400e;">
+                            <span style="font-weight: 700;">違規記點提示：</span> 您目前已累積 <span style="font-weight: 700; color: #d97706;"><?php echo $violationPoints; ?></span> 點處分。請特別注意校方規範，若累積達 3 點將被暫停租借權限。
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
+        <?php endif; ?>
+        
+    </div>
+<?php endif; ?>
+
     <div class="container">
 
         <!-- 主要內容區域 -->

@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 session_start();
 
+$searchKeyword = trim((string)($_GET['search'] ?? ''));
+
 require_once __DIR__ . '/config/database.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
@@ -332,9 +334,15 @@ if ($dbError === '') {
             reservationSelectExpr($reservationColumns, 'holiday_fee'),
         ];
 
-        $listWhere = "r.approval_status IN ('pending', 'approved', 'rejected', 'need_revision', 'revision_overdue')";
         $safeUserId = mysqli_real_escape_string($link, $currentUserId);
-        $listWhere .= " AND r.`{$applicantColumn}` = '{$safeUserId}'";
+        $listWhere = "r.approval_status IN ('pending', 'approved', 'rejected', 'need_revision', 'revision_overdue') AND r.`{$applicantColumn}` = '{$safeUserId}'";
+
+        // 💡 關鍵加入：如果前端有傳入關鍵字，就動態塞入 SQL 條件
+        if ($searchKeyword !== '') {
+            $safeKeyword = mysqli_real_escape_string($link, $searchKeyword);
+            // 同時支援搜尋「活動名稱」或「借用單號」
+            $listWhere .= " AND (r.activity_name LIKE '%{$safeKeyword}%' OR r.reservation_id = '{$safeKeyword}')";
+        }
 
         $updateOverdueSql = "UPDATE reservations SET approval_status = 'revision_overdue' WHERE approval_status = 'need_revision' AND (revision_deadline IS NULL OR revision_deadline < NOW())";
         mysqli_query($link, $updateOverdueSql);
@@ -694,6 +702,25 @@ if ($dbError === '' && count($rows) > 0) {
         <main>
             <section class="card">
                 <h2 class="text-xl font-bold mb-4">我的申請紀錄</h2>
+
+                <form method="GET" action="" class="flex items-center gap-2">
+                    <div class="relative">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                        <input type="text" name="search" 
+                            placeholder="搜尋活動名稱或單號..." 
+                            value="<?php echo htmlspecialchars($searchKeyword, ENT_QUOTES, 'UTF-8'); ?>" 
+                            class="pl-9 pr-4 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:border-indigo-500 w-64">
+                    </div>
+                    <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition">
+                        搜尋
+                    </button>
+                    
+                    <?php if ($searchKeyword !== ''): ?>
+                        <a href="return_management.php" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm transition">
+                            清除
+                        </a>
+                    <?php endif; ?>
+                </form>
 
                 <?php if ($actionMsg !== '') { ?>
                     <div class="borrow-success bg-emerald-50 border border-emerald-200 text-emerald-700 p-4 rounded-lg mb-4"><?php echo htmlspecialchars($actionMsg, ENT_QUOTES, 'UTF-8'); ?></div>

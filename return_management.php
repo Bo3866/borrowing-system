@@ -708,6 +708,7 @@ if ($dbError === '' && count($rows) > 0) {
                                 <tr class="bg-slate-50 text-slate-600 text-sm">
                                     <th style="width: 50px; text-align: center;">進度</th>
                                     <th>申請人</th>
+                                    <th>活動名稱</th>
                                     <th>借用時段</th>
                                     <th>借用項目</th>
                                     <th>狀態</th>
@@ -717,7 +718,7 @@ if ($dbError === '' && count($rows) > 0) {
                             </thead>
                             <tbody>
                                 <?php if (count($rows) === 0) { ?>
-                                    <tr><td colspan="7" class="text-center py-8 text-slate-400">目前沒有可顯示的申請資料。</td></tr>
+                                    <tr><td colspan="8" class="text-center py-8 text-slate-400">目前沒有可顯示的申請資料。</td></tr>
                                 <?php } else { ?>
                                     <?php foreach ($rows as $row) { ?>
                                         <?php
@@ -779,6 +780,10 @@ if ($dbError === '' && count($rows) > 0) {
                                                 <span class="font-semibold text-slate-800"><?php echo htmlspecialchars($row['full_name'] . ' (' . $row['applicant_user_id'] . ')', ENT_QUOTES, 'UTF-8'); ?></span><br>
                                                 <small class="text-slate-500"><?php echo htmlspecialchars((string)$row['email'], ENT_QUOTES, 'UTF-8'); ?></small>
                                             </td>
+                                            <td class="font-medium text-slate-800">
+                                                <?php echo htmlspecialchars((string)($row['activity_name'] ?? '未填寫活動名稱'), ENT_QUOTES, 'UTF-8'); ?>
+                                            </td>
+
                                             <td class="text-sm">
                                                 <?php echo htmlspecialchars((string)$row['borrow_start_at'], ENT_QUOTES, 'UTF-8'); ?><br>
                                                 ～ <?php echo htmlspecialchars((string)$row['borrow_end_at'], ENT_QUOTES, 'UTF-8'); ?>

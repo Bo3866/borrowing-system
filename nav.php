@@ -34,6 +34,7 @@ $handoverMenuLabel = in_array($currentRole, ['8','9'], true)
             <?php } ?>
         <?php if (in_array($currentRole, ['3'], true)) { ?>
             <button class="nav-btn" onclick="location.href='qr_admin.php'">生成報到 QR</button>
+            <button class="nav-btn" onclick="location.href='assign_role.php'">指定使用者身份</button>
         <?php } ?>
         <?php } ?>
         <?php if ($isManager || (isset($currentRole) && $currentRole === '1')) { ?>

@@ -180,6 +180,65 @@ h3 {
     transform: translateY(-4px);
 }
 
+/* Table utilities */
+.user-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.975rem;
+    table-layout: fixed;
+}
+.user-table thead th {
+    text-align: center;
+    padding: 10px 8px;
+    color: #2c3e50;
+    font-weight: 700;
+    border-bottom: 1px solid rgba(44,62,80,0.06);
+}
+.user-table tbody td {
+    padding: 10px 8px;
+    border-bottom: 1px solid rgba(44,62,80,0.04);
+    vertical-align: middle;
+    color: #2c3e50;
+    text-align: center;
+}
+.user-table td.center,
+.user-table th.center { text-align: center; }
+.user-table td.right { text-align: right; }
+
+.user-table th:nth-child(1) { width: 15%; }
+.user-table th:nth-child(2) { width: 35%; }
+.user-table th:nth-child(3) { width: 20%; }
+.user-table th:nth-child(4) { width: 30%; }
+
+.role-select { padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0; background: #fff; min-width:120px; }
+.btn-update, .nav-btn { padding: 10px 14px; border-radius: 10px; }
+
+/* Improved table readability */
+.user-table tbody tr:nth-child(even) { background: rgba(44,62,80,0.02); }
+.user-table td.left { text-align: left; padding-left: 18px; }
+.user-table td.center { text-align: center; }
+
+.user-table .action-cell form { display:flex; gap:10px; align-items:center; justify-content:center; }
+.user-table .action-cell .role-select { min-width:160px; }
+.user-table .action-cell .nav-btn { padding:8px 12px; }
+
+/* Search box improvements */
+.search-box input[type="text"], .search-input {
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #d1d5db;
+    min-width: 220px;
+}
+
+@media (max-width: 700px) {
+    .user-table th:nth-child(1) { width: 22%; }
+    .user-table th:nth-child(2) { width: 38%; }
+    .user-table th:nth-child(3) { width: 20%; }
+    .user-table th:nth-child(4) { width: 20%; }
+    .user-table .action-cell .role-select { min-width:120px; }
+}
+
+
 /* ===== 報修卡片 (粉色主題) ===== */
 .maintenance-card {
     background: linear-gradient(180deg, #fff7f7 0%, #fff1f2 100%);

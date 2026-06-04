@@ -337,6 +337,10 @@ if ($pageError === '' && $link && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 if ($pageError === '' && $link) {
+    // 1. 取得搜尋參數（放在條件檢查前或內都可以，這邊先統一撈取）
+    $keyword = trim((string)($_GET['keyword'] ?? ''));
+    $statusFilter = trim((string)($_GET['status'] ?? ''));
+
     if ($canViewEquipment) {
     $approvedSql = "
         SELECT
@@ -344,8 +348,8 @@ if ($pageError === '' && $link) {
             r.user_id,
             u.full_name,
             u.email,
-            r.actual_pickup_at AS r.borrow_start_at,
-            r.actual_return_at AS r.borrow_end_at,
+            r.actual_pickup_at AS borrow_start_at,
+            r.actual_return_at AS borrow_end_at,
             hs.handover_id,
             hs.handover_at AS latest_handover_at,
             hs.returned_at AS latest_returned_at,
@@ -383,12 +387,38 @@ if ($pageError === '' && $link) {
           AND EXISTS (
               SELECT 1 FROM equipment_reservation_items eri WHERE eri.reservation_id = r.reservation_id
           )
-        ORDER BY r.actual_pickup_at ASC
-        LIMIT 300
     ";
+    if ($keyword !== '') {
+            $escapedKeyword = mysqli_real_escape_string($link, $keyword);
+            $approvedSql .= " AND (
+                u.full_name LIKE '%{$escapedKeyword}%' 
+                OR r.user_id LIKE '%{$escapedKeyword}%'
+                OR EXISTS (
+                    SELECT 1 FROM equipment_reservation_items eri2
+                    JOIN equipments e2 ON e2.equipment_id = eri2.equipment_id
+                    JOIN equipment_categories ec2 ON ec2.equipment_code = e2.equipment_code
+                    WHERE eri2.reservation_id = r.reservation_id AND ec2.equipment_name LIKE '%{$escapedKeyword}%'
+                )
+            )";
+        }
 
+    // 4. 動態加入狀態篩選條件
+        if ($statusFilter !== '') {
+            if ($statusFilter === 'pending') {
+                $approvedSql .= " AND hs.handover_at IS NULL";
+            } elseif ($statusFilter === 'handover') {
+                $approvedSql .= " AND hs.handover_at IS NOT NULL AND hs.returned_at IS NULL";
+            } elseif ($statusFilter === 'returned') {
+                $approvedSql .= " AND hs.returned_at IS NOT NULL";
+            }
+        }
+
+    // 5. 補上最後的排序與限制
+    $approvedSql .= " ORDER BY r.actual_pickup_at ASC LIMIT 300";
+    // 6. 執行查詢與資料綁定
     $approvedResult = mysqli_query($link, $approvedSql);
     if ($approvedResult) {
+        $approvedRows = [];
         while ($row = mysqli_fetch_assoc($approvedResult)) {
             $approvedRows[] = $row;
         }
@@ -562,6 +592,39 @@ if ($link) {
                 <?php if ($pageError !== '') { ?>
                     <div class="login-alert"><?php echo htmlspecialchars($pageError, ENT_QUOTES, 'UTF-8'); ?></div>
                 <?php } ?>
+
+                <!-- 搜尋功能區塊 -->
+<div class="search-section">
+    <div class="search-container">
+        <form method="GET" action="handover_schedule.php" class="search-form">
+            <div class="search-group">
+                <label for="search_keyword" class="search-label">關鍵字搜尋</label>
+                <div class="input-with-icon">
+                    <input type="text" id="search_keyword" name="keyword" 
+                           placeholder="搜尋姓名、學號或器材/空間名稱..." 
+                           value="<?php echo htmlspecialchars($_GET['keyword'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                </div>
+            </div>
+            
+            <div class="search-group size-small">
+                <label for="search_status" class="search-label">狀態篩選</label>
+                <select id="search_status" name="status">
+                    <option value="">全部狀態</option>
+                    <option value="pending" <?php echo ($_GET['status'] ?? '') === 'pending' ? 'selected' : ''; ?>>待處理</option>
+                    <option value="handover" <?php echo ($_GET['status'] ?? '') === 'handover' ? 'selected' : ''; ?>>已交接/使用中</option>
+                    <option value="returned" <?php echo ($_GET['status'] ?? '') === 'returned' ? 'selected' : ''; ?>>已歸還</option>
+                </select>
+            </div>
+            
+            <div class="search-actions">
+                <button type="submit" class="btn-search">🔍 搜尋</button>
+                <?php if (!empty($_GET['keyword']) || !empty($_GET['status'])): ?>
+                    <a href="handover_schedule.php" class="btn-reset">清除條件</a>
+                <?php endif; ?>
+            </div>
+        </form>
+    </div>
+</div>
 
                 <?php if ($pageError === '') { ?>
                     <?php if ($canViewEquipment) { ?>

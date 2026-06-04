@@ -52,6 +52,7 @@ $phone = '';
 $derivedEmail = '';
 $showCodeForm = false;
 $showPasswordForm = false;
+$email = '';
 
 $linkError = '';
 $link = getMysqliConnection($linkError);
@@ -71,27 +72,35 @@ if (!$link) {
         } elseif (strlen($userId) > 10) {
             $registerError = '帳號長度不可超過 10 碼。';
         } else {
-            $derivedEmail = $userId . '@cloud.fju.edu.tw';
-            $checkStmt = mysqli_prepare($link, 'SELECT user_id FROM users WHERE user_id = ? LIMIT 1');
+            $email = trim((string)($_POST['email'] ?? ''));
+            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $registerError = '請輸入正確的電子郵件格式。';
+            } else {
+                $checkStmt = mysqli_prepare($link, 'SELECT user_id, email FROM users WHERE user_id = ? OR email = ? LIMIT 1');
 
             if (!$checkStmt) {
                 $registerError = '註冊查詢失敗：' . mysqli_error($link);
             } else {
-                mysqli_stmt_bind_param($checkStmt, 's', $userId);
+                mysqli_stmt_bind_param($checkStmt, 'ss', $userId, $email);
                 mysqli_stmt_execute($checkStmt);
                 $result = mysqli_stmt_get_result($checkStmt);
                 $existingUser = $result ? mysqli_fetch_assoc($result) : null;
                 mysqli_stmt_close($checkStmt);
-
+            
                 if ($existingUser) {
-                    $registerError = '這個帳號已經被使用，請更換 user_id。';
+                // 💡 精準判斷到底是哪一個重複了，給予友善提示
+                    if ($existingUser['user_id'] === $userId) {
+                        $registerError = '這個帳號已經被使用，請更換帳號。';
+                    } else {
+                        $registerError = '這個電子郵件已經被註冊過，請更換電子郵件。';
+                    }
                 } else {
                     $verificationCode = (string)random_int(100000, 999999);
                     $state = [
                         'user_id' => $userId,
                         'full_name' => $fullName,
                         'phone' => $phone,
-                        'email' => $derivedEmail,
+                        'email' => $email,
                         'code_hash' => password_hash($verificationCode, PASSWORD_DEFAULT),
                         'code_expires_at' => time() + 600,
                         'code_verified' => false,
@@ -99,16 +108,17 @@ if (!$link) {
                     ];
 
                     try {
-                        sendRegisterVerificationCode($derivedEmail, $fullName !== '' ? $fullName : $userId, $verificationCode);
+                        sendRegisterVerificationCode($email, $fullName !== '' ? $fullName : $userId, $verificationCode);
                         $_SESSION['register_state'] = $state;
                         $registerState = $state;
                         $showCodeForm = true;
-                        $registerSuccess = '驗證碼已寄出到 ' . $derivedEmail . '，請輸入後再設定密碼。';
+                        $registerSuccess = '驗證碼已寄出到 ' . $email . '，請輸入後再設定密碼。';
                     } catch (Throwable $throwable) {
                         $registerError = '驗證碼寄送失敗：' . $throwable->getMessage();
                     }
                 }
             }
+        }
         }
     } elseif ($action === 'verify_code') {
         $code = trim((string)($_POST['verification_code'] ?? ''));
@@ -189,19 +199,23 @@ if (!$link) {
             $registerError = '密碼至少需要 4 碼。';
             $showPasswordForm = true;
         } else {
-            $checkStmt = mysqli_prepare($link, 'SELECT user_id FROM users WHERE user_id = ? LIMIT 1');
+            $checkStmt = mysqli_prepare($link, 'SELECT user_id, email FROM users WHERE user_id = ? OR email = ? LIMIT 1');
 
             if (!$checkStmt) {
                 $registerError = '註冊查詢失敗：' . mysqli_error($link);
             } else {
-                mysqli_stmt_bind_param($checkStmt, 's', $state['user_id']);
+                mysqli_stmt_bind_param($checkStmt, 'ss', $state['user_id'], $state['email']);
                 mysqli_stmt_execute($checkStmt);
                 $result = mysqli_stmt_get_result($checkStmt);
                 $existingUser = $result ? mysqli_fetch_assoc($result) : null;
                 mysqli_stmt_close($checkStmt);
 
                 if ($existingUser) {
-                    $registerError = '這個帳號已經被使用，請重新申請。';
+                    if ($existingUser['user_id'] === $state['user_id']) {
+                        $registerError = '這個帳號已經被使用，請重新申請。';
+                    } else {
+                        $registerError = '這個電子郵件已經被註冊過，請更換電子郵件。';
+                    }
                 } else {
                     $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
                     $insertStmt = mysqli_prepare(
@@ -231,7 +245,7 @@ if (!$link) {
                             $userId = '';
                             $fullName = '';
                             $phone = '';
-                            $derivedEmail = '';
+                            $email = '';
                         } else {
                             $registerError = '建立帳號失敗：' . mysqli_stmt_error($insertStmt);
                             $showPasswordForm = true;
@@ -249,11 +263,10 @@ if (is_array($registerState)) {
     $userId = (string)($registerState['user_id'] ?? $userId);
     $fullName = (string)($registerState['full_name'] ?? $fullName);
     $phone = (string)($registerState['phone'] ?? $phone);
-    $derivedEmail = (string)($registerState['email'] ?? '');
+    // 👇 修正：直接把 Session 存的信箱還原給 $email 變數
+    $email = (string)($registerState['email'] ?? ''); 
     $showCodeForm = $showCodeForm || empty($registerState['code_verified']);
     $showPasswordForm = $showPasswordForm || !empty($registerState['code_verified']);
-} elseif ($userId !== '') {
-    $derivedEmail = $userId . '@cloud.fju.edu.tw';
 }
 ?>
 <!DOCTYPE html>
@@ -269,8 +282,7 @@ if (is_array($registerState)) {
         <section class="login-card">
             <h2>註冊帳號</h2>
             <p class="login-subtitle">先確認帳號是否重複，再寄送驗證碼到學校信箱。</p>
-            <p class="auth-form-hint">email 會自動使用 <strong>user_id@cloud.fju.edu.tw</strong>。</p>
-
+            
             <?php if ($registerError !== '') { ?>
                 <div class="login-alert"><?php echo htmlspecialchars($registerError, ENT_QUOTES, 'UTF-8'); ?></div>
             <?php } ?>
@@ -298,8 +310,12 @@ if (is_array($registerState)) {
                 </div>
 
                 <div class="form-group">
-                    <label>電子郵件</label>
-                    <input type="text" value="<?php echo htmlspecialchars($derivedEmail !== '' ? $derivedEmail : '將自動建立為 user_id@cloud.fju.edu.tw', ENT_QUOTES, 'UTF-8'); ?>" readonly>
+                    <label for="email">電子郵件</label>
+                        <input type="email" id="email" name="email"
+                            placeholder="請輸入電子郵件"
+                            value="<?php echo htmlspecialchars($email ?? '', ENT_QUOTES, 'UTF-8'); ?>"
+                            required
+                            <?php echo $showCodeForm || $showPasswordForm ? 'readonly' : ''; ?>>
                 </div>
 
                 <button type="submit" class="btn-primary login-button"><?php echo ($showCodeForm || $showPasswordForm) ? '重新發送驗證碼' : '發送驗證碼'; ?></button>

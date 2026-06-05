@@ -357,11 +357,6 @@ if ($spStmt) {
                 <?php }
                 } // end if has_sales === '1'
                 ?>
-
-                <div>
-                    <label>承辦單位 / 科別</label>
-                    <input type="text" value="<?php echo safe_html($row['coordinator_department'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" disabled>
-                </div>
                 <div>
                     <label>聯絡電話</label>
                     <input type="text" value="<?php echo safe_html($row['coordinator_phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" disabled>

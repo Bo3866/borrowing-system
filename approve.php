@@ -150,7 +150,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
 
                         $candidates = [
                             'organization_name','activity_name','participant_count','staff_count',
-                            'club_president','activity_coordinator','coordinator_department','coordinator_phone',
+                            'activity_coordinator','coordinator_phone',
                             'coordinator_other_contact','vehicle_entry','setup_flags','purpose',
                             'borrow_start_at','borrow_end_at','space_id','proposal_file','proposal_uploaded_at'
                         ];
@@ -299,7 +299,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
                     // 當要求補件時，保存原始申請數據快照（只保存申請表單欄位）
                     $snapshotSql = 'SELECT 
                         organization_name, activity_name, participant_count, staff_count, 
-                        club_president, activity_coordinator, coordinator_department, coordinator_phone, 
+                        activity_coordinator, coordinator_phone, 
                           coordinator_other_contact, vehicle_entry, has_alcohol, has_fire, has_sales, setup_flags,
                         purpose, borrow_start_at, borrow_end_at,
                         space_id
@@ -631,7 +631,7 @@ function fetchReservationDetails(mysqli $link, int $reservationId): array
     // candidate columns we want to show if they exist
     $candidates = [
         'organization_name','activity_name','participant_count','staff_count',
-        'club_president','activity_coordinator','coordinator_department','coordinator_phone',
+        'activity_coordinator','coordinator_phone',
         'coordinator_other_contact','vehicle_entry','setup_flags','purpose',
         'borrow_start_at','borrow_end_at','space_id','proposal_file','proposal_uploaded_at',
         'has_alcohol','has_fire','has_sales','proposal_file','proposal_uploaded_at','rejection_reason',

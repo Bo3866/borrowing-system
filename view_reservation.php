@@ -133,11 +133,6 @@ if ($spStmt) {
                 </div>
 
                 <!-- 會長 / 承辦人 欄位已移除 -->
-
-                <div>
-                    <label>承辦單位 / 科別</label>
-                    <input type="text" value="<?php echo htmlspecialchars($row['coordinator_department'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" disabled>
-                </div>
                 <div>
                     <label>聯絡電話</label>
                     <input type="text" value="<?php echo htmlspecialchars($row['coordinator_phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" disabled>

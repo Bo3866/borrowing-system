@@ -326,7 +326,6 @@ if ($dbError === '') {
             reservationSelectExpr($reservationColumns, 'staff_count'),
             reservationSelectExpr($reservationColumns, 'club_president'),
             reservationSelectExpr($reservationColumns, 'activity_coordinator'),
-            reservationSelectExpr($reservationColumns, 'coordinator_department'),
             reservationSelectExpr($reservationColumns, 'coordinator_phone'),
             reservationSelectExpr($reservationColumns, 'coordinator_other_contact'),
             reservationSelectExpr($reservationColumns, 'vehicle_entry'),
@@ -426,7 +425,6 @@ if ($dbError === '' && count($rows) > 0) {
             'staff_count' => (string)($r['staff_count'] ?? ''),
             'club_president' => (string)($r['club_president'] ?? ''),
             'activity_coordinator' => (string)($r['activity_coordinator'] ?? ''),
-            'coordinator_department' => (string)($r['coordinator_department'] ?? ''),
             'coordinator_phone' => (string)($r['coordinator_phone'] ?? ''),
             'coordinator_other_contact' => (string)($r['coordinator_other_contact'] ?? ''),
             'vehicle_entry' => (string)($r['vehicle_entry'] ?? ''),
@@ -1462,7 +1460,6 @@ if ($dbError === '' && count($rows) > 0) {
                     ${buildDetailItem('活動對象人數', formatDetailValue(data.participant_count))}
                     ${buildDetailItem('工作人員人數', formatDetailValue(data.staff_count))}
                     ${buildDetailItem('活動負責人', formatDetailValue(data.activity_coordinator))}
-                    ${buildDetailItem('系級', formatDetailValue(data.coordinator_department))}
                     ${buildDetailItem('聯絡電話', formatDetailValue(data.coordinator_phone))}
                     ${buildDetailItem('其他聯絡方式', formatDetailValue(data.coordinator_other_contact))}
                     ${buildDetailItem('是否車輛入校', formatYesNo(data.vehicle_entry))}

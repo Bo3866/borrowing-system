@@ -230,7 +230,6 @@ $formData = [
     'staff_count' => '',
     'club_president' => '',
     'activity_coordinator' => '',
-    'coordinator_department' => '',
     'coordinator_phone' => '',
     'coordinator_other_contact' => '',
     'vehicle_entry' => 'no',
@@ -271,7 +270,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['staff_count'] = trim((string)($_POST['staff_count'] ?? ''));
     $formData['club_president'] = trim((string)($_POST['club_president'] ?? ''));
     $formData['activity_coordinator'] = trim((string)($_POST['activity_coordinator'] ?? ''));
-    $formData['coordinator_department'] = trim((string)($_POST['coordinator_department'] ?? ''));
     $formData['coordinator_phone'] = trim((string)($_POST['coordinator_phone'] ?? ''));
     $formData['coordinator_other_contact'] = trim((string)($_POST['coordinator_other_contact'] ?? ''));
     $formData['vehicle_entry'] = trim((string)($_POST['vehicle_entry'] ?? 'no'));
@@ -728,9 +726,7 @@ CREATE TABLE IF NOT EXISTS reservations (
     activity_name VARCHAR(100) NULL,
     participant_count VARCHAR(50) NULL,
     staff_count INT NULL DEFAULT 0,
-    club_president VARCHAR(100) NULL,
     activity_coordinator VARCHAR(100) NULL,
-    coordinator_department VARCHAR(100) NULL,
     coordinator_phone VARCHAR(30) NULL,
     coordinator_other_contact VARCHAR(255) NULL,
     vehicle_entry VARCHAR(10) NULL DEFAULT 'no',
@@ -890,7 +886,6 @@ SQL;
                     'staff_count' => "INT NULL DEFAULT 0 COMMENT '工作人員人數'",
                     'club_president' => "VARCHAR(100) NULL COMMENT '社/會長'",
                     'activity_coordinator' => "VARCHAR(100) NULL COMMENT '活動負責人'",
-                    'coordinator_department' => "VARCHAR(100) NULL COMMENT '系級'",
                     'coordinator_phone' => "VARCHAR(30) NULL COMMENT '聯絡電話'",
                     'coordinator_other_contact' => "VARCHAR(255) NULL COMMENT '其他聯絡方式'",
                     'vehicle_entry' => "VARCHAR(10) NULL DEFAULT 'no' COMMENT '是否車輛入校'",
@@ -1018,7 +1013,6 @@ SQL;
                     'staff_count' => ['type' => 'i', 'value' => (int)$formData['staff_count']],
                     'club_president' => ['type' => 's', 'value' => $formData['club_president']],
                     'activity_coordinator' => ['type' => 's', 'value' => $formData['activity_coordinator']],
-                    'coordinator_department' => ['type' => 's', 'value' => $formData['coordinator_department']],
                     'coordinator_phone' => ['type' => 's', 'value' => $formData['coordinator_phone']],
                     'coordinator_other_contact' => ['type' => 's', 'value' => $formData['coordinator_other_contact']],
                     'vehicle_entry' => ['type' => 's', 'value' => $formData['vehicle_entry']],
@@ -2004,10 +1998,6 @@ SQL;
                                     <input type="text" id="activity_coordinator" name="activity_coordinator" class="form-control" placeholder="請輸入活動負責人姓名" required value="<?php echo htmlspecialchars($formData['activity_coordinator'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                 </div>                             
                                 <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
-                                    <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
-                                        <label for="coordinator_department">系級<span style="color:red">*</span></label>
-                                        <input type="text" id="coordinator_department" name="coordinator_department" class="form-control" placeholder="請輸入系級" value="<?php echo htmlspecialchars($formData['coordinator_department'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                    </div>
                                     <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                                         <label for="coordinator_phone">聯絡電話<span style="color:red">*</span></label>
                                         <input type="text" id="coordinator_phone" name="coordinator_phone" class="form-control" placeholder="請輸入聯絡電話" value="<?php echo htmlspecialchars($formData['coordinator_phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">

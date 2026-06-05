@@ -354,8 +354,10 @@ if ($dbError === '') {
             reservationSelectExpr($reservationColumns, 'fire_staff_json'),
             reservationSelectExpr($reservationColumns, 'sales_location'),
             reservationSelectExpr($reservationColumns, 'sales_count'),
+            reservationSelectExpr($reservationColumns, 'sales_layout_map'),
             reservationSelectExpr($reservationColumns, 'holiday_fee_count'),
             reservationSelectExpr($reservationColumns, 'holiday_fee'),
+            reservationSelectExpr($reservationColumns, 'sales_roster_json'),
         ];
 
         $safeUserId = mysqli_real_escape_string($link, $currentUserId);
@@ -453,6 +455,8 @@ if ($dbError === '' && count($rows) > 0) {
             'fire_staff_json' => (string)($r['fire_staff_json'] ?? ''),
             'sales_location' => (string)($r['sales_location'] ?? ''),
             'sales_count' => (string)($r['sales_count'] ?? ''),
+            'sales_layout_map' => (string)($r['sales_layout_map'] ?? ''),
+            'sales_roster_json' => (string)($r['sales_roster_json'] ?? ''),
             'holiday_fee_count' => (string)($r['holiday_fee_count'] ?? ''),
             'holiday_fee' => (string)($r['holiday_fee'] ?? ''),
         ];
@@ -1314,6 +1318,55 @@ if ($dbError === '' && count($rows) > 0) {
             return text === '' ? '-' : text;
         }
 
+
+    /**
+     * 嘗試從非結構化的擺攤字串中抽出攤位陣列（簡易啟發式解析）
+     * 如果無法抽出攤位則回傳 null。
+     */
+    function tryParseSalesRaw(raw) {
+        if (!raw || String(raw).trim() === '') return null;
+        const text = String(raw).replace(/\r\n?/g, '\n').replace(/<br\s*\/?>/gi, '\n');
+        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+        const booths = [];
+
+        for (const line of lines) {
+            // 常見標記：攤位: 名稱、#1 攤位: 名稱、名稱 - 負責人、名稱（負責人）
+            let m = line.match(/#?\s*(?:攤位|攤|booth)\s*[0-9]*\s*[:：]\s*(.+)/i);
+            if (m && m[1]) {
+                booths.push({ booth_name: m[1].trim() });
+                continue;
+            }
+
+            // 名稱 - 負責人
+            let m2 = line.match(/^(.+?)\s*[\-–—]\s*(.+)$/);
+            if (m2) {
+                booths.push({ booth_name: m2[1].trim(), owner: m2[2].trim() });
+                continue;
+            }
+
+            // 名稱（負責人）或 名稱 (owner)
+            let m3 = line.match(/^(.+?)\s*[\(（](.+)[\)）]$/);
+            if (m3) {
+                booths.push({ booth_name: m3[1].trim(), owner: m3[2].trim() });
+                continue;
+            }
+
+            // 如果一行中以逗號分隔多個攤位，拆解
+            if (line.indexOf(',') !== -1 && line.split(',').length <= 10) {
+                line.split(',').map(p => p.trim()).filter(Boolean).forEach(p => booths.push({ booth_name: p }));
+                continue;
+            }
+
+            // 嘗試從「欄位: 值」形式擷取攤位名稱
+            let kv = line.match(/^(?:名稱|攤名|店家|商家)\s*[:：]\s*(.+)$/i);
+            if (kv && kv[1]) {
+                booths.push({ booth_name: kv[1].trim() });
+                continue;
+            }
+        }
+
+        return booths.length > 0 ? booths : null;
+    }
         function formatYesNo(value) {
             if (value === '1' || value === 1 || value === true) return '是';
             if (value === '0' || value === 0 || value === false) return '否';
@@ -1413,28 +1466,28 @@ if ($dbError === '' && count($rows) > 0) {
             const proposalHref = formatDetailValue(data.proposal_file);
             const proposalName = formatDetailValue(data.proposal_original_name || proposalHref.split('/').pop().split('\\').pop());
             const hasAlcohol = String(data.has_alcohol || '').trim() === '1';
-            const hasFire = String(data.has_fire || '').trim() === '1';
-            const hasSales = String(data.has_sales || '').trim() === '1';
-            const hasFlags = String(data.setup_flags || '').trim() === 'yes';
+            const hasFire    = String(data.has_fire    || '').trim() === '1';
+            const hasSales   = (data.has_sales === '1' || data.has_sales === 1 || data.has_sales === 'Y' || data.has_sales === 'y');
+            const hasFlags   = String(data.setup_flags || '').trim() === 'yes';
+
+            // 明火工作人員（grid 2欄卡片）
             const fireStaffHtml = [
-                ['表演組', fireStaff.fire_performers],
-                ['加油組', fireStaff.fire_oilers],
-                ['滅火組', fireStaff.fire_extinguishers],
-                ['安全組', fireStaff.fire_security],
+                ['表演組',     fireStaff.fire_performers],
+                ['加油組',     fireStaff.fire_oilers],
+                ['滅火組',     fireStaff.fire_extinguishers],
+                ['安全組',     fireStaff.fire_security],
                 ['緊急應變組', fireStaff.fire_emergency],
-                ['醫護組', fireStaff.fire_medical],
+                ['醫護組',     fireStaff.fire_medical],
             ].map(([label, value]) => buildDetailItem(label, formatDetailValue(value))).join('');
 
-            const alcoholDetailHtml = `
-                ${buildDetailItem('酒精活動負責人', formatDetailValue(data.alcohol_coordinator))}
-                ${buildDetailItem('酒精活動社長', formatDetailValue(data.alcohol_president))}
-            `;
 
+
+            // 明火
             const fireDetailHtml = `
                 ${buildDetailItem('明火活動名稱', formatDetailValue(data.fire_activity_name))}
-                ${buildDetailItem('明火日期', formatDetailValue(data.fire_date))}
-                ${buildDetailItem('明火時間', formatTimeRange(data.fire_start_time, data.fire_end_time))}
-                ${buildDetailItem('明火地點', formatDetailValue(data.fire_location))}
+                ${buildDetailItem('明火日期',     formatDetailValue(data.fire_date))}
+                ${buildDetailItem('明火時間',     formatTimeRange(data.fire_start_time, data.fire_end_time))}
+                ${buildDetailItem('明火地點',     formatDetailValue(data.fire_location))}
                 <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
                     <p class="text-[11px] font-semibold text-slate-400 mb-2">明火工作人員</p>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -1443,11 +1496,47 @@ if ($dbError === '' && count($rows) > 0) {
                 </div>
             `;
 
+            // 擺攤：地點＋數量＋配置圖＋清冊
+            const rawRoster = (data.sales_roster_json === null || data.sales_roster_json === undefined) ? '' : String(data.sales_roster_json);
+            let rosterData = null;
+            if (rawRoster.trim() !== '') {
+                try { rosterData = JSON.parse(rawRoster); } catch (e) { rosterData = tryParseSalesRaw(rawRoster); }
+            }
+
+            let rosterHtml = '';
+            if (Array.isArray(rosterData) && rosterData.length > 0) {
+                rosterHtml = '<div class="rounded-xl border border-slate-200 bg-white p-3"><p class="text-[11px] font-semibold text-slate-400 mb-2">攤位清冊</p><table class="w-full text-left border-collapse">';
+                rosterData.forEach((shop, index) => {
+                    const stallName   = shop.booth_name || shop.stall_name || shop.name || '無名稱';
+                    const boothNo     = shop.booth_no ? ` #${shop.booth_no}` : '';
+                    const managerName = shop.manager || shop.manager_name || shop.owner || shop.contact || '-';
+                    const managerPhone = shop.phone || shop.manager_phone || '-';
+                    const products    = Array.isArray(shop.products) ? shop.products.join('、') : (shop.content || shop.products || '-');
+                    rosterHtml += `<tr style="border-bottom:1px solid #e2e8f0">
+                        <td class="py-2 pr-2 font-semibold text-slate-800 text-xs w-8">${index + 1}</td>
+                        <td class="py-2">
+                            <p class="font-semibold text-slate-800 text-xs">${escapeHtml(stallName)}${escapeHtml(boothNo)}</p>
+                            <p class="text-slate-500 text-xs mt-0.5">負責人：${escapeHtml(managerName)}　電話：${escapeHtml(managerPhone)}</p>
+                            <p class="text-slate-500 text-xs">販售：${escapeHtml(products)}</p>
+                        </td>
+                    </tr>`;
+                });
+                rosterHtml += '</table></div>';
+            }
+
+            let mapLinkHtml = '';
+            if (data.sales_layout_map && String(data.sales_layout_map).trim() !== '') {
+                mapLinkHtml = `<a href="${escapeHtml(String(data.sales_layout_map))}" target="_blank" rel="noopener" class="text-indigo-600 underline font-medium text-xs">📋 查看攤位配置圖</a>`;
+            }
+
             const salesDetailHtml = `
                 ${buildDetailItem('攤位地點', formatDetailValue(data.sales_location))}
                 ${buildDetailItem('攤位數量', formatDetailValue(data.sales_count))}
+                ${mapLinkHtml ? `<div class="rounded-xl border border-slate-200 bg-white p-3">${mapLinkHtml}</div>` : ''}
+                ${rosterHtml}
             `;
 
+            // 旗幟
             const flagsDetailHtml = `
                 ${buildDetailItem('旗幟數量', formatDetailValue(data.flag_count))}
             `;
@@ -1465,7 +1554,7 @@ if ($dbError === '' && count($rows) > 0) {
                     ${buildDetailItem('是否車輛入校', formatYesNo(data.vehicle_entry))}
                     ${buildDetailItem('用途說明', formatDetailValue(data.purpose), 'md:col-span-2')}
                     <div class="md:col-span-2 space-y-3">
-                        ${buildToggleSection('酒精', hasAlcohol, '有', alcoholDetailHtml)}
+                        ${buildDetailItem('酒精', formatYesNo(data.has_alcohol))}
                         ${buildToggleSection('明火', hasFire, '有', fireDetailHtml)}
                         ${buildToggleSection('擺攤', hasSales, '有', salesDetailHtml)}
                         ${buildToggleSection('旗幟', hasFlags, '有', flagsDetailHtml)}

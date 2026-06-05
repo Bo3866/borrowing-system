@@ -1121,7 +1121,7 @@ SQL;
                                FROM equipment_reservation_items eri
                                JOIN reservations r ON r.reservation_id = eri.reservation_id
                                WHERE r.approval_status IN ("pending", "approved")
-                                 AND r.r.actual_pickup_at < ?
+                                 AND r.actual_pickup_at < ?
                                  AND r.actual_return_at > ?
                            )
                          ORDER BY CASE WHEN e.equipment_id > ? THEN 0 ELSE 1 END, e.equipment_id ASC LIMIT ?'

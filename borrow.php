@@ -247,7 +247,6 @@ $formData = [
     'borrow_start_time' => '',
     'borrow_end_date' => '',
     'borrow_end_time' => '',
-    'purpose' => '',
     'phone' => $userPhone,
     'has_alcohol' => '',
     'has_fire' => '',
@@ -350,7 +349,6 @@ $formData['sales_location'] = trim((string)($_POST['sales_location'] ?? ''));
     $formData['actual_return_time_m'] = $arm;
 
 
-    $formData['purpose'] = trim((string)($_POST['purpose'] ?? ''));
     $formData['phone'] = trim((string)($_POST['phone'] ?? ''));
 
     // 企劃書後端檔案路徑：必須在前面先抓，後面驗證才不會誤判沒有企劃書
@@ -670,8 +668,6 @@ $formData['fire_date'] = !empty($_POST['fire_date']) ? trim((string)$_POST['fire
         ) {
             $borrowError = '請完整填寫實際領取器材與進入/離開場地之時間。';
         // --- 新增結束 ---
-        } elseif ($formData['purpose'] === '') {
-            $borrowError = '請填寫用途說明。';
         } elseif (
             (!isset($_FILES['proposal_file']) || $_FILES['proposal_file']['error'] === UPLOAD_ERR_NO_FILE) &&
             empty($draftProposalFileForReservation)
@@ -740,7 +736,6 @@ CREATE TABLE IF NOT EXISTS reservations (
     vehicle_entry VARCHAR(10) NULL DEFAULT 'no',
     setup_flags VARCHAR(10) NULL DEFAULT 'no',
     flag_count INT NULL DEFAULT NULL,
-    purpose VARCHAR(255) NULL,
     approval_stage VARCHAR(10) NULL DEFAULT 'a',
     has_alcohol VARCHAR(1) NULL DEFAULT '',
     has_fire VARCHAR(1) NULL DEFAULT '',
@@ -901,7 +896,6 @@ SQL;
                     'vehicle_entry' => "VARCHAR(10) NULL DEFAULT 'no' COMMENT '是否車輛入校'",
                     'setup_flags' => "VARCHAR(10) NULL DEFAULT 'no' COMMENT '是否插旗'",
                     'flag_count' => "INT NULL DEFAULT NULL COMMENT '旗幟數量'",
-                    'purpose' => "VARCHAR(255) NULL COMMENT '用途'",
                     'submitted_at' => "DATETIME NULL COMMENT '送出時間'",
                     'approval_stage' => "VARCHAR(10) NULL DEFAULT 'a' COMMENT '審核階段'",
                     'has_alcohol' => "VARCHAR(1) NULL DEFAULT '' COMMENT '是否含酒精'",
@@ -939,7 +933,7 @@ SQL;
                     }
                 }
 
-                // 檢查 reservations 表是否有 purpose 與 certificate_id 欄位，視情況決定 INSERT 欄位
+
                 $reservationCols = [];
                 $colRes = mysqli_query($link, 'SHOW COLUMNS FROM reservations');
                 if ($colRes) {
@@ -947,7 +941,6 @@ SQL;
                         $reservationCols[] = (string)$crow['Field'];
                     }
                 }
-                $hasPurposeCol = in_array('purpose', $reservationCols, true);
                 $hasCertificateIdCol = in_array('certificate_id', $reservationCols, true);
 
                 $hasSubmittedAtCol = in_array('submitted_at', $reservationCols, true);
@@ -1031,7 +1024,6 @@ SQL;
                     'vehicle_entry' => ['type' => 's', 'value' => $formData['vehicle_entry']],
                     'setup_flags' => ['type' => 's', 'value' => $formData['setup_flags']],
                     'flag_count' => ['type' => 's', 'value' => $formData['setup_flags'] === 'yes' && $formData['flag_count'] !== null ? (string)(int)$formData['flag_count'] : null],
-                    'purpose' => ['type' => 's', 'value' => $formData['purpose']],
                     'submitted_at' => ['type' => 's', 'value' => $submittedAtVal],
                     'approval_stage' => ['type' => 's', 'value' => 'a'],
                     'certificate_id' => ['type' => 'i', 'value' => $certificateId],
@@ -3288,11 +3280,6 @@ function validateFireForm() {
                                 </div>
                             </div>
 
-
-                            <div class="form-group">
-                                <label for="purpose">用途說明 <span style="color:red">*</span></label>
-                                <textarea id="purpose" name="purpose" rows="4" required><?php echo htmlspecialchars($formData['purpose'], ENT_QUOTES, 'UTF-8'); ?></textarea>
-                            </div>
 
 <div class="step-actions">
     <button type="button" class="btn btn-secondary" onclick="goToStep(2)"> ⬅ 回上一步</button>

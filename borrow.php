@@ -551,7 +551,6 @@ $formData['fire_date'] = !empty($_POST['fire_date']) ? trim((string)$_POST['fire
                 SELECT 1
                 FROM equipment_certificates
                 WHERE holder_id = ?
-                  AND validity_status = 'valid'
                   AND CURDATE() <= valid_until
             ";
             $certStmt = mysqli_prepare($link, $certificateCheckSql);
@@ -966,8 +965,10 @@ SQL;
                 $holiday_fee_count = 0;
                 $holiday_fee = 0;
                 $HOLIDAY_RATE = 200;
-                $startDateStr = $formData['borrow_start_date'] ?? '';
-                $endDateStr = $formData['borrow_end_date'] ?? '';
+                // 將假日收費改為使用實際領取與歸還日期來計算
+                $startDateStr = $formData['actual_pickup_date'];
+                $endDateStr = $formData['actual_return_date'];
+
                 if ($startDateStr !== '' && $endDateStr !== '') {
                     $startDate = DateTime::createFromFormat('Y-m-d', $startDateStr);
                     $endDate = DateTime::createFromFormat('Y-m-d', $endDateStr);
@@ -985,7 +986,7 @@ SQL;
                                 }
                             }
                         }
-
+                        
                         // 若沒有 holidays table，將週末視為假日（fallback）
                         $d = clone $startDate;
                         while ($d <= $endDate) {
@@ -3012,25 +3013,57 @@ function validateFireForm() {
                                     }
 
                                     function updateHolidayFeeDisplay() {
-                                        const start = document.getElementById('borrow_start_date')?.value || '';
-                                        const end = document.getElementById('borrow_end_date')?.value || '';
-                                        const cnt = countHolidayDaysJS(start, end);
-                                        const fee = cnt * 200;
-                                        const disp = document.getElementById('holiday-fee-display');
-                                        if (disp) disp.textContent = `例假日收場地費 200 元/次。已選 ${cnt} 天，費用：${fee} 元`;
+                                        // 變更為抓取實際領取與歸還日期
+                                        const startInput = document.getElementById('actual_pickup_date');
+                                        const endInput = document.getElementById('actual_return_date');
+                                        
+                                        if (!startInput || !endInput || !startInput.value || !endInput.value) {
+                                            const hfDisplay = document.getElementById('holiday-fee-display');
+                                            if (hfDisplay) hfDisplay.innerHTML = `例假日收場地費 200 元/次。已選 0 天，費用：0 元`;
+                                            return;
+                                        }
+
+                                        const startStr = startInput.value;
+                                        const endStr = endInput.value;
+                                        
+                                        let holiday_fee_count = 0;
+                                        const HOLIDAY_RATE = 200; 
+
+                                        let startDate = new Date(startStr);
+                                        let endDate = new Date(endStr);
+
+                                        if (startDate <= endDate) {
+                                            let serverHolidays = window.__PAGE_HOLIDAYS__ || [];
+                                            let d = new Date(startDate);
+                                            while (d <= endDate) {
+                                                let ymd = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                                                let weekday = d.getDay(); // 0 = 禮拜天, 6 = 禮拜六
+                                                
+                                                let isHoliday = serverHolidays.includes(ymd);
+                                                if (serverHolidays.length === 0 && (weekday === 0 || weekday === 6)) {
+                                                    isHoliday = true;
+                                                }
+                                                if (isHoliday) {
+                                                    holiday_fee_count++;
+                                                }
+                                                d.setDate(d.getDate() + 1);
+                                            }
+                                        }
+
+                                        const fee = holiday_fee_count * HOLIDAY_RATE;
+                                        const hfDisplay = document.getElementById('holiday-fee-display');
+                                        if (hfDisplay) {
+                                            hfDisplay.innerHTML = `例假日收場地費 200 元/次。已選 ${holiday_fee_count} 天，費用：${fee} 元`;
+                                        }
                                         const hfCnt = document.getElementById('holiday_fee_count');
                                         const hf = document.getElementById('holiday_fee');
-                                        if (hfCnt) hfCnt.value = cnt;
+                                        if (hfCnt) hfCnt.value = holiday_fee_count;
                                         if (hf) hf.value = fee;
                                     }
 
-                                    // expose server holidays to JS
-                                    try {
-                                        window.__PAGE_HOLIDAYS__ = <?php echo json_encode($pageHolidayDates, JSON_HEX_TAG); ?> || [];
-                                    } catch(e) { window.__PAGE_HOLIDAYS__ = []; }
-
-                                    document.getElementById('borrow_start_date')?.addEventListener('change', updateHolidayFeeDisplay);
-                                    document.getElementById('borrow_end_date')?.addEventListener('change', updateHolidayFeeDisplay);
+                                    // 變更動態監聽目標，改為實際日期一有變動就即時重算費用
+                                    document.getElementById('actual_pickup_date')?.addEventListener('change', updateHolidayFeeDisplay);
+                                    document.getElementById('actual_return_date')?.addEventListener('change', updateHolidayFeeDisplay);
                                     // 首次載入顯示
                                     updateHolidayFeeDisplay();
 
@@ -5897,4 +5930,3 @@ const fireAct = document.getElementById('fire_activity_name');     // 對應上�
 
 </body>
 </html>
-

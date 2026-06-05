@@ -2,10 +2,7 @@
 declare(strict_types=1);
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 
-// TODO: 這裡要引入你原本的資料庫連接與權限檢查
-// 範例：確認是管理員或課指組老師才能進來
-// if ($_SESSION['role'] !== 'admin' && $_SESSION['role'] !== 'staff') { die('權限不足'); }
-
+// TODO: 請確保此處引入了你正確的資料庫連接設定檔案
 require_once __DIR__ . '/config/database.php';
 
 $dbError = '';
@@ -38,13 +35,13 @@ if ($dbError === '' && $searchKeyword !== '') {
                 WHEN u.user_id = '{$safeKeyword}' THEN 3
                 ELSE 4
             END ASC
-        LIMIT 20 -- 💡 放大限制，最多顯示 20 筆符合的學生
+        LIMIT 20
     ";
     
     $result = mysqli_query($link, $searchSql);
     if ($result) {
         while ($row = mysqli_fetch_assoc($result)) {
-            $foundUsers[] = $row; // 💡 把所有符合的學生塞進陣列
+            $foundUsers[] = $row; 
         }
     }
     
@@ -53,12 +50,11 @@ if ($dbError === '' && $searchKeyword !== '') {
     }
 }
 
-// 💡 另外接收老師點選了哪一個特定的學號
+// 另外接收老師點選了哪一個特定的學號
 $selectedUserId = trim((string)($_GET['select_user'] ?? ''));
 $foundUser = null;
 if (!empty($foundUsers)) {
     if ($selectedUserId !== '') {
-        // 如果老師有點選特定學生，就從陣列裡找出來
         foreach ($foundUsers as $user) {
             if ($user['user_id'] === $selectedUserId) {
                 $foundUser = $user;
@@ -66,7 +62,6 @@ if (!empty($foundUsers)) {
             }
         }
     } else {
-        // 如果老師剛搜尋完、還沒點選，且結果「剛好只有一個」，就自動選取
         if (count($foundUsers) === 1) {
             $foundUser = $foundUsers[0];
         }
@@ -79,34 +74,81 @@ if ($dbError === '' && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ac
     $reasonRule = trim((string)($_POST['reason_rule'] ?? ''));
     $customReason = trim((string)($_POST['custom_reason'] ?? ''));
     
+    // 💡 配合外鍵約束 fk_violation_creator：必須是 users 表中存在的工號，預設使用課指組老師帳號
+    $createdBy = $_SESSION['user_id'] ?? 'T000000001'; 
+
     // 根據老師選擇的規則，自動判定點數
     $points = 0;
     if ($reasonRule === 'rule_1') $points = 1;
     elseif ($reasonRule === 'rule_2') $points = 2;
     elseif ($reasonRule === 'rule_3') $points = 3;
-    elseif ($reasonRule === 'rule_other') $points = 1; // 其他通常先預設1點，或依情節另計
-    elseif ($reasonRule === 'rule_cancel') $points = 0; // 註銷不計點，直接處理證件狀態
+    elseif ($reasonRule === 'rule_other') $points = 1; 
+    elseif ($reasonRule === 'rule_cancel') $points = 0; 
 
     if ($targetUserId !== '' && $reasonRule !== '') {
         mysqli_begin_transaction($link);
         try {
-            // 寫入違規紀錄表
-            $insertSql = "INSERT INTO violation_logs (user_id, points, reason_category, custom_reason, created_by) VALUES (?, ?, ?, ?, ?)";
+            // 💡 1. 解決外鍵與必填限制：先幫這個學生抓出最近一筆預約紀錄 ID (reservation_id)
+            $resId = 0;
+            $findResSql = "SELECT reservation_id FROM reservations WHERE user_id = ? ORDER BY reservation_id DESC LIMIT 1";
+            $resStmt = mysqli_prepare($link, $findResSql);
+            if ($resStmt) {
+                mysqli_stmt_bind_param($resStmt, 's', $targetUserId);
+                mysqli_stmt_execute($resStmt);
+                mysqli_stmt_bind_result($resStmt, $dbResId);
+                if (mysqli_stmt_fetch($resStmt)) {
+                    $resId = $dbResId;
+                }
+                mysqli_stmt_close($resStmt);
+            }
+
+            // 防呆：如果此學生完全沒有任何預約紀錄，為了過外鍵限制，先幫他插一筆虛擬系統預約
+            if ($resId === 0) {
+                $fakeResSql = "INSERT INTO reservations (user_id, borrow_start_at, borrow_end_at, approval_status) VALUES (?, NOW(), NOW(), 'approved')";
+                $fakeStmt = mysqli_prepare($link, $fakeResSql);
+                if ($fakeStmt) {
+                    mysqli_stmt_bind_param($fakeStmt, 's', $targetUserId);
+                    mysqli_stmt_execute($fakeStmt);
+                    $resId = mysqli_insert_id($link);
+                    mysqli_stmt_close($fakeStmt);
+                }
+            }
+
+            // 🎯 精準對應你的資料表結構：user_id, points, reason_category, custom_reason, created_by, reservation_id
+            $insertSql = "
+                INSERT INTO violation_logs (user_id, points, reason_category, custom_reason, created_by, reservation_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ";
+
             $stmt = mysqli_prepare($link, $insertSql);
-            $teacherId = $_SESSION['user_id'] ?? 'SYSTEM';
-            mysqli_stmt_bind_param($stmt, 'sisss', $targetUserId, $points, $reasonRule, $customReason, $teacherId);
+
+            if ($stmt === false) {
+                throw new Exception("SQL 準備失敗！錯誤訊息: " . mysqli_error($link));
+            }
+
+            // 綁定參數 (sisssi)
+            mysqli_stmt_bind_param($stmt, 'sisssi', $targetUserId, $points, $reasonRule, $customReason, $createdBy, $resId);
             mysqli_stmt_execute($stmt);
             mysqli_stmt_close($stmt);
 
-            // 如果選擇的是「註銷」，同時去把該使用者的器材證狀態改成註銷/失效
+            // 如果選擇的是「註銷」，同時去把該使用者的器材證效期改成過期
             if ($reasonRule === 'rule_cancel') {
-                // 假設你的證件狀態欄位叫做 status
-                $updateCertSql = "UPDATE equipment_certificates SET status = 'cancelled' WHERE holder_id = ?";
-                $stmtCert = mysqli_prepare($link, $updateCertSql);
-                mysqli_stmt_bind_param($stmtCert, 's', $targetUserId);
-                mysqli_stmt_execute($stmtCert);
-                mysqli_stmt_close($stmtCert);
-                $actionMsg = '已成功登記违規紀錄，並註銷該申請人之器材證！';
+                $updateCertSql = "
+                    UPDATE equipment_certificates 
+                    SET valid_until = DATE_SUB(CURDATE(), INTERVAL 1 DAY)
+                    WHERE holder_id = ?
+                ";
+
+                $certStmt = mysqli_prepare($link, $updateCertSql);
+
+                if ($certStmt === false) {
+                    throw new Exception("證照更新 SQL 準備失敗！錯誤訊息: " . mysqli_error($link));
+                }
+
+                mysqli_stmt_bind_param($certStmt, 's', $targetUserId);
+                mysqli_stmt_execute($certStmt); 
+                mysqli_stmt_close($certStmt);  
+                $actionMsg = '已成功登記違規紀錄，並註銷該申請人之器材證！';
             } else {
                 $actionMsg = "成功記點！已對該使用者登錄 {$points} 點處分。";
             }
@@ -114,10 +156,9 @@ if ($dbError === '' && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ac
             mysqli_commit($link);
             
             // 重新整理該使用者畫面資料
-            if ($searchKeyword !== '') {
-                header("Location: admin_violation.php?search=" . urlencode($searchKeyword) . "&msg=" . urlencode($actionMsg));
-                exit;
-            }
+            header("Location: admin_violation.php?search=" . urlencode($searchKeyword) . ($selectedUserId !== '' ? "&select_user=" . urlencode($selectedUserId) : "") . "&msg=" . urlencode($actionMsg));
+            exit;
+            
         } catch (Throwable $e) {
             mysqli_rollback($link);
             $errorMsg = '系統處理失敗：' . $e->getMessage();
@@ -138,13 +179,10 @@ if (isset($_GET['msg'])) {
     <title>課指組違規記點管理</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="styles.css">
-</head>
+    <link rel="stylesheet" href="styles.css"> </head>
 <body class="bg-slate-50 min-h-screen">
 
-    <?php include __DIR__ . '/nav.php'; ?>
-
-    <div class="max-w-4xl mx-auto px-4 py-10">
+    <?php include __DIR__ . '/nav.php'; ?> <div class="max-w-4xl mx-auto px-4 py-10">
         <header class="mb-8">
             <h1 class="text-2xl font-bold text-slate-800"><i class="fa-solid fa-triangle-exclamation text-amber-500 mr-2"></i>課指組資源管理：違規記點系統</h1>
             <p class="text-slate-500 text-sm mt-1">請輸入學生資訊進行查詢，並依校方規範執行記點或註銷處分。</p>
@@ -177,29 +215,29 @@ if (isset($_GET['msg'])) {
             </form>
         </section>
 
-            <?php if (count($foundUsers) > 1): ?>
-    <section class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mb-6">
-        <h3 class="text-sm font-semibold text-slate-700 mb-3"><i class="fa-solid fa-users text-indigo-500 mr-1"></i> 找到多筆符合的學生，請點擊選擇：</h3>
-        <div class="flex flex-wrap gap-2">
-            <?php foreach ($foundUsers as $user): ?>
-                <?php 
-                    $isSelected = ($selectedUserId === $user['user_id'] || (count($foundUsers) === 1)); 
-                    $btnClass = $isSelected 
-                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' 
-                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100';
-                ?>
-                <a href="admin_violation.php?search=<?php echo urlencode($searchKeyword); ?>&select_user=<?php echo urlencode($user['user_id']); ?>" 
-                   class="px-4 py-2 rounded-xl border text-sm font-medium transition flex items-center gap-2 <?php echo $btnClass; ?>">
-                    <i class="fa-solid fa-user-id-card opacity-70"></i>
-                    <span><?php echo htmlspecialchars($user['full_name'], ENT_QUOTES, 'UTF-8'); ?> (<?php echo htmlspecialchars($user['user_id'], ENT_QUOTES, 'UTF-8'); ?>)</span>
-                    <span class="text-xs px-2 py-0.5 rounded-md <?php echo $isSelected ? 'bg-indigo-700 text-indigo-200' : 'bg-slate-200 text-slate-500'; ?>">
-                        證:<?php echo htmlspecialchars($user['certificate_id'], ENT_QUOTES, 'UTF-8'); ?>
-                    </span>
-                </a>
-            <?php endforeach; ?>
-        </div>
-    </section>
-<?php endif; ?>
+        <?php if (count($foundUsers) > 1): ?>
+            <section class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mb-6">
+                <h3 class="text-sm font-semibold text-slate-700 mb-3"><i class="fa-solid fa-users text-indigo-500 mr-1"></i> 找到多筆符合的學生，請點擊選擇：</h3>
+                <div class="flex flex-wrap gap-2">
+                    <?php foreach ($foundUsers as $user): ?>
+                        <?php 
+                            $isSelected = ($selectedUserId === $user['user_id'] || (count($foundUsers) === 1 && $selectedUserId === '')); 
+                            $btnClass = $isSelected 
+                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' 
+                                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100';
+                        ?>
+                        <a href="admin_violation.php?search=<?php echo urlencode($searchKeyword); ?>&select_user=<?php echo urlencode($user['user_id']); ?>" 
+                           class="px-4 py-2 rounded-xl border text-sm font-medium transition flex items-center gap-2 <?php echo $btnClass; ?>">
+                            <i class="fa-solid fa-user-id-card opacity-70"></i>
+                            <span><?php echo htmlspecialchars($user['full_name'], ENT_QUOTES, 'UTF-8'); ?> (<?php echo htmlspecialchars($user['user_id'], ENT_QUOTES, 'UTF-8'); ?>)</span>
+                            <span class="text-xs px-2 py-0.5 rounded-md <?php echo $isSelected ? 'bg-indigo-700 text-indigo-200' : 'bg-slate-200 text-slate-500'; ?>">
+                                證:<?php echo htmlspecialchars($user['certificate_id'], ENT_QUOTES, 'UTF-8'); ?>
+                            </span>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+            </section>
+        <?php endif; ?>
 
         <?php if ($foundUser): ?>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -234,7 +272,7 @@ if (isset($_GET['msg'])) {
                             <select name="reason_rule" id="reason_rule" required onchange="toggleCustomReason(this.value)"
                                     class="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:border-indigo-500 text-slate-800">
                                 <option value="">-- 請選擇課指組官方違規條款 --</option>
-                                <option value="rule_1">[1 點] 器材逾期領取或逾期歸還 / 未按時領取且未事先取消 / 電力完全耗盡</option>
+                                <option value="rule_1">[1 點] 器材逾期領取或逾期歸還 / 未按時領取且未事先取消</option>
                                 <option value="rule_2">[2 點] 領取或歸還器材時，器材證持有人未親自到場</option>
                                 <option value="rule_3">[3 點] 未於規定時間內辦理器材預約 (臨時預約)</option>
                                 <option value="rule_other">[其他] 器材損壞、遺失或依情節另行記點 (需填寫下方備註)</option>
@@ -244,7 +282,7 @@ if (isset($_GET['msg'])) {
 
                         <div class="mb-5" id="custom_reason_block">
                             <label class="block text-sm font-medium text-slate-700 mb-2">詳細事由備註 / 照價賠償說明</label>
-                            <textarea name="custom_reason" rows="3" placeholder="若選擇「其他」或有損壞賠償細節，請在此處輸入詳細說明..."
+                            <textarea name="custom_reason" rows="3" placeholder="若有額外備註（如器材名稱、遲到多久等），可在此處輸入..."
                                       class="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:border-indigo-500 text-slate-800"></textarea>
                         </div>
 
@@ -260,6 +298,7 @@ if (isset($_GET['msg'])) {
     <script>
         function toggleCustomReason(val) {
             const textarea = document.querySelector('textarea[name="custom_reason"]');
+            if (!textarea) return;
             if (val === 'rule_other') {
                 textarea.required = true;
                 textarea.placeholder = "【必填】請輸入器材損壞狀況、遺失物品名稱或照價賠償之具體協議內容...";

@@ -97,9 +97,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = '無法儲存報修：尚未與資料庫建立連線。';
     }
 
-    // handle file uploads (collect file contents to store into DB)
+    // handle file uploads (save to disk only, path stored in maintenance table)
     $uploadedPaths = [];
-    $uploadedFiles = []; // each: ['name'=>..., 'mime'=>..., 'content'=>...] 
     if (!empty($_FILES['attachments']) && is_array($_FILES['attachments']['name'])) {
         $maxFiles = 5;
         $maxSize = 10 * 1024 * 1024; // 10MB
@@ -137,19 +136,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 continue;
             }
 
-            // read file content for DB storage
-            $content = @file_get_contents($tmp);
-            if ($content === false) {
-                $errors[] = "無法讀取上傳檔案 {$nameOrig}。";
-            } else {
-                // still save a disk copy for backup
-                $safe = preg_replace('/[^A-Za-z0-9._-]/', '_', $nameOrig);
-                $targetName = time() . '_' . bin2hex(random_bytes(6)) . '_' . $safe;
-                $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $targetName;
-                if (@move_uploaded_file($tmp, $targetPath)) {
-                    $uploadedPaths[] = 'uploads/maintenance/' . $targetName;
-                }
-                $uploadedFiles[] = ['name' => $nameOrig, 'mime' => $mime, 'content' => $content];
+            $safe = preg_replace('/[^A-Za-z0-9._-]/', '_', $nameOrig);
+            $targetName = time() . '_' . bin2hex(random_bytes(6)) . '_' . $safe;
+            $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $targetName;
+            if (@move_uploaded_file($tmp, $targetPath)) {
+                $uploadedPaths[] = 'uploads/maintenance/' . $targetName;
             }
         }
     }
@@ -220,32 +211,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'photo_path' => (!empty($uploadedPaths) ? $uploadedPaths[0] : null)
                     ]);
                     // get created maintenance id
-                    $maintenanceId = (int)$pdo->lastInsertId();
-                    // store uploaded files into maintenance_attachments
-                    if (!empty($uploadedFiles)) {
-                        // ensure attachments table exists
-                        $pdo->exec("CREATE TABLE IF NOT EXISTS maintenance_attachments (
-                            attachment_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-                            maintenance_id BIGINT UNSIGNED NOT NULL,
-                            maintenance_type ENUM('equipment','space') NOT NULL,
-                            filename VARCHAR(255) NOT NULL,
-                            mime VARCHAR(100) NULL,
-                            file_content LONGBLOB NOT NULL,
-                            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                            PRIMARY KEY (attachment_id),
-                            KEY idx_maintenance_attachments_mid (maintenance_id)
-                        ) ENGINE=InnoDB");
-
-                        $attStmt = $pdo->prepare('INSERT INTO maintenance_attachments (maintenance_id, maintenance_type, filename, mime, file_content) VALUES (:maintenance_id, :maintenance_type, :filename, :mime, :file_content)');
-                        foreach ($uploadedFiles as $f) {
-                            $attStmt->bindValue(':maintenance_id', $maintenanceId, PDO::PARAM_INT);
-                            $attStmt->bindValue(':maintenance_type', 'equipment', PDO::PARAM_STR);
-                            $attStmt->bindValue(':filename', $f['name'], PDO::PARAM_STR);
-                            $attStmt->bindValue(':mime', $f['mime'], PDO::PARAM_STR);
-                            $attStmt->bindValue(':file_content', $f['content'], PDO::PARAM_LOB);
-                            $attStmt->execute();
-                        }
-                    }
                     // mark equipment as under maintenance (operation_status = 3)
                     try {
                         $upd = $pdo->prepare('UPDATE equipments SET operation_status = 3 WHERE equipment_id = :equipment_id');
@@ -330,31 +295,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'fault_description' => $damageDetail,
                         'photo_path' => (!empty($uploadedPaths) ? $uploadedPaths[0] : null)
                     ]);
-                    $maintenanceId = (int)$pdo->lastInsertId();
-                    if (!empty($uploadedFiles)) {
-                        // ensure attachments table exists (created earlier if not)
-                        $pdo->exec("CREATE TABLE IF NOT EXISTS maintenance_attachments (
-                            attachment_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-                            maintenance_id BIGINT UNSIGNED NOT NULL,
-                            maintenance_type ENUM('equipment','space') NOT NULL,
-                            filename VARCHAR(255) NOT NULL,
-                            mime VARCHAR(100) NULL,
-                            file_content LONGBLOB NOT NULL,
-                            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                            PRIMARY KEY (attachment_id),
-                            KEY idx_maintenance_attachments_mid (maintenance_id)
-                        ) ENGINE=InnoDB");
-
-                        $attStmt = $pdo->prepare('INSERT INTO maintenance_attachments (maintenance_id, maintenance_type, filename, mime, file_content) VALUES (:maintenance_id, :maintenance_type, :filename, :mime, :file_content)');
-                        foreach ($uploadedFiles as $f) {
-                            $attStmt->bindValue(':maintenance_id', $maintenanceId, PDO::PARAM_INT);
-                            $attStmt->bindValue(':maintenance_type', 'space', PDO::PARAM_STR);
-                            $attStmt->bindValue(':filename', $f['name'], PDO::PARAM_STR);
-                            $attStmt->bindValue(':mime', $f['mime'], PDO::PARAM_STR);
-                            $attStmt->bindValue(':file_content', $f['content'], PDO::PARAM_LOB);
-                            $attStmt->execute();
-                        }
-                    }
                     // mark space as under maintenance (space_status = 'maintenance')
                     try {
                         // Support both legacy numeric statuses (e.g. '1','2') and string statuses ('available','maintenance'):

@@ -2252,61 +2252,92 @@ SQL;
                                     </div>
                                 </div>
                                 
-                                <div id="flagDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:8px;">
-                                    <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
+<div id="flagDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:12px; overflow:hidden;">
+                                    <style>
+                                        /* 旗幟申請表專屬現代化輸入框設計 */
+                                        #flagDetailsSection .form-control {
+                                            width: 100%;
+                                            box-sizing: border-box;
+                                            padding: 10px 14px;
+                                            font-size: 15px;
+                                            border-radius: 8px; /* 圓滑邊角 */
+                                            border: 1px solid #cbd5e1;
+                                            background-color: #fff;
+                                            transition: border-color 0.2s, box-shadow 0.2s;
+                                        }
+                                        #flagDetailsSection .form-control:focus {
+                                            border-color: #3b82f6;
+                                            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+                                            outline: none;
+                                        }
+                                        #flagDetailsSection input[readonly].form-control {
+                                            background-color: #f1f5f9 !important;
+                                            color: #64748b;
+                                            cursor: not-allowed;
+                                            border-color: #e2e8f0;
+                                        }
+                                        /* 懸掛位置靜態框 */
+                                        #flagDetailsSection .static-box {
+                                            padding: 10px 14px;
+                                            background: #f1f5f9;
+                                            border: 1px solid #e2e8f0;
+                                            border-radius: 8px;
+                                            color: #475569;
+                                            font-size: 15px;
+                                        }
+                                    </style>
+
+                                    <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; background-color: #f8fafc; color: #1e293b;">
                                         旗幟插立申請表
                                     </div>
 
-                                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start; margin-bottom:12px; padding: 20px 20px 0 20px;">
+                                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start; margin-bottom:12px; padding: 20px 20px 0 20px;">
                                         <div>
-                                            <label>申請單位 <span style="color:red">*</span></label>
-                                            <input type="text" id="flag_organization_name" name="flag_organization_name" class="form-control" readonly style="background-color: #e2e8f0; cursor: not-allowed; value="<?php echo htmlspecialchars($formData['flag_organization_name'] ?? $formData['organization_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?> >
+                                            <label style="font-weight:600; color:#475569; margin-bottom:6px; display:block;">申請單位 <span style="color:red">*</span></label>
+                                            <input type="text" id="flag_organization_name" name="flag_organization_name" class="form-control" readonly value="<?php echo htmlspecialchars($formData['flag_organization_name'] ?? $formData['organization_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                         </div>
                                         <div>
-
-                                            <label>活動名稱 <span style="color:red">*</span></label>
-                                            <input type="text" id="flag_activity_name" name="flag_activity_name" class="form-control" readonly style="background-color: #e2e8f0; cursor: not-allowed; value="<?php echo htmlspecialchars($formData['flag_activity_name'] ?? $formData['activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>>
+                                            <label style="font-weight:600; color:#475569; margin-bottom:6px; display:block;">活動名稱 <span style="color:red">*</span></label>
+                                            <input type="text" id="flag_activity_name" name="flag_activity_name" class="form-control" readonly value="<?php echo htmlspecialchars($formData['flag_activity_name'] ?? $formData['activity_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                         </div>
                                         <div>
-                                            <label>負責人 <span style="color:red">*</span></label>
+                                            <label style="font-weight:600; color:#475569; margin-bottom:6px; display:block;">負責人 <span style="color:red">*</span></label>
                                             <input type="text" id="flag_responsible_person" name="flag_responsible_person" class="form-control" value="<?php echo htmlspecialchars($formData['flag_responsible_person'] ?? $formData['activity_coordinator'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                         </div>
                                         <div>
-                                            <label>連絡電話 <span style="color:red">*</span></label>
+                                            <label style="font-weight:600; color:#475569; margin-bottom:6px; display:block;">連絡電話 <span style="color:red">*</span></label>
                                             <input type="text" id="flag_contact_phone" name="flag_contact_phone" class="form-control" value="<?php echo htmlspecialchars($formData['flag_contact_phone'] ?? $formData['coordinator_phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                         </div>
                                     </div>
 
-                                    <div style="display:flex; gap:15px; align-items:center; margin-bottom:15px; padding: 0 20px;">
-                                        <div>
-                                            <label>使用日期 <span style="color:red">*</span></label>
-                                            <div style="display:flex; gap:8px; align-items:center;">
-                                                <input type="date" id="flag_use_start" name="flag_use_start" class="form-control" readonly style="background:#fff;" value="<?php echo htmlspecialchars($formData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                                <span>至</span>
-                                                <input type="date" id="flag_use_end" name="flag_use_end" class="form-control" readonly style="background:#fff;" value="<?php echo htmlspecialchars($formData['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                            </div>
-                                            <div style="font-size:12px;color:#64748b;margin-top:6px;">說明：使用日期已自動帶入活動起訖時間，無法修改。</div>
+                                    <div style="padding: 0 20px 15px 20px;">
+                                        <label style="font-weight:600; color:#475569; margin-bottom:6px; display:block;">使用日期 <span style="color:red">*</span></label>
+                                        <div style="display:flex; gap:10px; align-items:center;">
+                                            <input type="date" id="flag_use_start" name="flag_use_start" class="form-control" readonly value="<?php echo htmlspecialchars($formData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                            <span style="color:#64748b; font-weight:500;">至</span>
+                                            <input type="date" id="flag_use_end" name="flag_use_end" class="form-control" readonly value="<?php echo htmlspecialchars($formData['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                         </div>
+                                        <div style="font-size:13px; color:#94a3b8; margin-top:8px;">說明：使用日期已自動帶入活動起訖時間，無法修改。</div>
                                     </div>
 
-                                    <div style="display:flex; gap:15px; align-items:center; margin-bottom:15px; padding: 0 20px 20px 20px;">
+                                    <div style="display:flex; gap:16px; align-items:flex-start; margin-bottom:15px; padding: 0 20px 20px 20px;">
                                         <div style="flex:1;">
-                                            <label>宣傳旗幟 <span style="color:red">*</span></label>
-                                            <div style="display:flex; align-items:center; gap:8px;">
-                                                <span>共</span>
-                                                <input type="number" name="flag_count" id="flag_count" class="form-control" min="1" max="20" step="1" style="width:100px;height:38px;" placeholder="最多20" value="<?php echo htmlspecialchars(($formData['setup_flags'] === 'yes' ? (string)($formData['flag_count'] ?? 1) : ''), ENT_QUOTES, 'UTF-8'); ?>">
-                                                <span>支</span>
+                                            <label style="font-weight:600; color:#475569; margin-bottom:6px; display:block;">宣傳旗幟 <span style="color:red">*</span></label>
+                                            <div style="display:flex; align-items:center; gap:10px;">
+                                                <span style="color:#475569;">共</span>
+                                                <input type="number" name="flag_count" id="flag_count" class="form-control" min="1" max="20" step="1" style="width:120px;" placeholder="最多20" value="<?php echo htmlspecialchars(($formData['setup_flags'] === 'yes' ? (string)($formData['flag_count'] ?? 1) : ''), ENT_QUOTES, 'UTF-8'); ?>">
+                                                <span style="color:#475569;">支</span>
                                             </div>
                                         </div>
                                         <div style="flex:1;">
-                                            <label>懸掛位置</label>
-                                            <div style="padding:8px 10px; background:#fff; border:1px solid #e2e8f0; border-radius:4px;">中央走道</div>
+                                            <label style="font-weight:600; color:#475569; margin-bottom:6px; display:block;">懸掛位置</label>
+                                            <div class="static-box">中央走道</div>
                                             <input type="hidden" id="flag_location" name="flag_location" value="中央走道">
                                         </div>
                                     </div>
 
-                                    <label style="display: flex; align-items: flex-start; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; background: #eff6ff; padding: 15px 20px; border-top: 1px solid #cbd5e1; border-radius: 0 0 8px 8px;">
-                                        <input type="checkbox" name="flag_agreement" id="flag_agreement" value="1" <?php echo (isset($formData['flag_agreement']) && $formData['flag_agreement'] == '1') ? 'checked' : ''; ?> style="margin-top: 2px;" required>
+                                    <label style="display: flex; align-items: flex-start; gap: 10px; margin: 0; font-weight: normal; cursor: pointer; background: #eff6ff; padding: 18px 20px; border-top: 1px solid #cbd5e1;">
+                                        <input type="checkbox" name="flag_agreement" id="flag_agreement" value="1" <?php echo (isset($formData['flag_agreement']) && $formData['flag_agreement'] == '1') ? 'checked' : ''; ?> style="margin-top: 3px; width: 16px; height: 16px;" required>
                                         <span style="color: #1e3a8a; line-height: 1.5; font-size: 14px;">本人為旗幟插立總負責人，已詳細閱讀並遵守以下各項注意事項，為維護校園安全與景觀，願無條件承擔所插旗幟所致之一切賠償責任，特此聲明。 <span style="color:red">*</span></span>
                                     </label>
                                 </div>
@@ -2364,7 +2395,7 @@ SQL;
 
                                       </div>
                                     <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
-                                        輔仁大學學生活動上火確認表(火舞)
+                                        輔仁大學學生活動上火確認表
                                     </div>
                                     <div style="padding: 20px;">
                                         <div class="form-group" style="margin-bottom: 15px;">
@@ -2431,16 +2462,25 @@ SQL;
                                         <h4 style="margin: 0 0 15px 0; color: #1e40af; font-size: 16px; font-weight: bold;">活動相關人員名單</h4>
                                         <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">請點擊「＋新增」按鈕來增加列數，您也可以點擊「刪除」移除列。</p>
 
-                                        <style>
-                                            .fire-staff-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; font-size: 14px; }
-                                            .fire-staff-table th, .fire-staff-table td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; }
-                                            .fire-staff-table th { background: #f8fafc; font-weight: 600; color: #334155; }
-                                            .fire-staff-title { font-size: 15px; font-weight: bold; margin: 0 0 8px 0; color: #334155; }
-                                            .fire-staff-wrapper { margin-bottom: 25px; padding: 15px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
-                                            .btn-add-staff { background: #3b82f6; color: white; border: none; padding: 5px 12px; border-radius: 5px; cursor: pointer; font-size: 13px; transition: 0.2s; }
-                                            .btn-add-staff:hover { background: #2563eb; }
-                                            .btn-del-staff { color: #ef4444; background: none; border: none; cursor: pointer; font-size: 13px; padding: 4px; transition: 0.2s; }
-                                            .btn-del-staff:hover { color: #b91c1c; background: rgba(239, 68, 68, 0.1); border-radius: 4px; }
+<style>
+                                            /* 活動相關人員名單表格現代化設計 */
+                                            .fire-staff-table { width: 100%; border-collapse: separate; border-spacing: 0; margin-bottom: 12px; font-size: 14px; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+                                            .fire-staff-table th, .fire-staff-table td { border: 1px solid #e2e8f0; padding: 12px; text-align: left; background: #fff; }
+                                            .fire-staff-table th { background: #f1f5f9; font-weight: 600; color: #334155; border-bottom-width: 2px; }
+                                            
+                                            /* 文字輸入框加大、圓滑化 */
+                                            .fire-staff-table .form-control { width: 100%; box-sizing: border-box; padding: 10px 14px; font-size: 15px; border-radius: 8px; border: 1px solid #cbd5e1; transition: border-color 0.2s, box-shadow 0.2s; }
+                                            .fire-staff-table .form-control:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); outline: none; }
+                                            
+                                            .fire-staff-title { font-size: 15px; font-weight: bold; margin: 0 0 12px 0; color: #334155; }
+                                            .fire-staff-wrapper { margin-bottom: 25px; padding: 20px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0; }
+                                            
+                                            /* 新增人員按鈕：取消 hover 變色，圓滑放大 */
+                                            .btn-add-staff { background: #3b82f6; color: white; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-size: 14px; width: 100%; font-weight: 500; transition: none; letter-spacing: 1px; }
+                                            
+                                            /* 刪除按鈕修飾 */
+                                            .btn-del-staff { color: #ef4444; background: none; border: none; cursor: pointer; font-size: 14px; padding: 6px 12px; transition: 0.2s; border-radius: 6px; font-weight: 500; }
+                                            .btn-del-staff:hover { color: #b91c1c; background: rgba(239, 68, 68, 0.1); }
                                         </style>
 
                                         <div class="fire-staff-wrapper">
@@ -2559,27 +2599,88 @@ SQL;
             </div>
         </div>
         
+<style>
+        /* 攤位地點 - 現代化單選按鈕設計 */
+        .modern-radio-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 10px;
+        }
+        .modern-radio-item {
+            position: relative;
+        }
+        .modern-radio-item input[type="radio"] {
+            position: absolute;
+            opacity: 0;
+            cursor: pointer;
+        }
+        .modern-radio-item label {
+            display: flex;
+            align-items: center;
+            padding: 14px 18px;
+            background-color: #fff;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px; /* 圓滑邊角設計 */
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 15px;
+            font-weight: 500;
+            color: #475569;
+            margin: 0;
+        }
+        .modern-radio-item label:hover {
+            border-color: #cbd5e1;
+            background-color: #f8fafc;
+            /* transform: translateY(-2px); 輕微懸浮浮動感 */
+        }
+        .modern-radio-item input[type="radio"]:checked + label {
+            border-color: #c7cbd1; /* 選取時變為主題藍色 */
+            background-color: #ffffff;
+            color: #5b6277;
+            /* box-shadow: 0 4px 10px rgba(59, 130, 246, 0.15); 增加陰影立體感 */
+        }
+        /* 自訂單選圓圈 */
+        .modern-radio-item label::before {
+            content: '';
+            display: inline-block;
+            width: 22px;
+            height: 22px;
+            border: 2px solid #cbd5e1;
+            border-radius: 50%;
+            margin-right: 14px;
+            transition: all 0.2s ease;
+            box-sizing: border-box;
+            flex-shrink: 0;
+            background-color: #fff;
+        }
+        .modern-radio-item input[type="radio"]:checked + label::before {
+            border-color: #3f3f3f;
+            border-width: 6px; /* 利用變粗的邊框模擬被填滿的點 */
+        }
+        </style>
+
         <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
             <div class="form-group" style="flex: 2; min-width: 250px;">
                 <label style="font-weight: bold; color: #333;">攤位地點 <span style="color:red">*</span></label>
-                <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 10px;">
-                    <label style="display: inline-flex; align-items: center; justify-content: flex-start; gap: 8px; font-weight: normal; cursor: pointer; margin: 0; width: fit-content; text-align: left;">
-                        <input type="radio" name="sales_location" value="風華再現廣場 - 單側" style="margin: 0;" <?php echo (($formData['sales_location'] ?? '') === '風華再現廣場 - 單側') ? 'checked' : ''; ?>> 
-                        <span>風華再現廣場 - 單側</span>
-                    </label>
-                    <label style="display: inline-flex; align-items: center; justify-content: flex-start; gap: 8px; font-weight: normal; cursor: pointer; margin: 0; width: fit-content; text-align: left;">
-                        <input type="radio" name="sales_location" value="風華再現廣場 - 雙側" style="margin: 0;" <?php echo (($formData['sales_location'] ?? '') === '風華再現廣場 - 雙側') ? 'checked' : ''; ?>> 
-                        <span>風華再現廣場 - 雙側</span>
-                    </label>
-                    <label style="display: inline-flex; align-items: center; justify-content: flex-start; gap: 8px; font-weight: normal; cursor: pointer; margin: 0; width: fit-content; text-align: left;">
-                        <input type="radio" name="sales_location" value="真善美聖廣場" style="margin: 0;" <?php echo (($formData['sales_location'] ?? '') === '真善美聖廣場') ? 'checked' : ''; ?>> 
-                        <span>真善美聖廣場</span>
-                    </label>
+                <div class="modern-radio-container">
+                    <div class="modern-radio-item">
+                        <input type="radio" id="loc_1" name="sales_location" value="風華再現廣場 - 單側" <?php echo (($formData['sales_location'] ?? '') === '風華再現廣場 - 單側') ? 'checked' : ''; ?>>
+                        <label for="loc_1">風華再現廣場 - 單側</label>
+                    </div>
+                    <div class="modern-radio-item">
+                        <input type="radio" id="loc_2" name="sales_location" value="風華再現廣場 - 雙側" <?php echo (($formData['sales_location'] ?? '') === '風華再現廣場 - 雙側') ? 'checked' : ''; ?>>
+                        <label for="loc_2">風華再現廣場 - 雙側</label>
+                    </div>
+                    <div class="modern-radio-item">
+                        <input type="radio" id="loc_3" name="sales_location" value="真善美聖廣場" <?php echo (($formData['sales_location'] ?? '') === '真善美聖廣場') ? 'checked' : ''; ?>>
+                        <label for="loc_3">真善美聖廣場</label>
+                    </div>
                 </div>
             </div>
             <div class="form-group" style="flex: 1; min-width: 150px;">
                 <label for="sales_count" style="font-weight: bold; color: #333;">攤位數量 (至多20) <span style="color:red">*</span></label>
-                <input type="number" id="sales_count" name="sales_count" class="form-control" placeholder="請輸入數量" max="20" min="1" value="<?php echo htmlspecialchars($formData['sales_count'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" oninput="if(this.value>20)this.value=20;if(this.value<0)this.value=1;">
+                <input type="number" id="sales_count" name="sales_count" class="form-control" placeholder="請輸入數量" max="20" min="1" value="<?php echo htmlspecialchars($formData['sales_count'] !== '' ? $formData['sales_count'] : '1', ENT_QUOTES, 'UTF-8'); ?>" oninput="if(this.value>20)this.value=20; if(this.value!=='' && this.value<1)this.value=1;">
             </div>
         </div>
 
@@ -2621,7 +2722,29 @@ SQL;
     <tbody>
         </tbody>
 </table>
-            <button type="button" class="btn-add-staff" onclick="addSalesRow()" style="margin-top: 15px; padding: 8px 16px; font-size: 14px;">＋ 新增攤位</button>
+<style>
+                /* 攤位清冊專屬：質感深灰新增按鈕 */
+                .btn-add-booth {
+                    background-color: #475569; /* 質感深灰 Slate-600 */
+                    color: #ffffff;
+                    border: none;
+                    padding: 12px 16px;
+                    font-size: 14px;
+                    font-weight: 600;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    width: 100%; /* 滿版寬度 */
+                    transition: all 0.2s ease;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+                    letter-spacing: 1px;
+                }
+
+                .btn-add-booth:active {
+                    transform: translateY(0);
+                    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+                }
+            </style>
+            <button type="button" class="btn-add-booth" onclick="addSalesRow()" style="margin-top: 15px;">＋ 新增攤位</button>
         </div>
 
     </div>
@@ -2664,7 +2787,7 @@ function addSalesRow() {
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
-        <td><input type="text" name="sales_booth_no[]" class="form-control" placeholder="例: A1"></td>
+        <td><input type="text" name="sales_booth_no[]" class="form-control" placeholder="數字"></td>
         <td><input type="text" name="sales_booth_name[]" class="form-control" placeholder="請輸入名稱"></td>
         <td><input type="text" name="sales_booth_manager[]" class="form-control" placeholder="姓名"></td>
         <td><input type="text" name="sales_booth_phone[]" class="form-control" placeholder="電話"></td>
@@ -5033,7 +5156,79 @@ function goToStep(stepNo) {
         return;
     }
 
-    // 在導航到第2、3步時（從第1步）檢查企劃書
+    // ====== 新增：必填欄位 (紅星) 動態驗證 ======
+    if (stepNo > currentStep) {
+        const stepContent = document.getElementById('step-content-' + currentStep);
+        if (stepContent) {
+            // 抓出當前步驟中所有含有紅色 '*' 的標籤
+            const redStars = stepContent.querySelectorAll('span[style*="color:red"], span[style*="color: red"]');
+            const validatedInputs = new Set(); // 記錄已驗證過的欄位，避免重複檢查
+
+            for (let star of redStars) {
+                const label = star.closest('label') || star.parentElement;
+                
+                // 如果這個區塊目前是被隱藏的 (例如未勾選插旗或明火)，則跳過不驗證
+                if (label.closest('[style*="display: none"]') || label.closest('[style*="display:none"]') || label.offsetParent === null) {
+                    continue;
+                }
+
+                let container = label.parentElement;
+                // 精準定位要驗證的輸入框容器
+                if (label.querySelector('input, select, textarea')) {
+                    container = label; // input 直接包在 label 裡面 (如同意書的 checkbox)
+                } else if (container && container.classList.contains('form-group') && label.nextElementSibling && label.nextElementSibling.tagName === 'DIV') {
+                    container = label.nextElementSibling; // 處理緊鄰的 div (如時間選單群組)
+                }
+
+                if (!container) continue;
+
+                // 抓取該必填區塊內的所有有效輸入框 (排除隱藏與唯讀)
+                const inputs = container.querySelectorAll('input:not([type="hidden"]):not([readonly]), select:not([disabled]), textarea:not([disabled])');
+                
+                let isGroupFilled = true;
+                let firstEmptyInput = null;
+
+                for (let el of inputs) {
+                    if (validatedInputs.has(el)) continue;
+                    validatedInputs.add(el);
+
+                    if (el.type === 'checkbox' || el.type === 'radio') {
+                        // 處理單選/多選：只要同 name 的有任何一個被勾選即可
+                        const checked = document.querySelector(`input[name="${el.name}"]:checked`);
+                        if (!checked) {
+                            isGroupFilled = false;
+                            firstEmptyInput = el;
+                            break;
+                        }
+                    } else {
+                        // 處理文字、數字、日期、下拉選單：只要有空值就判定未填
+                        if (!el.value || el.value.trim() === '') {
+                            isGroupFilled = false;
+                            firstEmptyInput = el;
+                            break; 
+                        }
+                    }
+                }
+
+                if (!isGroupFilled) {
+                    // 抓取前面的文字作為提示訊息
+                    let labelText = label.innerText.replace(/\*|（.*?）|\(.*?\)/g, '').trim();
+                    if (!labelText) labelText = '此欄位';
+                    alert(`「${labelText}」為必填項目，請確認已完整填寫或勾選！`);
+                    
+                    if (firstEmptyInput) {
+                        firstEmptyInput.focus();
+                        // 如果該元素是在隱藏的下拉選單裡，嘗試滾動過去
+                        firstEmptyInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                    return; // 驗證失敗，中斷並停留在原步驟
+                }
+            }
+        }
+    }
+    // ====== 必填驗證結束 ======
+
+    // 在導航到第2、3步時（從第1步）檢查企劃書與日期天數等原生邏輯
     if (stepNo > 1 && currentStep === 1) {
         // 檢查是否有新上傳的文件 OR 草稿中已有的企劃書
         const proposalFile = document.getElementById('proposal_file');
@@ -5065,7 +5260,6 @@ function goToStep(stepNo) {
             alert("活動天數最多不可超過 4 天，請重新選擇！");
             return;
         }
-        
     }
 
     if (currentStepInput) {

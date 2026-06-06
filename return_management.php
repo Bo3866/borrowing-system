@@ -1132,10 +1132,10 @@ if ($dbError === '' && count($rows) > 0) {
                 <?php } ?>
             </div>
         <div id="points-tab-content" class="card bg-white p-6 rounded-xl shadow-sm" style="display: none;">
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-slate-200">
-                        <thead class="bg-slate-50">
-                            <tr>
+                <div class="borrow-table-wrapper overflow-x-auto">
+                    <table class="management-table return-management-table w-full text-left border-collapse min-w-full divide-y divide-slate-200">
+                        <thead>
+                            <tr class="bg-slate-50 text-slate-600 text-sm">
                                 <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">活動名稱</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">違規原因</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">備註</th>
@@ -1143,73 +1143,64 @@ if ($dbError === '' && count($rows) > 0) {
                                 <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">點數</th>
                             </tr>
                         </thead>
-                        <tbody class="bg-white divide-y divide-slate-200">
+                        <tbody>
                             <?php if (!empty($violationLogs)): ?>
                                 <?php foreach ($violationLogs as $log): ?>
-                                    <tr class="hover:bg-slate-50 transition">
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                                    <tr class="hover:bg-slate-50 transition border-b border-slate-100">
+                                        <td class="px-6 py-4 font-medium text-slate-800">
                                             <?php if (!empty($log['activity_name'])): ?>
-                                                <span class="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
-                                                    <?php echo htmlspecialchars($log['activity_name'], ENT_QUOTES, 'UTF-8'); ?>
-                                                </span>
+                                                <?php echo htmlspecialchars($log['activity_name'], ENT_QUOTES, 'UTF-8'); ?>
                                             <?php elseif (!empty($log['reservation_id'])): ?>
-                                                <span class="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
-                                                    單號: <?php echo htmlspecialchars($log['reservation_id'], ENT_QUOTES, 'UTF-8'); ?>
-                                                </span>
+                                                單號: <?php echo htmlspecialchars($log['reservation_id'], ENT_QUOTES, 'UTF-8'); ?>
                                             <?php else: ?>
                                                 <span class="text-slate-400">-</span>
                                             <?php endif; ?>
                                         </td>
                                         <td class="px-6 py-4 text-sm text-slate-700 max-w-xs break-words">
-                                <?php 
-                                    // 1. 定義規則對照表
-                                    $ruleMapping = [
-                                        'rule_1' => '器材逾期領取或逾期歸還 / 未按時領取且未事先取消',
-                                        'rule_2' => '領取或歸還器材時，器材證持有人未親自到場',
-                                        'rule_3' => '未於規定時間內辦理器材預約 (臨時預約)',
-                                        'rule_cancel' => '器材超過兩日未領/未還且未通知，直接註銷器材證',
-                                        'rule_other' => '其他（請見備註）',
-                                    ];
-                                    $category = $log['reason_category'] ?? '';
-                                    // 修正點：加上 echo 把對照後的中文印出來
-                                    echo htmlspecialchars($ruleMapping[$category] ?? $category, ENT_QUOTES, 'UTF-8');
-                                ?>
-                            </td>
-                            <td class="px-6 py-4 text-sm text-slate-500 max-w-xs break-words">
-                                <?php 
-                                    if (!empty($log['custom_reason'])) {
-                                        echo htmlspecialchars($log['custom_reason'], ENT_QUOTES, 'UTF-8');
-                                    } else {
-                                        echo '<span class="text-slate-400">-</span>';
-                                    }
-                                ?>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                                <?php echo date('Y-m-d H:i', strtotime($log['created_at'])); ?>
-                            </td>
-                            <?php 
-// 💡 判斷這筆紀錄的理由開頭是不是 [系統銷點]
-$isReduce = (strpos($log['custom_reason'] ?? '', '[系統銷點]') === 0); 
-?>
-<td class="px-6 py-4 whitespace-nowrap text-sm font-semibold <?php echo $isReduce ? 'text-emerald-600' : 'text-rose-600'; ?>">
-    <?php echo $isReduce ? '消 ' : '記 '; ?><?php echo (int)$log['points']; ?> 點
-</td>
-                        </tr>
-                    <?php endforeach; ?>
-                <?php else: ?>
-                    <tr>
-                        <td colspan="5" class="px-6 py-12 text-center text-sm text-slate-400">
-                            <div class="flex flex-col items-center justify-center space-y-2">
-                                <span class="text-2xl">🎉</span>
-                                <p>目前沒有任何記點紀錄</p>
-                            </div>
-                        </td>
-                    </tr>
-                <?php endif; ?>
-            </tbody>
-        </table>
-    </div>
-</div>
+                                            <?php 
+                                                $ruleMapping = [
+                                                    'rule_1' => '器材逾期領取或逾期歸還 / 未按時領取且未事先取消',
+                                                    'rule_2' => '領取或歸還器材時，器材證持有人未親自到場',
+                                                    'rule_3' => '未於規定時間內辦理器材預約 (臨時預約)',
+                                                    'rule_cancel' => '器材超過兩日未領/未還且未通知，直接註銷器材證',
+                                                    'rule_other' => '其他（請見備註）',
+                                                ];
+                                                $category = $log['reason_category'] ?? '';
+                                                echo htmlspecialchars($ruleMapping[$category] ?? $category, ENT_QUOTES, 'UTF-8');
+                                            ?>
+                                        </td>
+                                        <td class="px-6 py-4 text-sm text-slate-500 max-w-xs break-words">
+                                            <?php 
+                                                if (!empty($log['custom_reason'])) {
+                                                    echo htmlspecialchars($log['custom_reason'], ENT_QUOTES, 'UTF-8');
+                                                } else {
+                                                    echo '<span class="text-slate-400">-</span>';
+                                                }
+                                            ?>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                                            <?php echo date('Y-m-d H:i', strtotime($log['created_at'])); ?>
+                                        </td>
+                                        <?php $isReduce = (strpos($log['custom_reason'] ?? '', '[系統銷點]') === 0); ?>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold <?php echo $isReduce ? 'text-emerald-600' : 'text-rose-600'; ?>">
+                                            <?php echo $isReduce ? '消 ' : '記 '; ?><?php echo (int)$log['points']; ?> 點
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <tr>
+                                    <td colspan="5" class="px-6 py-12 text-center text-sm text-slate-400">
+                                        <div class="flex flex-col items-center justify-center space-y-2">
+                                            <span class="text-2xl">🎉</span>
+                                            <p>目前沒有任何記點紀錄</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+        </div>
 
             
 

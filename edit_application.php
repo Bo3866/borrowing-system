@@ -425,21 +425,27 @@ if ($dbError === '' && $reservationId > 0) {
                 $borrowEndDateTime = DateTime::createFromFormat('Y-m-d H:i:s', $borrowEndAt);
                 $actualPickupDateTime = DateTime::createFromFormat('Y-m-d H:i:s', $actualPickupAt);
                 $actualReturnDateTime = DateTime::createFromFormat('Y-m-d H:i:s', $actualReturnAt);
-                $minPickupDateTime = DateTime::createFromFormat('Y-m-d H:i:s', $formData['borrow_start_date'] . ' 08:30:00');
-                $maxReturnDateTime = DateTime::createFromFormat('Y-m-d H:i:s', $formData['borrow_end_date'] . ' 16:30:00');
-                if (!$borrowStartDateTime || !$borrowEndDateTime || !$actualPickupDateTime || !$actualReturnDateTime || !$minPickupDateTime || !$maxReturnDateTime) {
+
+                if (!$borrowStartDateTime || !$borrowEndDateTime || !$actualPickupDateTime || !$actualReturnDateTime) {
                     $borrowError = '時間格式有誤，請重新選擇。';
                 } else {
+                    // 使用日期 +1 / -1 判斷，不用 86400 秒，也不跳過六日。
+                    // 實際領取／進入：借用開始時間 -1 天 ～ 借用開始時間。
+                    // 實際歸還／離開：借用開始時間 ～ 借用結束時間 +1 天。
+                    $minPickupDateTime = clone $borrowStartDateTime;
                     $minPickupDateTime->modify('-1 day');
+
+                    $maxReturnDateTime = clone $borrowEndDateTime;
                     $maxReturnDateTime->modify('+1 day');
+
                     if ($actualPickupDateTime < $minPickupDateTime) {
-                        $borrowError = '實際領取/進入時間最早只能在借用開始日前一天 08:30 之後。';
+                        $borrowError = '實際領取/進入時間最早只能在借用開始時間前一天之後。';
                     } elseif ($actualPickupDateTime > $borrowStartDateTime) {
                         $borrowError = '實際領取/進入時間不可晚於借用開始時間。';
                     } elseif ($actualReturnDateTime < $borrowStartDateTime) {
                         $borrowError = '實際歸還/離開時間不可早於借用開始時間。';
                     } elseif ($actualReturnDateTime > $maxReturnDateTime) {
-                        $borrowError = '實際歸還/離開時間不能超過借用迄日後一天 16:30。';
+                        $borrowError = '實際歸還/離開時間不能超過借用結束時間後一天。';
                     }
                 }
             }
@@ -931,6 +937,14 @@ $formData = array_merge([
         }
         .es-left:hover { box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
         /* flatpickr disabled day custom style for unavailable equipment dates */
+
+        .flatpickr-date-field {
+            cursor: pointer !important;
+            background-color: #fff !important;
+        }
+        .flatpickr-date-field[readonly] {
+            cursor: pointer !important;
+        }
         .flatpickr-day.borrow-disabled {
             background: #f8d7da !important;
             color: #721c24 !important;
@@ -1174,6 +1188,8 @@ $formData = array_merge([
         #saveDraftBtn {
             display: none !important;
         }
+
+        .flatpickr-calendar { z-index: 999999 !important; }
 </style>
     <!-- 引入 Flatpickr -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
@@ -1447,7 +1463,7 @@ $formData = array_merge([
                                 <div class="form-group" style="margin-top: 20px; border-top: 1px solid #ccc; padding-top: 15px;">
                                     <label>活動開始時間 <span style="color:red">*</span></label>
                                     <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center;">
-                                        <input type="date" id="borrow_start_date" name="borrow_start_date" class="form-control" value="<?php echo htmlspecialchars($formData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
+                                        <input type="date" id="borrow_start_date" name="borrow_start_date" class="form-control flatpickr-date-field" value="<?php echo htmlspecialchars($formData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" readonly required>
                                         <?php
                                         $curBsh = ''; $curBsm = '';
                                         if (!empty($formData['borrow_start_time'])) {
@@ -1482,7 +1498,7 @@ $formData = array_merge([
                                     
                                     <label>活動結束時間 <span style="color:red">*</span></label>
                                     <div style="display: flex; gap: 10px; align-items: center;">
-                                        <input type="date" id="borrow_end_date" name="borrow_end_date" class="form-control" value="<?php echo htmlspecialchars($formData['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
+                                        <input type="date" id="borrow_end_date" name="borrow_end_date" class="form-control flatpickr-date-field" value="<?php echo htmlspecialchars($formData['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" readonly required>
                                         <?php
                                         $curBeh = ''; $curBem = '';
                                         if (!empty($formData['borrow_end_time'])) {
@@ -1518,7 +1534,7 @@ $formData = array_merge([
                                     <div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #e2e8f0;">
                                         <label>實際領取器材與進入場地時間 <span style="color:red">*</span></label>
                                         <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center;">
-                                            <input type="date" id="actual_pickup_date" name="actual_pickup_date" class="form-control" value="<?php echo htmlspecialchars($formData['actual_pickup_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
+                                            <input type="date" id="actual_pickup_date" name="actual_pickup_date" class="form-control flatpickr-date-field" value="<?php echo htmlspecialchars($formData['actual_pickup_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" readonly required>
                                             <?php
                                             $curAph = $formData['actual_pickup_time_h'] ?? '';
                                             $curApm = $formData['actual_pickup_time_m'] ?? '';
@@ -1542,7 +1558,7 @@ $formData = array_merge([
                                         
                                         <label>實際歸還器材與離開場地時間 <span style="color:red">*</span></label>
                                         <div style="display: flex; gap: 10px; align-items: center;">
-                                            <input type="date" id="actual_return_date" name="actual_return_date" class="form-control" value="<?php echo htmlspecialchars($formData['actual_return_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
+                                            <input type="date" id="actual_return_date" name="actual_return_date" class="form-control flatpickr-date-field" value="<?php echo htmlspecialchars($formData['actual_return_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" readonly required>
                                             <?php
                                             $curArh = $formData['actual_return_time_h'] ?? '';
                                             $curArm = $formData['actual_return_time_m'] ?? '';
@@ -1666,9 +1682,9 @@ $formData = array_merge([
                                     <div style="padding: 0 20px 15px 20px;">
                                         <label style="font-weight:600; color:#475569; margin-bottom:6px; display:block;">使用日期 <span style="color:red">*</span></label>
                                         <div style="display:flex; gap:10px; align-items:center;">
-                                            <input type="date" id="flag_use_start" name="flag_use_start" class="form-control" readonly value="<?php echo htmlspecialchars($formData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                            <input type="date" id="flag_use_start" name="flag_use_start" class="form-control flatpickr-date-field" readonly value="<?php echo htmlspecialchars($formData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" >
                                             <span style="color:#64748b; font-weight:500;">至</span>
-                                            <input type="date" id="flag_use_end" name="flag_use_end" class="form-control" readonly value="<?php echo htmlspecialchars($formData['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                            <input type="date" id="flag_use_end" name="flag_use_end" class="form-control flatpickr-date-field" readonly value="<?php echo htmlspecialchars($formData['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" >
                                         </div>
                                         <div style="font-size:13px; color:#94a3b8; margin-top:8px;">說明：使用日期已自動帶入活動起訖時間，無法修改。</div>
                                     </div>
@@ -1759,7 +1775,7 @@ $formData = array_merge([
                                         <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
                                             <div class="form-group" style="flex: 1; min-width: 150px;">
                                                 <label for="fire_date">日期 (限30天後) <span style="color:red">*</span></label>
-                                                <input type="date" id="fire_date" name="fire_date" class="form-control" min="<?php echo date('Y-m-d', strtotime('+30 days')); ?>" value="<?php echo htmlspecialchars($formData['fire_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                                <input type="date" id="fire_date" name="fire_date" class="form-control flatpickr-date-field" min="<?php echo date('Y-m-d', strtotime('+30 days')); ?>" readonly value="<?php echo htmlspecialchars($formData['fire_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                             </div>
                                             <div class="form-group" style="flex: 1; min-width: 150px;">
                                                 <label for="fire_location">地點 <span style="color:red">*</span></label>
@@ -1945,9 +1961,9 @@ $formData = array_merge([
             <div class="form-group">
                 <label style="font-weight: bold; color: #333;">日期 (自動帶入)</label>
                 <div style="display:flex; gap:8px; align-items:center;">
-                    <input type="date" id="sales_use_start" name="sales_use_start" class="form-control" readonly style="background:#f8fafc;" value="<?php echo htmlspecialchars($formData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                    <input type="date" id="sales_use_start" name="sales_use_start" class="form-control flatpickr-date-field" readonly style="background:#f8fafc;" value="<?php echo htmlspecialchars($formData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" >
                     <span>至</span>
-                    <input type="date" id="sales_use_end" name="sales_use_end" class="form-control" readonly style="background:#f8fafc;" value="<?php echo htmlspecialchars($formData['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                    <input type="date" id="sales_use_end" name="sales_use_end" class="form-control flatpickr-date-field" readonly style="background:#f8fafc;" value="<?php echo htmlspecialchars($formData['borrow_end_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" >
                 </div>
             </div>
         </div>
@@ -4184,13 +4200,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         function fallbackToNativeDate() {
             try {
-                borrowDateEl.removeAttribute('readonly');
-                borrowDateEl.type = 'date';
+                borrowDateEl.setAttribute('readonly', 'readonly');
+                borrowDateEl.type = 'text';
             } catch (e) { console.error('fallbackToNativeDate error', e); }
         }
 
         if (typeof flatpickr !== 'function') {
-            console.warn('flatpickr not available; falling back to native date input');
+            console.warn('flatpickr not available; flatpickr calendar cannot be opened');
             fallbackToNativeDate();
         } else {
             try {
@@ -4385,57 +4401,156 @@ function getMinDateByParticipantCount(countValue) {
 
 let initialMinDate = getMinDateByParticipantCount(document.getElementById('participant_count') ? document.getElementById('participant_count').value : ''); 
 
-// Resolve locale safely: prefer registered zh_tw locale object, fallback to no locale option
-let _flatpickrLocale = null;
-if (typeof flatpickr !== 'undefined' && flatpickr.l10ns) {
-    _flatpickrLocale = flatpickr.l10ns.zh_tw || flatpickr.l10ns['zh_tw'] || flatpickr.l10ns.zh || null;
+// 統一日曆：四個日期欄位都使用 flatpickr，不混用原生 date 彈窗。
+// 借用起訖日：依一般 3 天 / 特殊 30 天更新 minDate。
+// 實際領取／進入：活動開始前一天 ～ 活動開始當天。
+// 實際歸還／離開：活動開始當天 ～ 活動結束日期 +1 天。
+function buildFlatpickrConfig(extraConfig = {}) {
+    return Object.assign({
+        dateFormat: "Y-m-d",
+        allowInput: false,
+        clickOpens: true,
+        disableMobile: true,
+        appendTo: document.body
+    }, (typeof _flatpickrLocale !== 'undefined' && _flatpickrLocale) ? { locale: _flatpickrLocale } : {}, extraConfig);
 }
 
-const fpStartDate = flatpickr("#borrow_start_date", Object.assign({
-    minDate: initialMinDate,
-    dateFormat: "Y-m-d"
-}, _flatpickrLocale ? { locale: _flatpickrLocale } : {}));
+const fpStartDate = (typeof flatpickr === 'function')
+    ? flatpickr("#borrow_start_date", buildFlatpickrConfig({ minDate: initialMinDate }))
+    : null;
 
-const fpEndDate = flatpickr("#borrow_end_date", Object.assign({
-    minDate: initialMinDate,
-    dateFormat: "Y-m-d"
-}, _flatpickrLocale ? { locale: _flatpickrLocale } : {}));
+const fpEndDate = (typeof flatpickr === 'function')
+    ? flatpickr("#borrow_end_date", buildFlatpickrConfig({ minDate: initialMinDate }))
+    : null;
 
-// --- 新增：綁定新的兩個時間欄位 ---
-const fpActualPickupDate = flatpickr("#actual_pickup_date", Object.assign({
-    minDate: initialMinDate,
-    dateFormat: "Y-m-d"
-}, _flatpickrLocale ? { locale: _flatpickrLocale } : {}));
+const fpActualPickupDate = (typeof flatpickr === 'function')
+    ? flatpickr("#actual_pickup_date", buildFlatpickrConfig())
+    : null;
 
-const fpActualReturnDate = flatpickr("#actual_return_date", Object.assign({
-    minDate: initialMinDate,
-    dateFormat: "Y-m-d"
-}, _flatpickrLocale ? { locale: _flatpickrLocale } : {}));
-// --- 新增結束 ---
+const fpActualReturnDate = (typeof flatpickr === 'function')
+    ? flatpickr("#actual_return_date", buildFlatpickrConfig())
+    : null;
+
+const datePickerMap = {
+    borrow_start_date: fpStartDate,
+    borrow_end_date: fpEndDate,
+    actual_pickup_date: fpActualPickupDate,
+    actual_return_date: fpActualReturnDate
+};
+Object.keys(datePickerMap).forEach(function (id) {
+    const input = document.getElementById(id);
+    const picker = datePickerMap[id];
+    if (!input) return;
+    input.setAttribute('readonly', 'readonly');
+    input.setAttribute('inputmode', 'none');
+    input.setAttribute('autocomplete', 'off');
+    input.classList.add('flatpickr-date-field');
+    ['click', 'focus'].forEach(function (eventName) {
+        input.addEventListener(eventName, function () {
+            if (picker && typeof picker.open === 'function') picker.open();
+        });
+    });
+});
+
+function setDateInputValue(input, picker, value) {
+    if (!input) return;
+    if (picker) {
+        if (value) picker.setDate(value, false, 'Y-m-d');
+        else picker.clear();
+    } else {
+        input.value = value || '';
+    }
+}
+
+function applyBorrowNativeMinDate(minDate) {
+    const minDateStr = formatDate(minDate);
+    const startInput = document.getElementById('borrow_start_date');
+    const endInput = document.getElementById('borrow_end_date');
+
+    if (fpStartDate) fpStartDate.set('minDate', minDateStr);
+    if (fpEndDate) fpEndDate.set('minDate', minDateStr);
+    if (startInput) startInput.min = minDateStr;
+    if (endInput) endInput.min = minDateStr;
+}
+applyBorrowNativeMinDate(initialMinDate);
+
+function addDaysByDateValue(dateValue, days) {
+    if (!dateValue) return '';
+    const date = new Date(dateValue + 'T00:00:00');
+    if (Number.isNaN(date.getTime())) return '';
+    date.setDate(date.getDate() + days);
+    return formatDate(date);
+}
+
+function refreshActualDateLimits(shouldClearInvalidDates = true) {
+    const borrowStartInput = document.getElementById('borrow_start_date');
+    const borrowEndInput = document.getElementById('borrow_end_date');
+    const pickupInput = document.getElementById('actual_pickup_date');
+    const returnInput = document.getElementById('actual_return_date');
+
+    if (borrowStartInput && borrowStartInput.value && pickupInput) {
+        const minPickup = addDaysByDateValue(borrowStartInput.value, -1);
+        const maxPickup = borrowStartInput.value;
+
+        pickupInput.min = minPickup;
+        pickupInput.max = maxPickup;
+        if (fpActualPickupDate) {
+            fpActualPickupDate.set('minDate', minPickup);
+            fpActualPickupDate.set('maxDate', maxPickup);
+        }
+
+        if (shouldClearInvalidDates && pickupInput.value && (pickupInput.value < minPickup || pickupInput.value > maxPickup)) {
+            setDateInputValue(pickupInput, fpActualPickupDate, '');
+        }
+    }
+
+    if (borrowStartInput && borrowStartInput.value && borrowEndInput && borrowEndInput.value && returnInput) {
+        const minReturn = borrowStartInput.value;
+        const maxReturn = addDaysByDateValue(borrowEndInput.value, 1);
+
+        returnInput.min = minReturn;
+        returnInput.max = maxReturn;
+        if (fpActualReturnDate) {
+            fpActualReturnDate.set('minDate', minReturn);
+            fpActualReturnDate.set('maxDate', maxReturn);
+        }
+
+        if (shouldClearInvalidDates && returnInput.value && (returnInput.value < minReturn || returnInput.value > maxReturn)) {
+            setDateInputValue(returnInput, fpActualReturnDate, '');
+        }
+    }
+}
+
+['borrow_start_date', 'borrow_end_date'].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) {
+        el.addEventListener('change', function () { refreshActualDateLimits(true); });
+        el.addEventListener('input', function () { refreshActualDateLimits(true); });
+    }
+});
+
+refreshActualDateLimits(false);
 
 // 當改變人數時，動態更新鎖定日期
 const participantSelect = document.getElementById('participant_count');
 if (participantSelect) {
-participantSelect.addEventListener('change', function(e) {
+    participantSelect.addEventListener('change', function(e) {
         const newMinDate = getMinDateByParticipantCount(e.target.value);
-        
-        // 更新日曆的最小可選日期
-        fpStartDate.set('minDate', newMinDate);
-        fpEndDate.set('minDate', newMinDate);
-        // 新增這兩行
-        if (fpActualPickupDate) fpActualPickupDate.set('minDate', newMinDate);
-        if (fpActualReturnDate) fpActualReturnDate.set('minDate', newMinDate);
-        
-        // 如果目前已選日期早於新規定日期，則清空重選
-        const startSel = fpStartDate.selectedDates;
-        if (startSel.length > 0) {
-            const minTime = new Date(newMinDate).setHours(0,0,0,0);
-            if (startSel[0].getTime() < minTime) {
-                alert("人數達 100 人以上之大型活動需提前 30 天申請！\n系統已清空您的舊日期，請重新按規定選擇。");
-                fpStartDate.clear();
-                fpEndDate.clear();
-            }
+        applyBorrowNativeMinDate(newMinDate);
+
+        const startInput = document.getElementById('borrow_start_date');
+        const endInput = document.getElementById('borrow_end_date');
+        const minTime = new Date(newMinDate).setHours(0,0,0,0);
+        const startDate = startInput && startInput.value ? new Date(startInput.value + 'T00:00:00') : null;
+        const endDate = endInput && endInput.value ? new Date(endInput.value + 'T00:00:00') : null;
+
+        if ((startDate && startDate.getTime() < minTime) || (endDate && endDate.getTime() < minTime)) {
+            alert("人數達 100 人以上之大型活動需提前 30 天申請！
+系統已清空您的舊日期，請重新按規定選擇。");
+            if (startInput) startInput.value = '';
+            if (endInput) endInput.value = '';
         }
+        refreshActualDateLimits();
     });
 }
 
@@ -4550,6 +4665,54 @@ function goToStep(stepNo) {
         
         if (days > 4) {
             alert("活動天數最多不可超過 4 天，請重新選擇！");
+            return;
+        }
+
+        const startHour = document.querySelector('select[name="borrow_start_time_h"]')?.value || '';
+        const startMin = document.querySelector('select[name="borrow_start_time_m"]')?.value || '';
+        const endHour = document.querySelector('select[name="borrow_end_time_h"]')?.value || '';
+        const endMin = document.querySelector('select[name="borrow_end_time_m"]')?.value || '';
+        const pickupDate = document.getElementById('actual_pickup_date')?.value || '';
+        const pickupHour = document.querySelector('select[name="actual_pickup_time_h"]')?.value || '';
+        const pickupMin = document.querySelector('select[name="actual_pickup_time_m"]')?.value || '';
+        const returnDate = document.getElementById('actual_return_date')?.value || '';
+        const returnHour = document.querySelector('select[name="actual_return_time_h"]')?.value || '';
+        const returnMin = document.querySelector('select[name="actual_return_time_m"]')?.value || '';
+
+        const makeDateTime = function (dateValue, hourValue, minuteValue) {
+            if (!dateValue || hourValue === '' || minuteValue === '') return null;
+            const dateTime = new Date(dateValue + 'T' + String(hourValue).padStart(2, '0') + ':' + String(minuteValue).padStart(2, '0') + ':00');
+            return Number.isNaN(dateTime.getTime()) ? null : dateTime;
+        };
+
+        const borrowStartDateTime = makeDateTime(startDate, startHour, startMin);
+        const borrowEndDateTime = makeDateTime(endDate, endHour, endMin);
+        const actualPickupDateTime = makeDateTime(pickupDate, pickupHour, pickupMin);
+        const actualReturnDateTime = makeDateTime(returnDate, returnHour, returnMin);
+
+        if (!borrowStartDateTime || !borrowEndDateTime || !actualPickupDateTime || !actualReturnDateTime) {
+            alert('請完整填寫活動起訖時間與實際領取／歸還時間！');
+            return;
+        }
+
+        const minPickupDateTime = new Date(borrowStartDateTime);
+        minPickupDateTime.setDate(minPickupDateTime.getDate() - 1);
+
+        const maxReturnDateTime = new Date(borrowEndDateTime);
+        maxReturnDateTime.setDate(maxReturnDateTime.getDate() + 1);
+
+        if (actualReturnDateTime <= actualPickupDateTime) {
+            alert('實際歸還／離開時間必須晚於實際領取／進入時間！');
+            return;
+        }
+
+        if (actualPickupDateTime < minPickupDateTime || actualPickupDateTime > borrowStartDateTime) {
+            alert('實際領取／進入時間只能在借用開始時間前一天到借用開始時間之間，且不可晚領取！');
+            return;
+        }
+
+        if (actualReturnDateTime < borrowStartDateTime || actualReturnDateTime > maxReturnDateTime) {
+            alert('實際歸還／離開時間只能在借用開始時間到借用結束時間後一天之間！');
             return;
         }
     }
@@ -5641,6 +5804,367 @@ document.addEventListener('DOMContentLoaded', function () {
     if (typeof toggleSalesDetails === 'function') toggleSalesDetails();
     if (typeof toggleFlagDetails === 'function') toggleFlagDetails();
 });
+</script>
+
+
+<script>
+// 最後保險初始化：四個日期欄位只能用 flatpickr 日曆選，欄位維持 type=date，並統一用 flatpickr 開日曆。
+(function () {
+    function pad(n) { return String(n).padStart(2, '0'); }
+    function formatDate(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+    function addDays(value, days) {
+        if (!value) return null;
+        var d = new Date(value + 'T00:00:00');
+        if (isNaN(d.getTime())) return null;
+        d.setDate(d.getDate() + days);
+        return d;
+    }
+    function getBorrowMinDate() {
+        if (typeof getBorrowMinDateByCurrentForm === 'function') {
+            try { return getBorrowMinDateByCurrentForm(); } catch (e) {}
+        }
+        var d = new Date();
+        d.setDate(d.getDate() + 3);
+        return d;
+    }
+    function fireChange(el) {
+        if (!el) return;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    function forceTextReadonly(el) {
+        if (!el) return;
+        try { el.type = 'date'; } catch (e) {}
+        el.setAttribute('readonly', 'readonly');
+        el.setAttribute('inputmode', 'none');
+        el.setAttribute('autocomplete', 'off');
+        el.classList.add('flatpickr-date-field');
+        el.addEventListener('keydown', function (ev) { ev.preventDefault(); });
+        el.addEventListener('paste', function (ev) { ev.preventDefault(); });
+    }
+
+    window.initUnifiedFlatpickrCalendars = function () {
+        var ids = ['borrow_start_date', 'borrow_end_date', 'actual_pickup_date', 'actual_return_date'];
+        var els = {};
+        ids.forEach(function (id) {
+            els[id] = document.getElementById(id);
+            forceTextReadonly(els[id]);
+        });
+
+        if (typeof flatpickr !== 'function') {
+            console.error('flatpickr 沒有載入，請確認頁面有載入 flatpickr.min.js');
+            return;
+        }
+
+        ids.forEach(function (id) {
+            if (els[id] && els[id]._flatpickr) {
+                try { els[id]._flatpickr.destroy(); } catch (e) {}
+            }
+        });
+
+        var localeConfig = {};
+        if (window.flatpickr && flatpickr.l10ns && flatpickr.l10ns.zh_tw) {
+            localeConfig.locale = flatpickr.l10ns.zh_tw;
+        }
+
+        function baseConfig(extra) {
+            return Object.assign({
+                dateFormat: 'Y-m-d',
+                allowInput: false,
+                clickOpens: true,
+                disableMobile: true,
+                appendTo: document.body,
+                static: false,
+                onReady: function (selectedDates, dateStr, instance) {
+                    forceTextReadonly(instance.input);
+                },
+                onOpen: function (selectedDates, dateStr, instance) {
+                    if (instance && instance.calendarContainer) {
+                        instance.calendarContainer.style.zIndex = '999999';
+                    }
+                },
+                onChange: function (selectedDates, dateStr, instance) {
+                    refreshLimits(false);
+                    setTimeout(function () { fireChange(instance.input); }, 0);
+                }
+            }, localeConfig, extra || {});
+        }
+
+        var pickers = {};
+        var minBorrow = getBorrowMinDate();
+        pickers.borrow_start_date = els.borrow_start_date ? flatpickr(els.borrow_start_date, baseConfig({ minDate: minBorrow })) : null;
+        pickers.borrow_end_date = els.borrow_end_date ? flatpickr(els.borrow_end_date, baseConfig({ minDate: minBorrow })) : null;
+        pickers.actual_pickup_date = els.actual_pickup_date ? flatpickr(els.actual_pickup_date, baseConfig({})) : null;
+        pickers.actual_return_date = els.actual_return_date ? flatpickr(els.actual_return_date, baseConfig({})) : null;
+
+        ids.forEach(function (id) {
+            var el = els[id];
+            var fp = pickers[id];
+            if (!el) return;
+            el.addEventListener('click', function () { if (fp) fp.open(); });
+            el.addEventListener('focus', function () { if (fp) fp.open(); });
+        });
+
+        function setPickerLimit(fp, key, value) { if (fp) fp.set(key, value || null); }
+        function clearIfOutOfRange(el, fp, minValue, maxValue, shouldClear) {
+            if (!shouldClear || !el || !el.value) return;
+            if ((minValue && el.value < minValue) || (maxValue && el.value > maxValue)) {
+                if (fp) fp.clear(); else el.value = '';
+                fireChange(el);
+            }
+        }
+        function refreshLimits(shouldClear) {
+            minBorrow = getBorrowMinDate();
+            var minBorrowStr = formatDate(minBorrow);
+            setPickerLimit(pickers.borrow_start_date, 'minDate', minBorrowStr);
+            setPickerLimit(pickers.borrow_end_date, 'minDate', minBorrowStr);
+            if (els.borrow_start_date) els.borrow_start_date.min = minBorrowStr;
+            if (els.borrow_end_date) els.borrow_end_date.min = minBorrowStr;
+
+            var startVal = els.borrow_start_date ? els.borrow_start_date.value : '';
+            var endVal = els.borrow_end_date ? els.borrow_end_date.value : '';
+
+            if (startVal && els.actual_pickup_date) {
+                var minPickupDate = addDays(startVal, -1);
+                var minPickup = minPickupDate ? formatDate(minPickupDate) : '';
+                var maxPickup = startVal;
+                setPickerLimit(pickers.actual_pickup_date, 'minDate', minPickup);
+                setPickerLimit(pickers.actual_pickup_date, 'maxDate', maxPickup);
+                els.actual_pickup_date.min = minPickup;
+                els.actual_pickup_date.max = maxPickup;
+                clearIfOutOfRange(els.actual_pickup_date, pickers.actual_pickup_date, minPickup, maxPickup, shouldClear);
+            }
+
+            if (startVal && endVal && els.actual_return_date) {
+                var maxReturnDate = addDays(endVal, 1);
+                var minReturn = startVal;
+                var maxReturn = maxReturnDate ? formatDate(maxReturnDate) : '';
+                setPickerLimit(pickers.actual_return_date, 'minDate', minReturn);
+                setPickerLimit(pickers.actual_return_date, 'maxDate', maxReturn);
+                els.actual_return_date.min = minReturn;
+                els.actual_return_date.max = maxReturn;
+                clearIfOutOfRange(els.actual_return_date, pickers.actual_return_date, minReturn, maxReturn, shouldClear);
+            }
+        }
+
+        ['has_alcohol','has_fire','has_sales','participant_count','staff_count','borrow_start_date','borrow_end_date'].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el) el.addEventListener('change', function () { refreshLimits(true); });
+        });
+        refreshLimits(false);
+    };
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', window.initUnifiedFlatpickrCalendars);
+    else window.initUnifiedFlatpickrCalendars();
+})();
+</script>
+
+
+<script>
+// 最終版日曆修正：所有日期欄位都改用 flatpickr，欄位維持 type=date，並統一用 flatpickr 開日曆。
+(function () {
+    function pad(n) { return String(n).padStart(2, '0'); }
+    function formatDate(d) {
+        if (!(d instanceof Date) || isNaN(d.getTime())) return '';
+        return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    }
+    function parseDate(value) {
+        if (!value) return null;
+        var d = new Date(value + 'T00:00:00');
+        return isNaN(d.getTime()) ? null : d;
+    }
+    function addDays(value, days) {
+        var d = parseDate(value);
+        if (!d) return '';
+        d.setDate(d.getDate() + days);
+        return formatDate(d);
+    }
+    function getSpecialMinDate() {
+        var isSpecial = false;
+        ['has_alcohol', 'has_fire', 'has_sales'].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el && el.checked) isSpecial = true;
+        });
+        ['participant_count', 'staff_count'].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el && parseInt(el.value || '0', 10) >= 100) isSpecial = true;
+        });
+        var d = new Date();
+        d.setHours(0, 0, 0, 0);
+        d.setDate(d.getDate() + (isSpecial ? 30 : 3));
+        return formatDate(d);
+    }
+    function forceFlatpickrInput(el) {
+        if (!el) return;
+        try { el.type = 'date'; } catch (e) {}
+        el.setAttribute('readonly', 'readonly');
+        el.setAttribute('inputmode', 'none');
+        el.setAttribute('autocomplete', 'off');
+        el.classList.add('flatpickr-date-field');
+        el.style.cursor = 'pointer';
+        el.addEventListener('keydown', function (ev) { ev.preventDefault(); });
+        el.addEventListener('paste', function (ev) { ev.preventDefault(); });
+    }
+    function triggerChange(el) {
+        if (!el) return;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    function setPicker(fp, key, val) {
+        if (fp) fp.set(key, val || null);
+    }
+
+    function initAllFlatpickrDates() {
+        if (typeof flatpickr !== 'function') {
+            console.error('flatpickr 沒有載入，請確認 flatpickr.min.js 有成功載入。');
+            return;
+        }
+
+        var dateIds = [
+            'borrow_start_date', 'borrow_end_date',
+            'actual_pickup_date', 'actual_return_date',
+            'flag_use_start', 'flag_use_end',
+            'fire_date',
+            'sales_use_start', 'sales_use_end'
+        ];
+        var els = {};
+        dateIds.forEach(function (id) {
+            els[id] = document.getElementById(id);
+            forceFlatpickrInput(els[id]);
+            if (els[id] && els[id]._flatpickr) {
+                try { els[id]._flatpickr.destroy(); } catch (e) {}
+            }
+        });
+
+        var locale = {};
+        if (window.flatpickr && flatpickr.l10ns && flatpickr.l10ns.zh_tw) {
+            locale.locale = flatpickr.l10ns.zh_tw;
+        }
+
+        var pickers = {};
+        function makePicker(id, extra) {
+            var el = els[id];
+            if (!el) return null;
+            var cfg = Object.assign({
+                dateFormat: 'Y-m-d',
+                allowInput: false,
+                clickOpens: true,
+                disableMobile: true,
+                appendTo: document.body,
+                static: false,
+                onReady: function (selectedDates, dateStr, instance) {
+                    forceFlatpickrInput(instance.input);
+                },
+                onOpen: function (selectedDates, dateStr, instance) {
+                    if (instance.calendarContainer) instance.calendarContainer.style.zIndex = '999999';
+                },
+                onChange: function (selectedDates, dateStr, instance) {
+                    syncLinkedDateFields();
+                    refreshDateLimits(false);
+                    setTimeout(function () { triggerChange(instance.input); }, 0);
+                }
+            }, locale, extra || {});
+            var fp = flatpickr(el, cfg);
+            el.addEventListener('click', function () { fp.open(); });
+            el.addEventListener('focus', function () { fp.open(); });
+            return fp;
+        }
+
+        dateIds.forEach(function (id) {
+            var el = els[id];
+            if (!el) return;
+            var extra = {};
+            if (el.getAttribute('min')) extra.minDate = el.getAttribute('min');
+            if (el.getAttribute('max')) extra.maxDate = el.getAttribute('max');
+            pickers[id] = makePicker(id, extra);
+        });
+
+        function syncLinkedDateFields() {
+            if (els.borrow_start_date) {
+                if (els.flag_use_start && els.flag_use_start.value !== els.borrow_start_date.value) {
+                    els.flag_use_start.value = els.borrow_start_date.value;
+                    if (pickers.flag_use_start) pickers.flag_use_start.setDate(els.borrow_start_date.value, false);
+                }
+                if (els.sales_use_start && els.sales_use_start.value !== els.borrow_start_date.value) {
+                    els.sales_use_start.value = els.borrow_start_date.value;
+                    if (pickers.sales_use_start) pickers.sales_use_start.setDate(els.borrow_start_date.value, false);
+                }
+            }
+            if (els.borrow_end_date) {
+                if (els.flag_use_end && els.flag_use_end.value !== els.borrow_end_date.value) {
+                    els.flag_use_end.value = els.borrow_end_date.value;
+                    if (pickers.flag_use_end) pickers.flag_use_end.setDate(els.borrow_end_date.value, false);
+                }
+                if (els.sales_use_end && els.sales_use_end.value !== els.borrow_end_date.value) {
+                    els.sales_use_end.value = els.borrow_end_date.value;
+                    if (pickers.sales_use_end) pickers.sales_use_end.setDate(els.borrow_end_date.value, false);
+                }
+            }
+        }
+
+        function clearIfOutOfRange(id, min, max, shouldClear) {
+            var el = els[id];
+            if (!shouldClear || !el || !el.value) return;
+            if ((min && el.value < min) || (max && el.value > max)) {
+                if (pickers[id]) pickers[id].clear();
+                else el.value = '';
+                triggerChange(el);
+            }
+        }
+
+        function refreshDateLimits(shouldClear) {
+            var minBorrow = getSpecialMinDate();
+            ['borrow_start_date', 'borrow_end_date'].forEach(function (id) {
+                if (!els[id]) return;
+                els[id].setAttribute('min', minBorrow);
+                setPicker(pickers[id], 'minDate', minBorrow);
+            });
+
+            var startVal = els.borrow_start_date ? els.borrow_start_date.value : '';
+            var endVal = els.borrow_end_date ? els.borrow_end_date.value : '';
+
+            if (startVal && els.borrow_end_date) {
+                setPicker(pickers.borrow_end_date, 'minDate', startVal);
+                els.borrow_end_date.setAttribute('min', startVal);
+                clearIfOutOfRange('borrow_end_date', startVal, null, shouldClear);
+            }
+
+            if (startVal && els.actual_pickup_date) {
+                var minPickup = addDays(startVal, -1);
+                var maxPickup = startVal;
+                els.actual_pickup_date.setAttribute('min', minPickup);
+                els.actual_pickup_date.setAttribute('max', maxPickup);
+                setPicker(pickers.actual_pickup_date, 'minDate', minPickup);
+                setPicker(pickers.actual_pickup_date, 'maxDate', maxPickup);
+                clearIfOutOfRange('actual_pickup_date', minPickup, maxPickup, shouldClear);
+            }
+
+            if (startVal && endVal && els.actual_return_date) {
+                var minReturn = startVal;
+                var maxReturn = addDays(endVal, 1); // 活動結束日期 +1 天
+                els.actual_return_date.setAttribute('min', minReturn);
+                els.actual_return_date.setAttribute('max', maxReturn);
+                setPicker(pickers.actual_return_date, 'minDate', minReturn);
+                setPicker(pickers.actual_return_date, 'maxDate', maxReturn);
+                clearIfOutOfRange('actual_return_date', minReturn, maxReturn, shouldClear);
+            }
+
+            syncLinkedDateFields();
+        }
+
+        ['has_alcohol', 'has_fire', 'has_sales', 'participant_count', 'staff_count', 'borrow_start_date', 'borrow_end_date'].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el) el.addEventListener('change', function () { refreshDateLimits(true); });
+        });
+        refreshDateLimits(false);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initAllFlatpickrDates);
+    } else {
+        initAllFlatpickrDates();
+    }
+})();
 </script>
 
 </body>

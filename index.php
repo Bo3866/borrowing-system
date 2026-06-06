@@ -203,7 +203,6 @@ if ($link) {
                             <span style="font-weight: 700;">租借權限受限！</span> 您目前已累計違規達 <span style="font-weight: 900; color: #dc2626; font-size: 0.875rem;"><?php echo $violationPoints; ?></span> 點，系統已自動暫停您的器材預約權限。
                         </div>
                     </div>
-                    <a href="history.php" style="font-size: 0.75rem; font-weight: 700; color: #b91c1c; text-decoration: underline; white-space: nowrap;">查看違規明細 →</a>
                 </div>
             <?php else: ?>
                 <div style="background-color: #fffbeb; border: 2px solid #fcd34d; border-radius: 0.75rem; padding: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); display: flex; align-items: center; justify-content: space-between; gap: 1rem;">

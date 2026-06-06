@@ -68,12 +68,33 @@ if (!empty($foundUsers)) {
     }
 }
 
+// 💡 【新增】撈取該學生的所有預約申請紀錄，供下拉選單選擇
+$userReservations = [];
+if ($foundUser && $dbError === '') {
+    $resSql = "SELECT reservation_id, activity_name, borrow_start_at 
+               FROM reservations 
+               WHERE user_id = ? 
+               ORDER BY borrow_start_at DESC";
+    $resStmt = mysqli_prepare($link, $resSql);
+    if ($resStmt) {
+        mysqli_stmt_bind_param($resStmt, 's', $foundUser['user_id']);
+        mysqli_stmt_execute($resStmt);
+        $resResult = mysqli_stmt_get_result($resStmt);
+        while ($resRow = mysqli_fetch_assoc($resResult)) {
+            $userReservations[] = $resRow;
+        }
+        mysqli_stmt_close($resStmt);
+    }
+}
+
 // ====== 2. 處理記點提交邏輯 ======
 if ($dbError === '' && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_type'])) {
     $targetUserId = trim((string)($_POST['target_user_id'] ?? ''));
     $reasonRule = trim((string)($_POST['reason_rule'] ?? ''));
     $customReason = trim((string)($_POST['custom_reason'] ?? ''));
-    
+    // 💡 接收前端表單選擇的預約 ID
+    $resId = (int)($_POST['reservation_id'] ?? 0);
+
     // 💡 配合外鍵約束 fk_violation_creator：必須是 users 表中存在的工號，預設使用課指組老師帳號
     $createdBy = $_SESSION['user_id'] ?? 'T000000001'; 
 
@@ -88,23 +109,9 @@ if ($dbError === '' && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ac
     if ($targetUserId !== '' && $reasonRule !== '') {
         mysqli_begin_transaction($link);
         try {
-            // 💡 1. 解決外鍵與必填限制：先幫這個學生抓出最近一筆預約紀錄 ID (reservation_id)
-            $resId = 0;
-            $findResSql = "SELECT reservation_id FROM reservations WHERE user_id = ? ORDER BY reservation_id DESC LIMIT 1";
-            $resStmt = mysqli_prepare($link, $findResSql);
-            if ($resStmt) {
-                mysqli_stmt_bind_param($resStmt, 's', $targetUserId);
-                mysqli_stmt_execute($resStmt);
-                mysqli_stmt_bind_result($resStmt, $dbResId);
-                if (mysqli_stmt_fetch($resStmt)) {
-                    $resId = $dbResId;
-                }
-                mysqli_stmt_close($resStmt);
-            }
-
-            // 防呆：如果此學生完全沒有任何預約紀錄，為了過外鍵限制，先幫他插一筆虛擬系統預約
+            // 防呆：如果前端傳來 0 (代表老師選了無預約紀錄/虛擬)，或者沒選，就幫他插一筆虛擬系統預約
             if ($resId === 0) {
-                $fakeResSql = "INSERT INTO reservations (user_id, borrow_start_at, borrow_end_at, approval_status) VALUES (?, NOW(), NOW(), 'approved')";
+                $fakeResSql = "INSERT INTO reservations (user_id, activity_name, borrow_start_at, borrow_end_at, approval_status) VALUES (?, '管理端發布之懲處(無對應預約)', NOW(), NOW(), 'approved')";
                 $fakeStmt = mysqli_prepare($link, $fakeResSql);
                 if ($fakeStmt) {
                     mysqli_stmt_bind_param($fakeStmt, 's', $targetUserId);
@@ -179,10 +186,13 @@ if (isset($_GET['msg'])) {
     <title>課指組違規記點管理</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="styles.css"> </head>
+    <link rel="stylesheet" href="styles.css"> 
+</head>
 <body class="bg-slate-50 min-h-screen">
 
-    <?php include __DIR__ . '/nav.php'; ?> <div class="max-w-4xl mx-auto px-4 py-10">
+    <?php include __DIR__ . '/nav.php'; ?> 
+    
+    <div class="max-w-4xl mx-auto px-4 py-10">
         <header class="mb-8">
             <h1 class="text-2xl font-bold text-slate-800"><i class="fa-solid fa-triangle-exclamation text-amber-500 mr-2"></i>課指組資源管理：違規記點系統</h1>
             <p class="text-slate-500 text-sm mt-1">請輸入學生資訊進行查詢，並依校方規範執行記點或註銷處分。</p>
@@ -266,6 +276,28 @@ if (isset($_GET['msg'])) {
                     <form method="POST" action="" onsubmit="return confirm('確定要對該學生發佈此處分紀錄嗎？');">
                         <input type="hidden" name="action_type" value="submit_violation">
                         <input type="hidden" name="target_user_id" value="<?php echo htmlspecialchars($foundUser['user_id'], ENT_QUOTES, 'UTF-8'); ?>">
+
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-slate-700 mb-2">
+                                關聯活動預約 
+                                <span class="text-xs text-slate-400 font-normal">
+                                    (該生目前共有 <?php echo count($userReservations); ?> 筆預約紀錄)
+                                </span>
+                            </label>
+                            <select name="reservation_id" required class="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:border-indigo-500 text-slate-800 bg-white">
+                                <?php if (!empty($userReservations)): ?>
+                                    <option value="">-- 請選擇違規對應的活動項目 --</option>
+                                    <?php foreach ($userReservations as $res): ?>
+                                        <option value="<?php echo $res['reservation_id']; ?>">
+                                            [#<?php echo $res['reservation_id']; ?>] <?php echo htmlspecialchars($res['activity_name'] ?? '未命名活動', ENT_QUOTES, 'UTF-8'); ?> (<?php echo date('Y-m-d', strtotime($res['borrow_start_at'])); ?>)
+                                        </option>
+                                    <?php endforeach; ?>
+                                    <option value="0">【無關聯/其它】不連結特定預約單（系統自動防呆）</option>
+                                <?php else: ?>
+                                    <option value="0">-- 該生目前無任何預約紀錄 (將由系統自動防呆填補) --</option>
+                                <?php endif; ?>
+                            </select>
+                        </div>
 
                         <div class="mb-4">
                             <label class="block text-sm font-medium text-slate-700 mb-2">違規事由與記點標準</label>

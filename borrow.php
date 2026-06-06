@@ -975,7 +975,12 @@ SQL;
                 $certificateId = null;
                 $certSelectStmt = mysqli_prepare(
                     $link,
-                    'SELECT certificate_id FROM equipment_certificates WHERE holder_id = ? AND validity_status = "valid" ORDER BY issue_date DESC LIMIT 1'
+                    'SELECT certificate_id 
+                    FROM equipment_certificates 
+                    WHERE holder_id = ? 
+                    AND (valid_until IS NULL OR valid_until >= NOW()) 
+                    ORDER BY issue_date DESC 
+                    LIMIT 1'
                 );
                 if ($certSelectStmt) {
                     mysqli_stmt_bind_param($certSelectStmt, 's', $userId);

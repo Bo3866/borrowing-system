@@ -81,70 +81,77 @@ if (!$link) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>登入｜校園資源租借系統</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=<?php echo time(); ?>">
 </head>
+
 <body class="login-body">
-    <main class="auth-center">
-        <section class="login-card">
 
-            <h2>歡迎登入</h2>
-            <p class="login-subtitle">
-                請輸入您的帳號與密碼
-            </p>
+    <?php include __DIR__ . '/nav.php'; ?>
 
-            <?php if ($loginError !== '') { ?>
-                <div class="login-alert">
-                    <?php echo htmlspecialchars($loginError, ENT_QUOTES, 'UTF-8'); ?>
+    <div class="container login-container">
+        <main class="main-content login-main">
+            <section class="card login-card">
+
+                <h2>歡迎登入</h2>
+                <p class="login-subtitle">
+                    請輸入您的帳號與密碼
+                </p>
+
+                <?php if ($loginError !== '') { ?>
+                    <div class="login-alert">
+                        <?php echo htmlspecialchars($loginError, ENT_QUOTES, 'UTF-8'); ?>
+                    </div>
+                <?php } ?>
+
+                <form
+                    method="post"
+                    class="login-form"
+                    action="login.php?next=<?php echo urlencode($redirectTarget); ?>"
+                >
+
+                    <div class="form-group">
+                        <label for="user_id">帳號</label>
+                        <input
+                            type="text"
+                            id="user_id"
+                            name="user_id"
+                            value="<?php echo htmlspecialchars($userId, ENT_QUOTES, 'UTF-8'); ?>"
+                            placeholder="請輸入帳號"
+                            required
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label for="password">密碼</label>
+                        <input
+                            type="password"
+                            id="password"
+                            name="password"
+                            placeholder="請輸入密碼"
+                            required
+                        >
+                    </div>
+
+                    <button type="submit" class="btn-login">
+                        登入系統
+                    </button>
+
+                </form>
+
+                <div class="login-actions">
+                    <a href="forgot_password.php">忘記密碼</a>
+                    <a href="register.php">註冊帳號</a>
                 </div>
-            <?php } ?>
 
-            <form
-                method="post"
-                class="login-form"
-                action="login.php?next=<?php echo urlencode($redirectTarget); ?>"
-            >
-
-                <div class="form-group">
-                    <label for="user_id">帳號</label>
-                    <input
-                        type="text"
-                        id="user_id"
-                        name="user_id"
-                        value="<?php echo htmlspecialchars($userId, ENT_QUOTES, 'UTF-8'); ?>"
-                        placeholder="請輸入帳號"
-                        required
-                    >
+                <div class="back-home-wrap">
+                    <a href="index.php" class="back-home">
+                        返回首頁
+                    </a>
                 </div>
 
-                <div class="form-group">
-                    <label for="password">密碼</label>
-                    <input
-                        type="password"
-                        id="password"
-                        name="password"
-                        placeholder="請輸入密碼"
-                        required
-                    >
-                </div>
+            </section>
+        </main>
+    </div>
 
-                <button type="submit" class="btn-login">
-                    登入系統
-                </button>
-
-            </form>
-
-            <div class="login-actions">
-                <a href="forgot_password.php">忘記密碼</a>
-                <a href="register.php">註冊帳號</a>
-            </div>
-
-            
-            <a href="index.php" class="back-home">
-                返回首頁
-            </a>
-        
-
-        </section>
-    </main>
 </body>
 </html>

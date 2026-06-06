@@ -213,10 +213,14 @@ if (!$showCodeForm && !$showPasswordForm) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>忘記密碼｜校園資源租借系統</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=<?php echo time(); ?>">
 </head>
 <body class="login-body">
-    <main class="auth-center">
+
+    <?php include __DIR__ . '/nav.php'; ?>
+
+    <div class="container login-container">
+        <main class="main-content login-main auth-center">
         <section class="login-card">
             <h2>忘記密碼</h2>
             <p class="login-subtitle">先確認帳號與信箱，再輸入驗證碼後才能設定新密碼。</p>
@@ -278,7 +282,7 @@ if (!$showCodeForm && !$showPasswordForm) {
 
             <a href="login.php" class="btn-secondary login-home-button">返回登入</a>
         </section>
-        
-    </main>
+        </main>
+    </div>
 </body>
 </html>

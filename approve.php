@@ -121,7 +121,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
                     // Only allow user to process if their role matches the current approval stage
                     $canProcess = false;
                     // allow these roles to request revision regardless of stage
-                    if ($_POST['action'] === 'request_revision' && in_array($currentRole, ['a', 'b', 'c', '3'], true)) {
+                    if ($_POST['action'] === 'request_revision' && in_array($currentRole, ['a', 'b', 'c', 'd', '3'], true)) {
                         $canProcess = true;
                     } else {
                         if ($currentRole === '2') {
@@ -828,7 +828,14 @@ function initApprovePanel() {
                 .then(js => {
                     let msg = '';
                     if (js.ok) {
-                        msg = js.output ? js.output : '已完成檢查（無輸出）';
+                        const sent = (typeof js.sent === 'number') ? js.sent : (js.sent ? parseInt(js.sent, 10) : null);
+                        if (sent === 0) {
+                            msg = '0筆申請逾期';
+                        } else if (sent > 0) {
+                            msg = '已發送 ' + sent + ' 封信件';
+                        } else {
+                            msg = js.output ? js.output : '已完成檢查（無輸出）';
+                        }
                     } else {
                         msg = '執行失敗: ' + (js.error || JSON.stringify(js));
                     }

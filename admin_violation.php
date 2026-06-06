@@ -22,9 +22,14 @@ if ($dbError === '' && $searchKeyword !== '') {
                  OR u.user_id LIKE '%{$safeKeyword}%' 
                  OR ec.certificate_id LIKE '%{$safeKeyword}%'";
     
+    // 🎯 這裡已修改：將 total_points 的計算邏輯同步改為「扣除系統銷點且不小於0」
     $searchSql = "
         SELECT u.user_id, u.full_name, ec.certificate_id,
-               (SELECT COALESCE(SUM(points), 0) FROM violation_logs WHERE user_id = u.user_id) as total_points
+               (
+                   SELECT GREATEST(SUM(CASE WHEN custom_reason LIKE '[系統銷點]%' THEN -points ELSE points END), 0) 
+                   FROM violation_logs 
+                   WHERE user_id = u.user_id
+               ) as total_points
         FROM equipment_certificates ec
         JOIN users u ON ec.holder_id = u.user_id
         WHERE {$whereClause}

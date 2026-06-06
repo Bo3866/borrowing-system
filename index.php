@@ -702,8 +702,15 @@ if ($link) {
                 .then(response => response.json())
                 .then(result => {
                     if (result && result.ok) {
-                        const output = (result.output || '').trim();
-                        window.alert(output || '催繳檢查完成。');
+                        const sent = (typeof result.sent === 'number') ? result.sent : (result.sent ? parseInt(result.sent, 10) : null);
+                        if (sent === 0) {
+                            window.alert('0筆申請逾期');
+                        } else if (sent > 0) {
+                            window.alert('已發送 ' + sent + ' 封信件');
+                        } else {
+                            const output = (result.output || '').trim();
+                            window.alert(output || '催繳檢查完成。');
+                        }
                     } else {
                         window.alert('執行失敗：' + (result && result.error ? result.error : '未知錯誤'));
                     }

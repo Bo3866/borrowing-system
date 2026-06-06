@@ -9,15 +9,18 @@ require_once __DIR__ . '/lib/PHPMailer/SMTP.php';
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
-function run_auto_remind() {
+function run_auto_remind($force = false) {
     $lockFile = __DIR__ . '/last_remind_time.txt';
     $now = time();
+    $messages = '';
+    $sentCount = 0;
 
     // 檢查上次執行時間，避免頻繁寄信（冷卻時間：60分鐘 = 3600秒）
-    if (file_exists($lockFile)) {
+    if (!$force && file_exists($lockFile)) {
         $lastRun = (int)file_get_contents($lockFile);
         if (($now - $lastRun) < 3600) {
-            return; // 還在冷卻時間內，直接結束
+            $messages .= "冷卻時間內，略過執行\n";
+            return ['sent' => 0, 'output' => $messages]; // 還在冷卻時間內，直接結束
         }
     }
 
@@ -82,9 +85,10 @@ function run_auto_remind() {
 
                     // 更新此單號的提醒時間為此時此刻 (NOW)
                     $updateStmt->execute([':id' => $row['reservation_id']]);
-                    echo "✅ 成功寄送逾期提醒給：{$row['full_name']} (預約單號：{$row['reservation_id']})\n";
+                    $sentCount++;
+                    $messages .= "✅ 成功寄送逾期提醒給：{$row['full_name']} (預約單號：{$row['reservation_id']})\n";
                 } catch (Exception $e) {
-                    echo "❌ 寄送失敗給：{$row['full_name']} (單號 {$row['reservation_id']}) -> {$mail->ErrorInfo}\n";
+                    $messages .= "❌ 寄送失敗給：{$row['full_name']} (單號 {$row['reservation_id']}) -> {$mail->ErrorInfo}\n";
                     error_log("Web Cron 寄信失敗 (單號 {$row['reservation_id']}): " . $mail->ErrorInfo);
                 }
             }
@@ -93,8 +97,16 @@ function run_auto_remind() {
         // 把當下的時間戳記寫入 lock 檔，確保要再隔 1 小時才會第二次執行 Web Cron
         file_put_contents($lockFile, $now);
 
+        if ($messages === '') {
+            $messages = "檢查完成，無逾期申請需要寄送。\n";
+        }
+
+        return ['sent' => $sentCount, 'output' => $messages];
+
     } catch (Throwable $e) {
         error_log("Web Cron 執行錯誤: " . $e->getMessage());
+        $messages .= "執行錯誤: " . $e->getMessage() . "\n";
+        return ['sent' => $sentCount, 'output' => $messages];
     }
 }
 

@@ -8,19 +8,18 @@ if (!file_exists(__DIR__ . '/auto_remind.php')) {
 }
 require_once __DIR__ . '/auto_remind.php';
 
-// capture any stdout from run_auto_remind()
-ob_start();
+// call run_auto_remind with force=true so the manual button bypasses cooldown
 try {
     if (function_exists('run_auto_remind')) {
-        run_auto_remind();
-        $output = ob_get_clean();
-        echo json_encode(['ok' => true, 'output' => $output]);
+        $res = run_auto_remind(true);
+        // $res is expected to be ['sent' => int, 'output' => string]
+        $sent = isset($res['sent']) ? (int)$res['sent'] : 0;
+        $output = isset($res['output']) ? $res['output'] : '';
+        echo json_encode(['ok' => true, 'sent' => $sent, 'output' => $output]);
         exit;
     }
-    $out = ob_get_clean();
-    echo json_encode(['ok' => false, 'error' => 'run_auto_remind not available', 'output' => $out]);
+    echo json_encode(['ok' => false, 'error' => 'run_auto_remind not available']);
 } catch (Throwable $e) {
-    $out = ob_get_clean();
     error_log('manual_remind error: '.$e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage(), 'output' => $out]);
+    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
 }

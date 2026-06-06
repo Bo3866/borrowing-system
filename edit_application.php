@@ -36,11 +36,20 @@ if (!isset($_SESSION['user_id'])) {
 $userId = (string)$_SESSION['user_id'];
 $displayName = (string)($_SESSION['full_name'] ?? $_SESSION['user_id']);
 $roleName = (string)($_SESSION['role_name'] ?? '');
-$reservationId = (int)($_GET['reservation_id'] ?? $_POST['reservation_id'] ?? 0);
+$reservationId = (int)(
+    $_GET['reservation_id'] ??
+    $_GET['id'] ??
+    $_GET['reservation'] ??
+    $_GET['application_id'] ??
+    $_POST['reservation_id'] ??
+    $_POST['id'] ??
+    $_POST['reservation'] ??
+    $_POST['application_id'] ??
+    0
+);
 
 if ($reservationId <= 0) {
-    header('Location: return_management.php');
-    exit;
+    $reservationId = 0;
 }
 
 $periodSlots = [
@@ -80,6 +89,10 @@ $formData = [
     'draft_proposal_file' => '', 'draft_proposal_original_name' => '', 'draft_proposal_uploaded_at' => '', 'alcohol_coordinator' => '',
     'alcohol_president' => '', 'fire_activity_name' => '', 'fire_date' => '', 'fire_location' => '',
     'fire_start_time' => '', 'fire_end_time' => '', 'fire_staff_json' => '',
+    'actual_pickup_date' => '', 'actual_pickup_time' => '', 'actual_pickup_time_h' => '', 'actual_pickup_time_m' => '',
+    'actual_return_date' => '', 'actual_return_time' => '', 'actual_return_time_h' => '', 'actual_return_time_m' => '',
+    'sales_location' => '', 'sales_count' => '', 'sales_roster_json' => '', 'sales_layout_map' => '', 'draft_sales_layout_map' => '',
+    'fire_performers' => '', 'fire_oilers' => '', 'fire_extinguishers' => '', 'fire_security' => '', 'fire_emergency' => '', 'fire_medical' => '',
 ];
 
 $equipmentMap = [];
@@ -102,7 +115,11 @@ function tableColumns(mysqli $link, string $table): array {
 
 function colExists(array $cols, string $col): bool { return in_array($col, $cols, true); }
 
-if ($dbError === '') {
+if ($reservationId <= 0) {
+    $borrowError = '缺少申請編號，請從申請紀錄頁重新點選修改。';
+}
+
+if ($dbError === '' && $reservationId > 0) {
     $cursorColumnResult = mysqli_query($link, "SHOW COLUMNS FROM equipment_categories LIKE 'borrow_cursor_equipment_id'");
     if (!($cursorColumnResult && mysqli_num_rows($cursorColumnResult) > 0)) {
         if (!mysqli_query($link, "ALTER TABLE equipment_categories ADD COLUMN borrow_cursor_equipment_id BIGINT UNSIGNED NULL COMMENT '下一次配發起點器材編號' AFTER borrow_limit_quantity")) {
@@ -112,7 +129,7 @@ if ($dbError === '') {
 
     $availableCols = tableColumns($link, 'reservations');
 
-    $selectCols = ['reservation_id','user_id','approval_status','borrow_start_at','borrow_end_at','organization_name','activity_name','participant_count','staff_count','club_president','activity_coordinator','coordinator_department','coordinator_phone','coordinator_other_contact','vehicle_entry','has_alcohol','has_fire','has_sales','setup_flags','flag_count','purpose','proposal_file','proposal_original_name','proposal_uploaded_at','phone','alcohol_coordinator','alcohol_president','fire_activity_name','fire_date','fire_location','fire_start_time','fire_end_time','fire_staff_json'];
+    $selectCols = ['reservation_id','user_id','approval_status','borrow_start_at','borrow_end_at','organization_name','activity_name','participant_count','staff_count','club_president','activity_coordinator','coordinator_department','coordinator_phone','coordinator_other_contact','vehicle_entry','has_alcohol','has_fire','has_sales','setup_flags','flag_count','purpose','proposal_file','proposal_original_name','proposal_uploaded_at','phone','alcohol_coordinator','alcohol_president','fire_activity_name','fire_date','fire_location','fire_start_time','fire_end_time','fire_staff_json','fire_performers','fire_oilers','fire_extinguishers','fire_security','fire_emergency','fire_medical','actual_pickup_at','actual_return_at','sales_location','sales_count','sales_roster_json','sales_layout_map','holiday_fee_count','holiday_fee'];
     $existingSelect = [];
     foreach ($selectCols as $c) { if (colExists($availableCols, $c)) $existingSelect[] = 'r.`' . $c . '`'; }
     if (empty($existingSelect)) {
@@ -129,8 +146,11 @@ if ($dbError === '') {
         }
         if (!$reservationRow) {
             $borrowError = '找不到該申請或無權限修改。';
-        } elseif (($reservationRow['approval_status'] ?? '') !== 'pending') {
-            $borrowError = '此申請已進入審核流程，無法修改。';
+        } else {
+            $editableStatuses = ['pending', 'rejected', 'supplement_required', 'revision_required', 'needs_revision'];
+            if (!in_array((string)($reservationRow['approval_status'] ?? ''), $editableStatuses, true)) {
+                $borrowError = '此申請目前狀態無法修改。';
+            }
         }
     }
 
@@ -170,6 +190,46 @@ if ($dbError === '') {
         if (!empty($reservationRow['borrow_end_at'])) {
             $ts = strtotime((string)$reservationRow['borrow_end_at']);
             if ($ts) { $formData['borrow_end_date'] = date('Y-m-d', $ts); $formData['borrow_end_time'] = date('H:i:s', $ts); }
+        }
+        if (!empty($reservationRow['actual_pickup_at'])) {
+            $ts = strtotime((string)$reservationRow['actual_pickup_at']);
+            if ($ts) {
+                $formData['actual_pickup_date'] = date('Y-m-d', $ts);
+                $formData['actual_pickup_time'] = date('H:i:s', $ts);
+                $formData['actual_pickup_time_h'] = date('G', $ts);
+                $formData['actual_pickup_time_m'] = date('i', $ts);
+            }
+        }
+        if (!empty($reservationRow['actual_return_at'])) {
+            $ts = strtotime((string)$reservationRow['actual_return_at']);
+            if ($ts) {
+                $formData['actual_return_date'] = date('Y-m-d', $ts);
+                $formData['actual_return_time'] = date('H:i:s', $ts);
+                $formData['actual_return_time_h'] = date('G', $ts);
+                $formData['actual_return_time_m'] = date('i', $ts);
+            }
+        }
+        if (!empty($reservationRow['sales_layout_map'])) {
+            $formData['sales_layout_map'] = (string)$reservationRow['sales_layout_map'];
+            $formData['draft_sales_layout_map'] = (string)$reservationRow['sales_layout_map'];
+        }
+        if (!empty($reservationRow['fire_staff_json'])) {
+            $decodedFireStaff = json_decode((string)$reservationRow['fire_staff_json'], true);
+            if (is_array($decodedFireStaff)) {
+                foreach ([
+                    'fire_performers' => 'fire_performers',
+                    'fire_oilers' => 'fire_oilers',
+                    'fire_extinguishers' => 'fire_extinguishers',
+                    'fire_security' => 'fire_security',
+                    'fire_emergency' => 'fire_emergency',
+                    'fire_medical' => 'fire_medical',
+                ] as $jsonKey => $formKey) {
+                    if (isset($decodedFireStaff[$jsonKey]) && is_array($decodedFireStaff[$jsonKey])) {
+                        $formData[$formKey] = implode("
+", array_map('strval', $decodedFireStaff[$jsonKey]));
+                    }
+                }
+            }
         }
     }
 
@@ -246,7 +306,7 @@ if ($dbError === '') {
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && $borrowError === '') {
-        foreach (['organization_name','activity_name','participant_count','staff_count','club_president','activity_coordinator','coordinator_department','coordinator_phone','coordinator_other_contact','vehicle_entry','setup_flags','purpose','alcohol_coordinator','alcohol_president'] as $k) {
+        foreach (['organization_name','activity_name','participant_count','staff_count','club_president','activity_coordinator','coordinator_department','coordinator_phone','coordinator_other_contact','vehicle_entry','setup_flags','purpose','alcohol_coordinator','alcohol_president','sales_location','sales_count','fire_activity_name','fire_location'] as $k) {
             $formData[$k] = trim((string)($_POST[$k] ?? $formData[$k] ?? ''));
         }
         $formData['flag_count'] = ($formData['setup_flags'] === 'yes' && isset($_POST['flag_count']) && $_POST['flag_count'] !== '')
@@ -258,6 +318,7 @@ if ($dbError === '') {
         $formData['phone'] = trim((string)($_POST['phone'] ?? $formData['phone']));
         $formData['draft_proposal_file'] = trim((string)($_POST['draft_proposal_file'] ?? $formData['draft_proposal_file']));
         $formData['draft_proposal_uploaded_at'] = trim((string)($_POST['draft_proposal_uploaded_at'] ?? $formData['draft_proposal_uploaded_at']));
+        $formData['draft_proposal_original_name'] = trim((string)($_POST['draft_proposal_original_name'] ?? $formData['draft_proposal_original_name']));
 
         $bsh = $_POST['borrow_start_time_h'] ?? '';
         $bsm = $_POST['borrow_start_time_m'] ?? '';
@@ -270,6 +331,71 @@ if ($dbError === '') {
         $borrowStartAt = $formData['borrow_start_date'] . ' ' . $formData['borrow_start_time'];
         $borrowEndAt = $formData['borrow_end_date'] . ' ' . $formData['borrow_end_time'];
 
+        $aph = $_POST['actual_pickup_time_h'] ?? '';
+        $apm = $_POST['actual_pickup_time_m'] ?? '';
+        $arh = $_POST['actual_return_time_h'] ?? '';
+        $arm = $_POST['actual_return_time_m'] ?? '';
+        $formData['actual_pickup_date'] = trim((string)($_POST['actual_pickup_date'] ?? ''));
+        $formData['actual_return_date'] = trim((string)($_POST['actual_return_date'] ?? ''));
+        $formData['actual_pickup_time'] = ($aph !== '' && $apm !== '') ? sprintf('%02d:%02d:00', (int)$aph, (int)$apm) : '';
+        $formData['actual_return_time'] = ($arh !== '' && $arm !== '') ? sprintf('%02d:%02d:00', (int)$arh, (int)$arm) : '';
+        $formData['actual_pickup_time_h'] = $aph;
+        $formData['actual_pickup_time_m'] = $apm;
+        $formData['actual_return_time_h'] = $arh;
+        $formData['actual_return_time_m'] = $arm;
+        $actualPickupAt = ($formData['actual_pickup_date'] !== '' && $formData['actual_pickup_time'] !== '') ? $formData['actual_pickup_date'] . ' ' . $formData['actual_pickup_time'] : null;
+        $actualReturnAt = ($formData['actual_return_date'] !== '' && $formData['actual_return_time'] !== '') ? $formData['actual_return_date'] . ' ' . $formData['actual_return_time'] : null;
+
+        $fsh = $_POST['fire_start_time_h'] ?? '';
+        $fsm = $_POST['fire_start_time_m'] ?? '';
+        $feh = $_POST['fire_end_time_h'] ?? '';
+        $fem = $_POST['fire_end_time_m'] ?? '';
+        $formData['fire_date'] = trim((string)($_POST['fire_date'] ?? ''));
+        $formData['fire_start_time'] = ($fsh !== '' && $fsm !== '') ? sprintf('%02d:%02d:00', (int)$fsh, (int)$fsm) : null;
+        $formData['fire_end_time'] = ($feh !== '' && $fem !== '') ? sprintf('%02d:%02d:00', (int)$feh, (int)$fem) : null;
+        $formData['fire_start_time_h'] = $fsh;
+        $formData['fire_start_time_m'] = $fsm;
+        $formData['fire_end_time_h'] = $feh;
+        $formData['fire_end_time_m'] = $fem;
+
+        $parseStaffField = function($input) {
+            if (is_array($input)) {
+                return array_values(array_filter(array_map('trim', $input), function ($v) { return $v !== ''; }));
+            }
+            return [];
+        };
+        $staffData = [
+            'fire_performers' => $parseStaffField($_POST['fire_staff_performer'] ?? []),
+            'fire_oilers' => $parseStaffField($_POST['fire_staff_oiler'] ?? []),
+            'fire_extinguishers' => $parseStaffField($_POST['fire_staff_extinguisher'] ?? []),
+            'fire_security' => $parseStaffField($_POST['fire_staff_security'] ?? []),
+            'fire_emergency' => $parseStaffField($_POST['fire_staff_emergency'] ?? []),
+            'fire_medical' => $parseStaffField($_POST['fire_staff_medical'] ?? []),
+        ];
+        $formData['fire_staff_json'] = json_encode($staffData, JSON_UNESCAPED_UNICODE);
+        $formData['fire_performers'] = !empty($staffData['fire_performers']) ? implode("\n", $staffData['fire_performers']) : null;
+        $formData['fire_oilers'] = !empty($staffData['fire_oilers']) ? implode("\n", $staffData['fire_oilers']) : null;
+        $formData['fire_extinguishers'] = !empty($staffData['fire_extinguishers']) ? implode("\n", $staffData['fire_extinguishers']) : null;
+        $formData['fire_security'] = !empty($staffData['fire_security']) ? implode("\n", $staffData['fire_security']) : null;
+        $formData['fire_emergency'] = !empty($staffData['fire_emergency']) ? implode("\n", $staffData['fire_emergency']) : null;
+        $formData['fire_medical'] = !empty($staffData['fire_medical']) ? implode("\n", $staffData['fire_medical']) : null;
+
+        $salesRoster = [];
+        if (isset($_POST['sales_booth_no']) && is_array($_POST['sales_booth_no'])) {
+            foreach ($_POST['sales_booth_no'] as $index => $no) {
+                $no = trim((string)$no);
+                $name = trim((string)($_POST['sales_booth_name'][$index] ?? ''));
+                $manager = trim((string)($_POST['sales_booth_manager'][$index] ?? ''));
+                $phone = trim((string)($_POST['sales_booth_phone'][$index] ?? ''));
+                $content = trim((string)($_POST['sales_booth_content'][$index] ?? ''));
+                if ($no !== '' || $name !== '' || $manager !== '' || $phone !== '' || $content !== '') {
+                    $salesRoster[] = ['booth_no' => $no, 'booth_name' => $name, 'manager' => $manager, 'phone' => $phone, 'content' => $content];
+                }
+            }
+        }
+        $formData['sales_roster_json'] = empty($salesRoster) ? null : json_encode($salesRoster, JSON_UNESCAPED_UNICODE);
+        $formData['draft_sales_layout_map'] = trim((string)($_POST['draft_sales_layout_map'] ?? $formData['draft_sales_layout_map'] ?? ''));
+
         $cartRaw = trim((string)($_POST['cart_items'] ?? '[]'));
         $cartItems = json_decode($cartRaw, true);
         if (!is_array($cartItems)) $cartItems = [];
@@ -279,11 +405,86 @@ if ($dbError === '') {
         elseif ($formData['activity_name'] === '') $borrowError = '請填寫活動名稱。';
         elseif ($formData['borrow_start_date'] === '' || $formData['borrow_start_time'] === '' || $formData['borrow_end_date'] === '' || $formData['borrow_end_time'] === '') $borrowError = '請完整填寫借用起訖日期與時間。';
         elseif (strtotime($borrowEndAt) <= strtotime($borrowStartAt)) $borrowError = '活動結束時間必須晚於活動開始時間。';
-        elseif ($formData['purpose'] === '') $borrowError = '請填寫用途說明。';
+        elseif ($actualPickupAt === null || $actualReturnAt === null) $borrowError = '請完整填寫實際領取器材與進入/離開場地之時間。';
+        elseif (strtotime($actualReturnAt) <= strtotime($actualPickupAt)) $borrowError = '實際歸還/離開時間必須晚於實際領取/進入時間。';
         elseif (empty($cartItems)) $borrowError = '請選擇至少一項器材或一個場地。';
+
+        if ($borrowError === '') {
+            $isEntryExitValid = function (string $time): bool {
+                return preg_match('/^\d{2}:\d{2}:00$/', $time) && substr($time, 3, 2) % 10 === 0 && $time >= '07:00:00' && $time <= '22:50:00';
+            };
+            $isActualTimeValid = function (string $time): bool {
+                return preg_match('/^\d{2}:\d{2}:00$/', $time) && substr($time, 3, 2) % 10 === 0 && $time >= '08:30:00' && $time <= '16:30:00';
+            };
+            if (!$isEntryExitValid($formData['borrow_start_time']) || !$isEntryExitValid($formData['borrow_end_time'])) {
+                $borrowError = '入場時間/離場時間必須在 07:00～22:50 之間，且以 10 分鐘為單位。';
+            } elseif (!$isActualTimeValid($formData['actual_pickup_time']) || !$isActualTimeValid($formData['actual_return_time'])) {
+                $borrowError = '實際領取/歸還時間必須在 08:30～16:30 之間，且以 10 分鐘為單位。';
+            } else {
+                $borrowStartDateTime = DateTime::createFromFormat('Y-m-d H:i:s', $borrowStartAt);
+                $borrowEndDateTime = DateTime::createFromFormat('Y-m-d H:i:s', $borrowEndAt);
+                $actualPickupDateTime = DateTime::createFromFormat('Y-m-d H:i:s', $actualPickupAt);
+                $actualReturnDateTime = DateTime::createFromFormat('Y-m-d H:i:s', $actualReturnAt);
+                $minPickupDateTime = DateTime::createFromFormat('Y-m-d H:i:s', $formData['borrow_start_date'] . ' 08:30:00');
+                $maxReturnDateTime = DateTime::createFromFormat('Y-m-d H:i:s', $formData['borrow_end_date'] . ' 16:30:00');
+                if (!$borrowStartDateTime || !$borrowEndDateTime || !$actualPickupDateTime || !$actualReturnDateTime || !$minPickupDateTime || !$maxReturnDateTime) {
+                    $borrowError = '時間格式有誤，請重新選擇。';
+                } else {
+                    $minPickupDateTime->modify('-1 day');
+                    $maxReturnDateTime->modify('+1 day');
+                    if ($actualPickupDateTime < $minPickupDateTime) {
+                        $borrowError = '實際領取/進入時間最早只能在借用開始日前一天 08:30 之後。';
+                    } elseif ($actualPickupDateTime > $borrowStartDateTime) {
+                        $borrowError = '實際領取/進入時間不可晚於借用開始時間。';
+                    } elseif ($actualReturnDateTime < $borrowStartDateTime) {
+                        $borrowError = '實際歸還/離開時間不可早於借用開始時間。';
+                    } elseif ($actualReturnDateTime > $maxReturnDateTime) {
+                        $borrowError = '實際歸還/離開時間不能超過借用迄日後一天 16:30。';
+                    }
+                }
+            }
+        }
+
+        // 限借規則：同一申請單位 + 同一器材 + 活動時間重疊，排除這張正在修改的申請。
+        if ($borrowError === '') {
+            foreach ($cartItems as $item) {
+                if (($item['type'] ?? 'equipment') === 'space') continue;
+                $cCode = trim((string)($item['code'] ?? ''));
+                $cQty = max(1, (int)($item['quantity'] ?? 1));
+                if ($cCode === '' || !isset($equipmentMap[$cCode])) continue;
+                $limit = $equipmentMap[$cCode]['borrow_limit_quantity'];
+                if ($limit === null) continue;
+                $tqSql = 'SELECT COALESCE(COUNT(eri.equipment_id), 0) AS total_quantity
+                          FROM reservations r
+                          JOIN equipment_reservation_items eri ON r.reservation_id = eri.reservation_id
+                          JOIN equipments e ON eri.equipment_id = e.equipment_id
+                          WHERE r.reservation_id <> ?
+                            AND r.organization_name = ?
+                            AND e.equipment_code = ?
+                            AND r.approval_status IN ("pending", "approved")
+                            AND r.returned_at IS NULL
+                            AND r.borrow_start_at < ?
+                            AND r.borrow_end_at > ?';
+                $tqStmt = mysqli_prepare($link, $tqSql);
+                if ($tqStmt) {
+                    mysqli_stmt_bind_param($tqStmt, 'issss', $reservationId, $formData['organization_name'], $cCode, $borrowEndAt, $borrowStartAt);
+                    mysqli_stmt_execute($tqStmt);
+                    $tqRes = mysqli_stmt_get_result($tqStmt);
+                    $tqRow = $tqRes ? mysqli_fetch_assoc($tqRes) : null;
+                    mysqli_stmt_close($tqStmt);
+                    $usedQty = $tqRow ? (int)$tqRow['total_quantity'] : 0;
+                    if ($usedQty + $cQty > (int)$limit) {
+                        $borrowError = sprintf('該申請單位在相同活動時間內，已借用此器材 %d 個，加上本次申請 %d 個共 %d 個，超過限借數量 %d 個。', $usedQty, $cQty, $usedQty + $cQty, (int)$limit);
+                        break;
+                    }
+                }
+            }
+        }
 
         $uploadedProposalDbPath = null;
         $uploadedProposalAt = null;
+        $uploadedProposalOriginalName = null;
+        $salesLayoutMapPath = $formData['draft_sales_layout_map'] !== '' ? $formData['draft_sales_layout_map'] : null;
         if ($borrowError === '' && isset($_FILES['proposal_file']) && $_FILES['proposal_file']['error'] !== UPLOAD_ERR_NO_FILE) {
             $proposalFile = $_FILES['proposal_file'];
             if ($proposalFile['error'] !== UPLOAD_ERR_OK) {
@@ -303,12 +504,38 @@ if ($dbError === '') {
                     if (move_uploaded_file($proposalFile['tmp_name'], $targetPath)) {
                         $uploadedProposalDbPath = 'uploads/proposals/' . $targetName;
                         $uploadedProposalAt = date('Y-m-d H:i:s');
+                        $uploadedProposalOriginalName = basename((string)$proposalFile['name']);
                         $formData['draft_proposal_file'] = $uploadedProposalDbPath;
+                        $formData['draft_proposal_original_name'] = $uploadedProposalOriginalName;
                         $formData['draft_proposal_uploaded_at'] = $uploadedProposalAt;
                     } else {
                         $borrowError = '企劃書儲存失敗。';
                     }
                 }
+            }
+        }
+
+        if ($borrowError === '' && isset($_FILES['sales_layout_map']) && $_FILES['sales_layout_map']['error'] !== UPLOAD_ERR_NO_FILE) {
+            $sFile = $_FILES['sales_layout_map'];
+            if ($sFile['error'] === UPLOAD_ERR_OK) {
+                $sExt = strtolower(pathinfo((string)$sFile['name'], PATHINFO_EXTENSION));
+                if (!in_array($sExt, ['jpg', 'jpeg', 'png'], true)) {
+                    $borrowError = '攤位圖冊僅支援 JPG 與 PNG 格式。';
+                } else {
+                    $sUploadDir = __DIR__ . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'sales_maps';
+                    if (!is_dir($sUploadDir)) mkdir($sUploadDir, 0755, true);
+                    $sTargetName = time() . '_sales_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', pathinfo((string)$sFile['name'], PATHINFO_FILENAME)) . '.' . $sExt;
+                    $sTargetPath = $sUploadDir . DIRECTORY_SEPARATOR . $sTargetName;
+                    if (move_uploaded_file($sFile['tmp_name'], $sTargetPath)) {
+                        $salesLayoutMapPath = 'uploads/sales_maps/' . $sTargetName;
+                        $formData['draft_sales_layout_map'] = $salesLayoutMapPath;
+                        $formData['sales_layout_map'] = $salesLayoutMapPath;
+                    } else {
+                        $borrowError = '攤位圖冊儲存失敗。';
+                    }
+                }
+            } else {
+                $borrowError = '攤位圖冊上傳失敗。';
             }
         }
 
@@ -339,11 +566,30 @@ if ($dbError === '') {
                     'has_sales' => $formData['has_sales'],
                     'alcohol_coordinator' => $formData['alcohol_coordinator'],
                     'alcohol_president' => $formData['alcohol_president'],
+                    'fire_activity_name' => $formData['fire_activity_name'] !== '' ? $formData['fire_activity_name'] : null,
+                    'fire_date' => $formData['fire_date'] !== '' ? $formData['fire_date'] : null,
+                    'fire_start_time' => $formData['fire_start_time'],
+                    'fire_end_time' => $formData['fire_end_time'],
+                    'fire_location' => $formData['fire_location'] !== '' ? $formData['fire_location'] : null,
+                    'fire_staff_json' => $formData['fire_staff_json'],
+                    'fire_performers' => $formData['fire_performers'],
+                    'fire_oilers' => $formData['fire_oilers'],
+                    'fire_extinguishers' => $formData['fire_extinguishers'],
+                    'fire_security' => $formData['fire_security'],
+                    'fire_emergency' => $formData['fire_emergency'],
+                    'fire_medical' => $formData['fire_medical'],
+                    'sales_location' => $formData['sales_location'] !== '' ? $formData['sales_location'] : null,
+                    'sales_count' => $formData['sales_count'] !== '' ? (int)$formData['sales_count'] : null,
+                    'sales_roster_json' => $formData['sales_roster_json'],
+                    'sales_layout_map' => $salesLayoutMapPath,
+                    'actual_pickup_at' => $actualPickupAt,
+                    'actual_return_at' => $actualReturnAt,
                     'borrow_start_at' => $borrowStartAt,
                     'borrow_end_at' => $borrowEndAt,
                 ];
                 if ($uploadedProposalDbPath !== null) {
                     $candidateUpdates['proposal_file'] = $uploadedProposalDbPath;
+                    $candidateUpdates['proposal_original_name'] = $uploadedProposalOriginalName;
                     $candidateUpdates['proposal_uploaded_at'] = $uploadedProposalAt;
                 }
                 $sets = [];
@@ -440,16 +686,18 @@ if ($dbError === '') {
                     $HOLIDAY_RATE = 200;
                     $feeCount = 0;
                     $feeAmount = 0;
-                    $fetchStmt = mysqli_prepare($link, 'SELECT borrow_start_at, borrow_end_at FROM reservations WHERE reservation_id = ? LIMIT 1');
+                    $fetchStmt = mysqli_prepare($link, 'SELECT actual_pickup_at, actual_return_at, borrow_start_at, borrow_end_at FROM reservations WHERE reservation_id = ? LIMIT 1');
                     if ($fetchStmt) {
                         mysqli_stmt_bind_param($fetchStmt, 'i', $reservationId);
                         mysqli_stmt_execute($fetchStmt);
                         $fres = mysqli_stmt_get_result($fetchStmt);
                         $frow = $fres ? mysqli_fetch_assoc($fres) : null;
                         mysqli_stmt_close($fetchStmt);
-                        if ($frow && !empty($frow['borrow_start_at']) && !empty($frow['borrow_end_at'])) {
-                            $start = date('Y-m-d', strtotime($frow['borrow_start_at']));
-                            $end = date('Y-m-d', strtotime($frow['borrow_end_at']));
+                        if ($frow && ((!empty($frow['actual_pickup_at']) && !empty($frow['actual_return_at'])) || (!empty($frow['borrow_start_at']) && !empty($frow['borrow_end_at'])))) {
+                            $startBase = !empty($frow['actual_pickup_at']) ? $frow['actual_pickup_at'] : $frow['borrow_start_at'];
+                            $endBase = !empty($frow['actual_return_at']) ? $frow['actual_return_at'] : $frow['borrow_end_at'];
+                            $start = date('Y-m-d', strtotime($startBase));
+                            $end = date('Y-m-d', strtotime($endBase));
                             $startDate = DateTime::createFromFormat('Y-m-d', $start);
                             $endDate = DateTime::createFromFormat('Y-m-d', $end);
                             if ($startDate && $endDate && $startDate <= $endDate) {
@@ -558,6 +806,12 @@ if ($dbError === '') {
                     }
                 }
             }
+
+            // 修改成功後直接回到申請列表，避免重新整理造成重複送出。
+            if ($borrowSuccess !== '' && $borrowError === '') {
+                header('Location: return_management.php?updated=1&reservation_id=' . urlencode((string)$reservationId));
+                exit;
+            }
     }
 }
 
@@ -612,7 +866,7 @@ $formData = array_merge([
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>借用申請｜校園資源租借系統</title>
+    <title>修改申請｜校園資源租借系統</title>
     <link rel="stylesheet" href="styles.css?v=<?php echo time(); ?>">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <style>
@@ -909,32 +1163,24 @@ $formData = array_merge([
             box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
         }
 
-    </style>
+    
+        /* 修改申請頁不使用暫存與草稿箱 */
+        .draft-action-row,
+        #draftChoiceModal,
+        #draftModalOverlay,
+        .openDraftBoxBtn,
+        #openDraftBoxBtn,
+        .saveDraftBtn,
+        #saveDraftBtn {
+            display: none !important;
+        }
+</style>
     <!-- 引入 Flatpickr -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh-tw.js"></script>
 </head>
 <body>
-    <!-- 草稿保存选择模态窗口 -->
-    <div id="draftChoiceModal" class="draft-choice-modal">
-        <div class="draft-choice-content">
-            <div class="draft-choice-title">💾 草稿保存方式</div>
-            <div class="draft-choice-draft-id">草稿編號：<span id="draftIdDisplay">-</span></div>
-            <div class="draft-choice-description">
-                您已有一個正在進行中的草稿，請選擇保存方式：
-            </div>
-            <div class="draft-choice-buttons">
-                <button type="button" class="draft-btn-choice draft-btn-update" id="draftBtnUpdate">
-                    ✓ 覆蓋更新
-                </button>
-                <button type="button" class="draft-btn-choice draft-btn-new" id="draftBtnNew">
-                    ✚ 新建草稿
-                </button>
-            </div>
-        </div>
-    </div>
-
     <?php if ($isUserBlocked): ?>
     <div style="background-color: #fef2f2; border: 2px solid #ef4444; padding: 20px; rounded-xl; border-radius: 12px; margin-bottom: 25px; text-align: center;">
         <h3 style="color: #b91c1c; font-size: 18px; font-weight: bold; margin-bottom: 8px;">
@@ -973,8 +1219,8 @@ $formData = array_merge([
 
         <main class="main-content">
             <section class="borrow-page">
-                <h2>申請</h2>
-                <p class="borrow-subtitle">角色：<?php echo htmlspecialchars($roleName, ENT_QUOTES, 'UTF-8'); ?>。填寫申請後將送出審核。</p>
+                <h2>修改申請</h2>
+                <p class="borrow-subtitle">角色：<?php echo htmlspecialchars($roleName, ENT_QUOTES, 'UTF-8'); ?>。修改原本申請資料後重新送出審核。</p>
 
                 <?php if ($dbError !== '') { ?>
                     <div class="login-alert"><?php echo htmlspecialchars($dbError, ENT_QUOTES, 'UTF-8'); ?></div>
@@ -1162,7 +1408,7 @@ $formData = array_merge([
                                     </div>
                                     <div class="form-group" style="flex: 1; min-width: 150px;">
                                         <label for="staff_count">工作人員人數 <span style="color:red">*</span></label>
-                                        <input type="number" id="staff_count" name="staff_count" class="form-control" placeholder="請輸入人數" min="1" required>
+                                        <input type="number" id="staff_count" name="staff_count" class="form-control" placeholder="請輸入人數" min="1" value="<?php echo htmlspecialchars((string)($formData['staff_count'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" required>
                                     </div>
                                 </div>
                                 <div class="form-group">
@@ -1329,19 +1575,6 @@ $formData = array_merge([
                                 <div class="step-actions">
                                     <button type="button" class="btn btn-primary btn-next" onclick="goToStep(2)">下一步 ➔ 場地需求 </button>
                                 </div>
-
-
-                                <div class="draft-action-row">
-                                    <button type="button" id="saveDraftBtn" class="draft-btn save-btn">
-                                        暫存申請
-                                    </button>
-                                    <button type="button" id="openDraftBoxBtn" class="draft-btn draft-box-btn">
-                                        草稿箱
-                                    </button>
-                                </div>
-                                <div id="submitDebugMsg" class="draft-message"></div>
-
-
                             </div>
                             
 <!-- ========== 步驟 2 內容區 ========== -->
@@ -2445,12 +2678,6 @@ function validateFireForm() {
                                     toggleFlagDetails();
                                     syncFlagForm();
 
-                                    const draftBtns = document.querySelectorAll('.openDraftBoxBtn');
-                                    draftBtns.forEach(function (btn) {
-                                        btn.addEventListener('click', function () {
-                                            window.location.href = 'drafts.php';
-                                        });
-                                    });
                                 });
                                 </script>
 
@@ -2458,16 +2685,6 @@ function validateFireForm() {
                                         <button type="button" class="btn btn-secondary" onclick="goToStep(1)"> ⬅ 回上一步</button>
                                         <button type="button" class="btn btn-primary btn-next" onclick="if(validateAlcoholForm() && validateFireForm() && validateSalesForm()) { goToStep(3); }">下一步 ➔ 挑選器材與場地</button>
                                     </div>
-
-                                <div class="draft-action-row">
-                                    <button type="button" class="draft-btn save-btn saveDraftBtn">
-                                        暫存申請
-                                    </button>
-                                    <button type="button" class="draft-btn draft-box-btn openDraftBoxBtn">
-                                        草稿箱
-                                    </button>
-                                </div>
-                                <div id="submitDebugMsg" class="draft-message"></div>
                             </div>                            
                             <!-- ========== 步驟 3 內容區 ========== -->
                             <div class="step-content" id="step-content-3">
@@ -2602,53 +2819,10 @@ function validateFireForm() {
     <button type="button" class="btn btn-secondary" onclick="goToStep(2)"> ⬅ 回上一步</button>
     <button type="submit" id="borrowSubmitBtn" class="btn btn-primary btn-next">✅ 更新申請</button>
 </div>
-
-                            <div class="draft-action-row">
-                                <button type="button" class="draft-btn save-btn saveDraftBtn">
-                                    暫存申請
-                                </button>
-                                <button type="button" class="draft-btn draft-box-btn openDraftBoxBtn">
-                                    草稿箱
-                                </button>
-                            </div>
-                            <div id="submitDebugMsg" class="draft-message"></div>
                         </div> <!-- end of step-content-3 -->
-
-                        <!-- 草稿功能保留可放至其他位置, 或暫時隱藏, 為了簡化, 先放著 -->
-                        <!-- <div class="form-buttons">
-                                <div class="draft-buttons">
-                                    <button type="button" class="btn-draft btn-draft-save" id="saveDraftBtn">暫存申請</button>
-                                    <button type="button" class="btn-draft btn-draft-manage" id="manageDraftBtn">草稿箱</button>
-                                </div>
-                                <button type="button" class="btn-secondary" onclick="location.href='index.php'">取消</button>
-                            </div> -->
-                        <div id="submitDebugMsg" style="margin-top:8px; font-size:13px; color:#64748b;"></div>
+<div id="submitDebugMsg" style="margin-top:8px; font-size:13px; color:#64748b;"></div>
                         </form>
                     </section>
-
-                    <!-- 草稿管理中心模態框 -->
-                    <div id="draftModalOverlay" class="draft-modal-overlay">
-                        <div class="draft-modal">
-                            <div class="draft-modal-header">
-                                <h2>📋 草稿管理中心</h2>
-                                <button type="button" class="draft-modal-close" id="draftModalCloseBtn">&times;</button>
-                            </div>
-                            <div class="draft-modal-content">
-                                <div id="draftMessage" class="draft-message"></div>
-                                <div id="draftTableContainer">
-                                    <p class="draft-empty-message">
-                                        <div class="draft-empty-icon">📭</div>
-                                        暫無已儲存的草稿
-                                    </p>
-                                </div>
-                            </div>
-                            <div class="draft-modal-footer">
-                                <div class="draft-footer-buttons">
-                                    <button type="button" class="draft-btn-new" id="draftBtnNew">✨ 新增申請</button>
-                                    <button type="button" class="draft-btn-close" id="draftBtnClose">關閉</button>
-                                </div>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </section>
@@ -2831,8 +3005,6 @@ function startApplication() {
     // 記得我們上一回合說要補上的變數宣告（在 initializeBorrowForm 裡面）也要加喔！
     initializeBorrowForm();
     
-    // 啟用草稿管理模組
-    initializeDraftManagement();
 }
 // 新增這個函數，確保頁面載入時檢查 radio/checkbox 狀態
 function initializeFormVisibility() {
@@ -5030,7 +5202,7 @@ document.addEventListener('DOMContentLoaded', function () {
 (function () {
     function isProposalDraftMode() {
         const params = new URLSearchParams(window.location.search);
-        const urlDraftId = params.get('draft_id') || params.get('id') || '';
+        const urlDraftId = params.get('draft_id') || params.get('id') || params.get('reservation_id') || '';
         const hiddenDraftId = document.getElementById('current_draft_id')?.value || '';
 
         return (
@@ -5099,15 +5271,15 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function hasProposalForSubmit() {
-        if (isDraftMode) {
-            restoreProposalState();
-        }
         const currentDraftId =
             document.getElementById('current_draft_id')?.value || '';
 
         const isDraftMode =
             currentDraftId !== '' &&
             currentDraftId !== '0';
+        if (isDraftMode) {
+            restoreProposalState();
+        }
         const proposalInput = document.getElementById('proposal_file');
         const draftProposalInput = document.getElementById('draft_proposal_file');
 
@@ -5210,12 +5382,10 @@ document.addEventListener('DOMContentLoaded', function () {
         bindProposalWeld();
     }
 
-    if (isDraftMode) {
-        if (isProposalDraftMode()) {
+    if (isProposalDraftMode()) {
         setInterval(restoreProposalState, 500);
     } else {
         clearProposalStateForNewApplication();
-    }
     }
 })();
 </script>
@@ -5228,7 +5398,7 @@ document.addEventListener('DOMContentLoaded', function () {
  */
 document.addEventListener('DOMContentLoaded', function () {
     const params = new URLSearchParams(window.location.search);
-    const urlDraftId = params.get('draft_id') || params.get('id') || '';
+    const urlDraftId = params.get('draft_id') || params.get('id') || params.get('reservation_id') || '';
     const currentDraftId = document.getElementById('current_draft_id')?.value || '';
 
     const isDraftMode =
@@ -5397,5 +5567,81 @@ window.initialApplicationCartItems = <?php echo $initialCartItemsJson ?: '[]'; ?
     }
 })();
 </script>
+
+<script>
+// 修改申請頁：把原申請的特殊表單明細完整帶回畫面。
+window.__EDIT_INITIAL_SALES_ROSTER__ = <?php echo json_encode(json_decode((string)($formData['sales_roster_json'] ?? '[]'), true) ?: [], JSON_UNESCAPED_UNICODE); ?>;
+window.__EDIT_INITIAL_FIRE_STAFF__ = <?php echo json_encode(json_decode((string)($formData['fire_staff_json'] ?? '[]'), true) ?: [], JSON_UNESCAPED_UNICODE); ?>;
+window.__EDIT_INITIAL_SALES_MAP__ = <?php echo json_encode((string)($formData['draft_sales_layout_map'] ?? $formData['sales_layout_map'] ?? ''), JSON_UNESCAPED_UNICODE); ?>;
+
+function fillEditApplicationArrayInputs(inputName, values, addRowCallback) {
+    values = Array.isArray(values) ? values : [];
+    if (values.length === 0) return;
+    let inputs = document.querySelectorAll('[name="' + inputName + '"]');
+    while (inputs.length < values.length && typeof addRowCallback === 'function') {
+        addRowCallback();
+        inputs = document.querySelectorAll('[name="' + inputName + '"]');
+    }
+    values.forEach(function (value, index) {
+        if (inputs[index]) inputs[index].value = value;
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    const salesMap = window.__EDIT_INITIAL_SALES_MAP__ || '';
+    if (salesMap) {
+        const mapInput = document.getElementById('draft_sales_layout_map');
+        const mapDisplay = document.getElementById('sales_layout_map_display');
+        if (mapInput) mapInput.value = salesMap;
+        if (mapDisplay) mapDisplay.innerText = '已載入圖冊：' + salesMap.split('/').pop();
+    }
+
+    const roster = Array.isArray(window.__EDIT_INITIAL_SALES_ROSTER__) ? window.__EDIT_INITIAL_SALES_ROSTER__ : [];
+    if (roster.length > 0 && typeof addSalesRow === 'function') {
+        const tbody = document.querySelector('#table_sales_roster tbody');
+        if (tbody) tbody.innerHTML = '';
+        roster.forEach(function (row) {
+            addSalesRow();
+            const rows = document.querySelectorAll('#table_sales_roster tbody tr');
+            const tr = rows[rows.length - 1];
+            if (!tr) return;
+            const set = function (name, value) {
+                const el = tr.querySelector('[name="' + name + '"]');
+                if (el) el.value = value || '';
+            };
+            set('sales_booth_no[]', row.booth_no);
+            set('sales_booth_name[]', row.booth_name);
+            set('sales_booth_manager[]', row.manager);
+            set('sales_booth_phone[]', row.phone);
+            set('sales_booth_content[]', row.content);
+        });
+        const countInput = document.getElementById('sales_count');
+        if (countInput && (!countInput.value || parseInt(countInput.value, 10) !== roster.length)) countInput.value = roster.length;
+    }
+
+    const fire = window.__EDIT_INITIAL_FIRE_STAFF__ || {};
+    const map = {
+        'fire_staff_performer[]': ['table_staff_performer', fire.fire_performers],
+        'fire_staff_oiler[]': ['table_staff_oiler', fire.fire_oilers],
+        'fire_staff_extinguisher[]': ['table_staff_extinguisher', fire.fire_extinguishers],
+        'fire_staff_security[]': ['table_staff_security', fire.fire_security],
+        'fire_staff_emergency[]': ['table_staff_emergency', fire.fire_emergency],
+        'fire_staff_medical[]': ['table_staff_medical', fire.fire_medical]
+    };
+    Object.keys(map).forEach(function (inputName) {
+        const tableId = map[inputName][0];
+        const values = map[inputName][1] || [];
+        fillEditApplicationArrayInputs(inputName, values, function () {
+            if (typeof addFireStaffRow === 'function') addFireStaffRow(tableId, inputName);
+        });
+    });
+
+    if (typeof toggleAlcoholDetails === 'function') toggleAlcoholDetails();
+    if (typeof toggleFireDetails === 'function') toggleFireDetails();
+    if (typeof toggleSalesDetails === 'function') toggleSalesDetails();
+    if (typeof toggleFlagDetails === 'function') toggleFlagDetails();
+});
+</script>
+
 </body>
 </html>

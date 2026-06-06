@@ -1006,42 +1006,81 @@ if ($dbError === '' && count($rows) > 0) {
                                 if (in_array('3', $approvedStages, true)) { $approvedStages[] = 'd'; }
                                 $approvedStages = array_values(array_unique($approvedStages));
                             ?>
-                            <div class="stepper-simple" data-status="<?php echo $progressStatus; ?>" data-approval="<?php echo htmlspecialchars($approvalStatus, ENT_QUOTES, 'UTF-8'); ?>" data-stage="<?php echo htmlspecialchars($approvalStage, ENT_QUOTES, 'UTF-8'); ?>">
+                            <?php
+                                // 準備 data attributes：已核准與被拒絕的階段清單
+                                $approvedAttr = implode(',', $approvedStages);
+                                $rejectedAttr = implode(',', $rejectedStages);
+
+                                // helper: 取得該階段的顯示時間與狀態文字
+                                $getTs = function($k) use ($stageTimes, $row) {
+                                    return htmlspecialchars((string)($stageTimes[$k] ?? '-'), ENT_QUOTES, 'UTF-8');
+                                };
+                                $getLabel = function($role) use ($approvedStages, $needRevisionStages, $rejectedStages, $approvalStage, $approvalStatus) {
+                                    // 以階段順序判斷顯示：先處理拒絕/補件，再依照當前 approval_stage 決定完成/審核中/待審核
+                                    if (in_array($role, $rejectedStages, true)) return '審核未通過';
+                                    if (in_array($role, $needRevisionStages, true)) return '需要補件';
+
+                                    $stageOrder = [ 'a' => 1, 'b' => 2, 'c' => 3, '3' => 4, 'd' => 4 ];
+                                    $currentIndex = $stageOrder[$approvalStage] ?? 1;
+                                    $roleIndex = $stageOrder[$role] ?? 1;
+
+                                    // 如果整體狀態為 approved，視為目前及之前都為完成
+                                    if ($approvalStatus === 'approved') {
+                                        return ($roleIndex <= $currentIndex) ? '審核完成' : '待審核';
+                                    }
+
+                                    // 尚未核准的情況：小於當前階段視為已完成
+                                    if ($roleIndex < $currentIndex) return '審核完成';
+                                    if ($roleIndex === $currentIndex) {
+                                        if ($approvalStatus === 'pending' || $approvalStatus === 'need_revision') return '審核中';
+                                        return '待審核';
+                                    }
+
+                                    return '待審核';
+                                };
+                            ?>
+                            <div class="stepper-simple" data-status="<?php echo $progressStatus; ?>" data-approval="<?php echo htmlspecialchars($approvalStatus, ENT_QUOTES, 'UTF-8'); ?>" data-stage="<?php echo htmlspecialchars($approvalStage, ENT_QUOTES, 'UTF-8'); ?>" data-approved="<?php echo htmlspecialchars($approvedAttr, ENT_QUOTES, 'UTF-8'); ?>" data-rejected="<?php echo htmlspecialchars($rejectedAttr, ENT_QUOTES, 'UTF-8'); ?>">
                                 <div class="stepper-track flex items-center justify-between border border-slate-200 py-4 bg-white rounded-lg p-4 shadow-inner">
                                     <div class="stepper-step text-center text-xs" data-step="1">
                                         <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
                                         <span class="stepper-text block font-medium">申請送出</span>
-                                        <span class="stepper-timestamp text-[10px] text-slate-400"><?php echo htmlspecialchars((string)$row['submitted_at'], ENT_QUOTES, 'UTF-8'); ?></span>
+                                        <span class="stepper-subtext block text-[10px] text-slate-400"><?php echo htmlspecialchars((string)$row['submitted_at'], ENT_QUOTES, 'UTF-8'); ?></span>
                                     </div>
                                     <div class="stepper-step text-center text-xs" data-step="2" data-role="a">
                                         <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
                                         <span class="stepper-text block font-medium">輔導人員審核</span>
-                                        <span class="stepper-timestamp text-[10px] text-slate-400"><?php echo htmlspecialchars((string)($stageTimes['a'] ?? $row['submitted_at']), ENT_QUOTES, 'UTF-8'); ?></span>
+                                        <span class="stepper-subtext block text-[10px] text-slate-400"><?php echo $getTs('a'); ?></span>
+                                        <span class="stepper-timestamp block text-[10px] text-slate-500"><?php echo $getLabel('a'); ?></span>
                                     </div>
                                     <div class="stepper-step text-center text-xs" data-step="3" data-role="b">
                                         <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
                                         <span class="stepper-text block font-medium">軍訓室審核</span>
-                                        <span class="stepper-timestamp text-[10px] text-slate-400">-</span>
+                                        <span class="stepper-subtext block text-[10px] text-slate-400"><?php echo $getTs('b'); ?></span>
+                                        <span class="stepper-timestamp block text-[10px] text-slate-500"><?php echo $getLabel('b'); ?></span>
                                     </div>
                                     <div class="stepper-step text-center text-xs" data-step="4" data-role="c">
                                         <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
                                         <span class="stepper-text block font-medium">學務長審核</span>
-                                        <span class="stepper-timestamp text-[10px] text-slate-400">-</span>
+                                        <span class="stepper-subtext block text-[10px] text-slate-400"><?php echo $getTs('c'); ?></span>
+                                        <span class="stepper-timestamp block text-[10px] text-slate-500"><?php echo $getLabel('c'); ?></span>
                                     </div>
                                     <div class="stepper-step text-center text-xs" data-step="5" data-role="3">
                                         <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
                                         <span class="stepper-text block font-medium">課指組審核</span>
-                                        <span class="stepper-timestamp text-[10px] text-slate-400">-</span>
+                                        <span class="stepper-subtext block text-[10px] text-slate-400"><?php echo $getTs('3'); ?></span>
+                                        <span class="stepper-timestamp block text-[10px] text-slate-500"><?php echo $getLabel('3'); ?></span>
                                     </div>
                                     <div class="stepper-step text-center text-xs" data-step="6" data-role="3">
                                         <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
                                         <span class="stepper-text block font-medium">借出/報到</span>
-                                        <span class="stepper-timestamp text-[10px] text-slate-400">-</span>
+                                        <span class="stepper-subtext block text-[10px] text-slate-400"><?php echo htmlspecialchars((string)($row['checked_in_at'] ?? '-'), ENT_QUOTES, 'UTF-8'); ?></span>
+                                        <span class="stepper-timestamp block text-[10px] text-slate-500"><?php echo ($approvalStatus === 'approved' && empty($row['checked_in_at'])) ? '已核准，尚未報到' : '-'; ?></span>
                                     </div>
                                     <div class="stepper-step text-center text-xs" data-step="7" data-role="3">
                                         <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
                                         <span class="stepper-text block font-medium">歸還/離場</span>
-                                        <span class="stepper-timestamp text-[10px] text-slate-400">-</span>
+                                        <span class="stepper-subtext block text-[10px] text-slate-400"><?php echo htmlspecialchars((string)($row['return_confirmed_at'] ?? '-'), ENT_QUOTES, 'UTF-8'); ?></span>
+                                        <span class="stepper-timestamp block text-[10px] text-slate-500"><?php echo ($row['return_confirmed']) ? '已離場' : '-'; ?></span>
                                     </div>
                                 </div>
                             </div>
@@ -1289,6 +1328,16 @@ if ($dbError === '' && count($rows) > 0) {
                     dots[idx].className = 'stepper-dot w-3 h-3 rounded-full bg-rose-500 mx-auto mb-1';
                 }
             });
+
+            // 如果整體為 approved，將角色步驟（輔導/軍訓/學務長/課指組）設為綠色，除非該步驟已被標為拒絕
+            if (approval === 'approved' && rejectedStages.length === 0) {
+                // role steps 分別位於 dots[1]..dots[4]（1:a,2:b,3:c,4:d/3）
+                for (let i = 1; i <= 4; i++) {
+                    if (dots[i]) {
+                        dots[i].className = 'stepper-dot w-3 h-3 rounded-full bg-emerald-500 mx-auto mb-1';
+                    }
+                }
+            }
 
             const stageIndexMap = { 'a': 1, 'b': 2, 'c': 3, 'd': 4 };
             const currentStageIndex = stageIndexMap[stage] !== undefined ? stageIndexMap[stage] : 1;

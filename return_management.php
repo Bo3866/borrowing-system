@@ -27,6 +27,34 @@ $link = getMysqliConnection($dbError);
 $violationPoints = 0;
 $isCertCancelled = false;
 
+// 假設你已經有登入者的 $userId
+$userId = $_SESSION['user_id'] ?? 0; 
+$violationLogs = [];
+
+if ($userId > 0 && isset($link)) {
+    $violationSql = "SELECT vl.*, u.full_name 
+                     FROM violation_logs vl
+                     JOIN users u ON vl.user_id = u.user_id
+                     WHERE vl.user_id = ?
+                     ORDER BY vl.created_at DESC";
+                     
+    if ($violationStmt = mysqli_prepare($link, $violationSql)) {
+        // 將變數綁定到 SQL 的問號 (?) 中，'i' 代表整數 (Integer)
+        mysqli_stmt_bind_param($violationStmt, 'i', $userId);
+        
+        // 執行查詢
+        if (mysqli_stmt_execute($violationStmt)) {
+            $violationResult = mysqli_stmt_get_result($violationStmt);
+            if ($violationResult) {
+                while ($vRow = mysqli_fetch_assoc($violationResult)) {
+                    $violationLogs[] = $vRow;
+                }
+            }
+        }
+        mysqli_stmt_close($violationStmt);
+    }
+}
+
 if (isset($link)) {
     $safeUserId = mysqli_real_escape_string($link, (string)$_SESSION['user_id']);
     
@@ -39,13 +67,10 @@ if (isset($link)) {
     }
     
     // 2. 檢查該學生的器材證狀態
-        $certSql = "SELECT valid_until 
-                    FROM equipment_certificates 
-                    WHERE holder_id = '{$safeUserId}' 
-                    ORDER BY valid_until DESC 
-                    LIMIT 1";
+        $certSql = "SELECT valid_until FROM equipment_certificates WHERE holder_id = '{$safeUserId}'";
         $certResult = mysqli_query($link, $certSql);
         
+        $hasNoCert = false;        // 新增：是否完全沒有器材證
         $isCertCancelled = false;  // 這裡代表器材證已過期
         
         if ($certResult && mysqli_num_rows($certResult) > 0) {
@@ -62,7 +87,7 @@ if (isset($link)) {
                 $isCertCancelled = true; // 欄位留白，視為無效
             }
         } else {
-            // 資料庫查不到這名學生的資料，代表他「從未申請過器材證」
+            // 💡 資料庫查不到這名學生的資料，代表他「從未申請過器材證」
             $hasNoCert = true;
         }
     }
@@ -350,6 +375,7 @@ if ($dbError === '') {
             reservationSelectExpr($reservationColumns, 'vehicle_entry'),
             reservationSelectExpr($reservationColumns, 'setup_flags'),
             reservationSelectExpr($reservationColumns, 'flag_count'),
+            reservationSelectExpr($reservationColumns, 'purpose'),
             reservationSelectExpr($reservationColumns, 'proposal_file'),
             reservationSelectExpr($reservationColumns, 'proposal_original_name'),
             reservationSelectExpr($reservationColumns, 'proposal_uploaded_at'),
@@ -450,6 +476,7 @@ if ($dbError === '' && count($rows) > 0) {
             'vehicle_entry' => (string)($r['vehicle_entry'] ?? ''),
             'setup_flags' => (string)($r['setup_flags'] ?? ''),
             'flag_count' => (string)($r['flag_count'] ?? ''),
+            'purpose' => (string)($r['purpose'] ?? ''),
             'proposal_file' => (string)($r['proposal_file'] ?? ''),
             'proposal_original_name' => (string)($r['proposal_original_name'] ?? ''),
             'proposal_uploaded_at' => (string)($r['proposal_uploaded_at'] ?? ''),
@@ -743,7 +770,7 @@ if ($dbError === '' && count($rows) > 0) {
     <?php include __DIR__ . '/nav.php'; ?>
 
     <?php if ($isLoggedIn): ?>
-    <div style="max-w: 80rem; margin: 1rem auto 0 auto; padding: 0 1rem; font-family: system-ui, sans-serif;">
+    <div style="max-width: 80rem; margin: 1rem auto 0 auto; padding: 0 1rem; font-family: system-ui, sans-serif;">
         
         <?php if ($isCertCancelled): ?>
             <div style="background-color: #fef2f2; border: 2px solid #fca5a5; border-radius: 0.75rem; padding: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); display: flex; align-items: start; gap: 0.75rem;">
@@ -786,10 +813,22 @@ if ($dbError === '' && count($rows) > 0) {
 
 <div class="container main-content">
         <main>
-            <section class="card">
-                <h2 class="text-xl font-bold mb-4">我的申請紀錄</h2>
-
-                <form method="GET" action="" class="flex items-center gap-2">
+            <!-- ==================== 頁籤切換按鈕 ==================== -->
+            <div class="flex border-b border-slate-200 mb-6 gap-2">
+                <button type="button" id="tab-btn-apply" onclick="switchTab('apply-tab')" class="px-5 py-2.5 text-sm font-semibold border-b-2 border-indigo-600 text-indigo-600 transition focus:outline-none">
+                    我的申請紀錄
+                </button>
+                <button type="button" id="tab-btn-points" onclick="switchTab('points-tab')" class="px-5 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 transition focus:outline-none">
+                    我的記點紀錄 
+                    <?php if (isset($violationPoints) && $violationPoints > 0): ?>
+                        <span class="ml-1 px-1.5 py-0.5 text-xs bg-rose-100 text-rose-600 rounded-full font-bold"><?php echo $violationPoints; ?></span>
+                    <?php endif; ?>
+                </button>
+            </div>
+            
+            <div id="apply-tab-content" class="card bg-white p-6 rounded-xl shadow-sm">
+                
+                <form method="GET" action="" class="flex items-center gap-2 mb-4">
                     <div class="relative">
                         <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
                         <input type="text" name="search" 
@@ -815,8 +854,9 @@ if ($dbError === '' && count($rows) > 0) {
                 <?php if ($dbError !== '') { ?>
                     <div class="login-alert bg-rose-50 border border-rose-200 text-rose-700 p-4 rounded-lg mb-4"><?php echo htmlspecialchars($dbError, ENT_QUOTES, 'UTF-8'); ?></div>
                 <?php } else { ?>
+                    
                     <div class="borrow-table-wrapper overflow-x-auto">
-                        <table class="management-table return-management-table w-full text-left border-collapse">
+                        <table class="management-table return-management-table w-full text-left border-collapse min-w-full divide-y divide-slate-200">
                             <thead>
                                 <tr class="bg-slate-50 text-slate-600 text-sm">
                                     <th style="width: 50px; text-align: center;">進度</th>
@@ -833,37 +873,29 @@ if ($dbError === '' && count($rows) > 0) {
                                 <?php if (count($rows) === 0) { ?>
                                     <tr><td colspan="8" class="text-center py-8 text-slate-400">目前沒有可顯示的申請資料。</td></tr>
                                 <?php } else { ?>
-                                    <?php foreach ($rows as $row) { ?>
-                                        <?php
-                                            $resourceParts = [];
-                                            if (!empty($row['equipment_names'])) {
-                                                $resourceParts[] = '器材: ' . $row['equipment_names'];
-                                            }
-                                            if (!empty($row['space_names'])) {
-                                                $resourceParts[] = '空間: ' . $row['space_names'];
-                                            }
-                                            $resourceText = count($resourceParts) > 0 ? implode(' | ', $resourceParts) : '-';
+                                    <?php foreach ($rows as $row) { 
+                                        $resourceParts = [];
+                                        if (!empty($row['equipment_names'])) { $resourceParts[] = '器材: ' . $row['equipment_names']; }
+                                        if (!empty($row['space_names'])) { $resourceParts[] = '空間: ' . $row['space_names']; }
+                                        $resourceText = count($resourceParts) > 0 ? implode(' | ', $resourceParts) : '-';
 
-                                            $isReturned = (int)$row['return_confirmed'] === 1;
-                                            $approvalStatus = (string)$row['approval_status'];
-                                            $isCheckedIn = isset($row['checked_in']) && (int)$row['checked_in'] === 1;
-                                            $approvalStage = (string)($row['approval_stage'] ?? 'a');
+                                        $isReturned = (int)$row['return_confirmed'] === 1;
+                                        $approvalStatus = (string)$row['approval_status'];
+                                        $isCheckedIn = isset($row['checked_in']) && (int)$row['checked_in'] === 1;
+                                        $approvalStage = (string)($row['approval_stage'] ?? 'a');
 
-                                            $stageMap = ['a' => 2, 'b' => 3, 'c' => 4, 'd' => 5];
-                                            if ($approvalStatus === 'rejected' || $approvalStatus === 'revision_overdue') {
-                                                $progressStatus = 0;
-                                            } elseif ($approvalStatus === 'need_revision') {
-                                                $progressStatus = $stageMap[$approvalStage] ?? 2;
-                                            } elseif ($approvalStatus === 'pending') {
-                                                $progressStatus = $stageMap[$approvalStage] ?? 2;
-                                            } elseif ($approvalStatus === 'approved') {
-                                                $progressStatus = $isReturned ? 7 : 5;
-                                            } else {
-                                                $progressStatus = 1;
-                                            }
-                                        ?>
-                                        <!-- 整列點擊可展開 / 收合進度條；查看詳情按鈕會 stopPropagation，避免誤觸展開 -->
-                                        <tr class="accordion-trigger hover:bg-slate-50/50 transition"
+                                        $stageMap = ['a' => 2, 'b' => 3, 'c' => 4, 'd' => 5];
+                                        if ($approvalStatus === 'rejected' || $approvalStatus === 'revision_overdue') {
+                                            $progressStatus = 0;
+                                        } elseif ($approvalStatus === 'need_revision' || $approvalStatus === 'pending') {
+                                            $progressStatus = $stageMap[$approvalStage] ?? 2;
+                                        } elseif ($approvalStatus === 'approved') {
+                                            $progressStatus = $isReturned ? 7 : 5;
+                                        } else {
+                                            $progressStatus = 1;
+                                        }
+                                    ?>
+                                        <tr class="accordion-trigger hover:bg-slate-50/50 transition border-b border-slate-100"
                                             onclick="toggleAccordion(this, <?php echo (int)$row['reservation_id']; ?>)"
                                             id="row-<?php echo (int)$row['reservation_id']; ?>"
                                             data-id="<?php echo (int)$row['reservation_id']; ?>"
@@ -881,14 +913,11 @@ if ($dbError === '' && count($rows) > 0) {
                                             data-organization-name="<?php echo htmlspecialchars((string)($row['organization_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
                                             data-activity-name="<?php echo htmlspecialchars((string)($row['activity_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
                                             data-stage="<?php echo htmlspecialchars((string)($row['approval_stage'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
-                                            data-application="<?php echo htmlspecialchars(json_encode($row['_detail_payload'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), ENT_QUOTES, 'UTF-8'); ?>">
+                                            data-application="<?php echo htmlspecialchars(json_encode($row['_detail_payload'] ?? []), ENT_QUOTES, 'UTF-8'); ?>">
                                             
-                                            <td class="left-trigger-zone text-center text-indigo-600 font-bold transition" 
-                                                style="cursor: pointer; text-align: center;"
-                                                onclick="event.stopPropagation(); toggleAccordion(this.closest('tr'), <?php echo (int)$row['reservation_id']; ?>)">
+                                            <td class="left-trigger-zone text-center text-indigo-600 font-bold" style="cursor: pointer;" onclick="event.stopPropagation(); toggleAccordion(this.closest('tr'), <?php echo (int)$row['reservation_id']; ?>)">
                                                 <span class="accordion-icon">▶</span>
                                             </td>
-
                                             <td>
                                                 <span class="font-semibold text-slate-800"><?php echo htmlspecialchars($row['full_name'] . ' (' . $row['applicant_user_id'] . ')', ENT_QUOTES, 'UTF-8'); ?></span><br>
                                                 <small class="text-slate-500"><?php echo htmlspecialchars((string)$row['email'], ENT_QUOTES, 'UTF-8'); ?></small>
@@ -896,7 +925,6 @@ if ($dbError === '' && count($rows) > 0) {
                                             <td class="font-medium text-slate-800">
                                                 <?php echo htmlspecialchars((string)($row['activity_name'] ?? '未填寫活動名稱'), ENT_QUOTES, 'UTF-8'); ?>
                                             </td>
-
                                             <td class="text-sm">
                                                 <?php echo htmlspecialchars((string)$row['borrow_start_at'], ENT_QUOTES, 'UTF-8'); ?><br>
                                                 ～ <?php echo htmlspecialchars((string)$row['borrow_end_at'], ENT_QUOTES, 'UTF-8'); ?>
@@ -907,40 +935,28 @@ if ($dbError === '' && count($rows) > 0) {
                                                     if ($isReturned) {
                                                         echo '<span class="px-2 py-1 rounded bg-emerald-100 text-emerald-800 text-xs font-semibold">已離場</span>';
                                                     } else {
-                                                        if ($approvalStatus === 'approved') {
-                                                            echo '<span class="px-2 py-1 rounded bg-indigo-100 text-indigo-800 text-xs font-semibold">審核完成</span>';
-                                                        } else {
-                                                                $statusLabel = $approvalStatus;
-                                                                $badgeStyle = "bg-amber-100 text-amber-800";
-                                                                if ($approvalStatus === 'rejected') {
-                                                                    $statusLabel = '審核未通過';
-                                                                    $badgeStyle = "bg-rose-100 text-rose-800";
-                                                                } elseif ($approvalStatus === 'need_revision') {
-                                                                    $statusLabel = '需要補件';
-                                                                    $badgeStyle = "bg-yellow-100 text-yellow-800 border border-yellow-200";
-                                                                } elseif ($approvalStatus === 'pending') {
-                                                                    $statusLabel = '待審核';
-                                                                } elseif ($approvalStatus === 'revision_overdue') {
-                                                                    $statusLabel = '補件逾期';
-                                                                    $badgeStyle = "bg-rose-100 text-rose-800";
-                                                                } elseif ($approvalStatus === 'approved') {
-                                                                    $statusLabel = '審核完成';
-                                                                    $badgeStyle = "bg-indigo-100 text-indigo-800";
-                                                                }
-                                                                echo '<span class="px-2 py-1 rounded text-xs font-semibold ' . $badgeStyle . '">' . htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8') . '</span>';
+                                                        $statusLabel = '待審核';
+                                                        $badgeStyle = "bg-amber-100 text-amber-800";
+                                                        if ($approvalStatus === 'rejected' || $approvalStatus === 'revision_overdue') {
+                                                            $statusLabel = ($approvalStatus === 'rejected') ? '審核未通過' : '補件逾期';
+                                                            $badgeStyle = "bg-rose-100 text-rose-800";
+                                                        } elseif ($approvalStatus === 'need_revision') {
+                                                            $statusLabel = '需要補件';
+                                                            $badgeStyle = "bg-yellow-100 text-yellow-800 border border-yellow-200";
+                                                        } elseif ($approvalStatus === 'approved') {
+                                                            $statusLabel = '審核完成';
+                                                            $badgeStyle = "bg-indigo-100 text-indigo-800";
                                                         }
+                                                        echo '<span class="px-2 py-1 rounded text-xs font-semibold ' . $badgeStyle . '">' . htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8') . '</span>';
                                                     }
                                                 ?>
                                             </td>
                                             <td style="text-align: center;">
                                                 <?php if ($approvalStatus === 'pending') { ?>
                                                     <a href="edit_application.php?reservation_id=<?php echo (int)$row['reservation_id']; ?>" class="bg-indigo-600 text-white px-2.5 py-1 rounded text-xs inline-block hover:bg-indigo-700 transition" onclick="event.stopPropagation();">修改申請</a>
-                                                <?php } else { ?>
-                                                    -
-                                                <?php } ?>
+                                                <?php } else { echo '-'; } ?>
                                                 <div style="margin-top:6px;">
-                                                    <!-- 查看詳情按鈕：直接傳入該列元素，觸發開窗 -->
-                                                    <button type="button" class="detail-button" onclick="event.stopPropagation(); openDrawer(this.closest('tr'))">查看詳情</button>
+                                                    <button type="button" class="detail-button px-2 py-1 bg-slate-100 text-slate-700 text-xs rounded hover:bg-slate-200" onclick="event.stopPropagation(); openDrawer(this.closest('tr'))">查看詳情</button>
                                                 </div>
                                             </td>
                                             <td>
@@ -959,13 +975,11 @@ if ($dbError === '' && count($rows) > 0) {
                                                 <?php } ?>
                                             </td>
                                         </tr>
+                                        
                                         <tr class="accordion-content bg-slate-50/50" id="accordion-<?php echo (int)$row['reservation_id']; ?>" style="display: none;">
-                                            <td colspan="7" class="p-4">
+                                            <td colspan="8" class="p-4">
                                                 <?php
-                                                    $approvedStages = [];
-                                                    $needRevisionStages = [];
-                                                    $rejectedStages = [];
-                                                    $stageTimes = [];
+                                                    $approvedStages = []; $needRevisionStages = []; $rejectedStages = []; $stageTimes = [];
                                                     if (!empty($row['_stage_results'])) {
                                                         foreach ($row['_stage_results'] as $rRole => $rResult) {
                                                             if ($rResult === 'approved') $approvedStages[] = $rRole;
@@ -974,161 +988,30 @@ if ($dbError === '' && count($rows) > 0) {
                                                         }
                                                     }
                                                     if (!empty($row['_stage_times'])) {
-                                                        foreach ($row['_stage_times'] as $rRole => $rTime) {
-                                                            $stageTimes[$rRole] = $rTime;
-                                                        }
+                                                        foreach ($row['_stage_times'] as $rRole => $rTime) { $stageTimes[$rRole] = $rTime; }
                                                     }
-
                                                     if (in_array('3', $approvedStages, true)) { $approvedStages[] = 'd'; }
-                                                    if (in_array('3', $needRevisionStages, true)) { $needRevisionStages[] = 'd'; }
-                                                    if (in_array('3', $rejectedStages, true)) { $rejectedStages[] = 'd'; }
                                                     $approvedStages = array_values(array_unique($approvedStages));
-                                                    $needRevisionStages = array_values(array_unique($needRevisionStages));
-                                                    $rejectedStages = array_values(array_unique($rejectedStages));
-
-                                                    $order = ['a','b','c','d','3'];
-                                                    if (!empty($approvedStages)) {
-                                                        $approvedMap = array_fill_keys($approvedStages, true);
-                                                        $maxIdx = -1;
-                                                        foreach ($order as $i => $r) {
-                                                            if (isset($approvedMap[$r])) { $maxIdx = max($maxIdx, $i); }
-                                                        }
-                                                        if ($maxIdx >= 0) {
-                                                            for ($j = 0; $j <= $maxIdx; $j++) {
-                                                                $approvedMap[$order[$j]] = true;
-                                                                if (empty($stageTimes[$order[$j]])) {
-                                                                    for ($k = $maxIdx; $k >= 0; $k--) {
-                                                                        $candidate = $order[$k];
-                                                                        if (!empty($stageTimes[$candidate])) {
-                                                                            $stageTimes[$order[$j]] = $stageTimes[$candidate];
-                                                                            break;
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                        $approvedStages = array_keys($approvedMap);
-                                                    }
                                                 ?>
-                                                <div class="stepper-simple" data-status="<?php echo $progressStatus; ?>" data-approval="<?php echo htmlspecialchars($approvalStatus, ENT_QUOTES, 'UTF-8'); ?>" data-stage="<?php echo htmlspecialchars($approvalStage, ENT_QUOTES, 'UTF-8'); ?>" data-approved="<?php echo htmlspecialchars(implode(',', $approvedStages), ENT_QUOTES, 'UTF-8'); ?>" data-rejected="<?php echo htmlspecialchars(implode(',', $rejectedStages), ENT_QUOTES, 'UTF-8'); ?>">
-                                                    <div class="stepper-track flex items-center justify-between border-t border-b border-slate-200 py-4 bg-white rounded-lg p-4 shadow-inner">
+                                                <div class="stepper-simple" data-status="<?php echo $progressStatus; ?>" data-approval="<?php echo htmlspecialchars($approvalStatus, ENT_QUOTES, 'UTF-8'); ?>" data-stage="<?php echo htmlspecialchars($approvalStage, ENT_QUOTES, 'UTF-8'); ?>">
+                                                    <div class="stepper-track flex items-center justify-between border border-slate-200 py-4 bg-white rounded-lg p-4 shadow-inner">
                                                         <div class="stepper-step text-center text-xs" data-step="1">
                                                             <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
                                                             <span class="stepper-text block font-medium">申請送出</span>
                                                             <span class="stepper-timestamp text-[10px] text-slate-400"><?php echo htmlspecialchars((string)$row['submitted_at'], ENT_QUOTES, 'UTF-8'); ?></span>
                                                         </div>
-
                                                         <div class="stepper-step text-center text-xs" data-step="2" data-role="a">
                                                             <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
                                                             <span class="stepper-text block font-medium">輔導人員審核</span>
-                                                            <span class="stepper-subtext approval-text text-[11px] block">
-                                                                <?php
-                                                                    $t = $stageTimes['a'] ?? null;
-                                                                        $res = in_array('a', $approvedStages, true) ? 'approved' : (in_array('a', $needRevisionStages, true) ? 'need_revision' : (in_array('a', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['a'] ?? null)));
-                                                                    if ($res === 'approved') echo '審核通過';
-                                                                            elseif ($res === 'need_revision') echo '要求補件';
-                                                                    elseif ($res === 'rejected') echo '審核未通過';
-                                                                    elseif ($approvalStage === 'a' && $approvalStatus === 'pending') echo '審核中';
-                                                                ?>
-                                                            </span>
-                                                            <span class="stepper-timestamp text-[10px] text-slate-400"><?php echo $t ? htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8') : htmlspecialchars((string)$row['submitted_at'], ENT_QUOTES, 'UTF-8'); ?></span>
+                                                            <span class="stepper-timestamp text-[10px] text-slate-400"><?php echo htmlspecialchars((string)($stageTimes['a'] ?? $row['submitted_at']), ENT_QUOTES, 'UTF-8'); ?></span>
                                                         </div>
-
                                                         <div class="stepper-step text-center text-xs" data-step="3" data-role="b">
                                                             <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
                                                             <span class="stepper-text block font-medium">軍訓室審核</span>
-                                                            <span class="stepper-subtext text-[11px] block">
-                                                                <?php
-                                                                    $t = $stageTimes['b'] ?? null;
-                                                                    $res = in_array('b', $approvedStages, true) ? 'approved' : (in_array('b', $needRevisionStages, true) ? 'need_revision' : (in_array('b', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['b'] ?? null)));
-                                                                    if ($res === 'approved') echo '審核通過';
-                                                                    elseif ($res === 'need_revision') echo '要求補件';
-                                                                    elseif ($res === 'rejected') echo '審核未通過';
-                                                                    elseif ($approvalStage === 'b' && $approvalStatus === 'pending') echo '審核中';
-                                                                ?>
-                                                            </span>
-                                                            <span class="stepper-timestamp text-[10px] text-slate-400"><?php echo $t ? htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8') : '-'; ?></span>
-                                                        </div>
-
-                                                        <div class="stepper-step text-center text-xs" data-step="4" data-role="c">
-                                                            <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
-                                                            <span class="stepper-text block font-medium">學務長審核</span>
-                                                            <span class="stepper-subtext text-[11px] block">
-                                                                <?php
-                                                                    $t = $stageTimes['c'] ?? null;
-                                                                    $res = in_array('c', $approvedStages, true) ? 'approved' : (in_array('c', $needRevisionStages, true) ? 'need_revision' : (in_array('c', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['c'] ?? null)));
-                                                                    if ($res === 'approved') echo '審核通過';
-                                                                    elseif ($res === 'need_revision') echo '要求補件';
-                                                                    elseif ($res === 'rejected') echo '審核未通過';
-                                                                    elseif ($approvalStage === 'c' && $approvalStatus === 'pending') echo '審核中';
-                                                                ?>
-                                                            </span>
-                                                            <span class="stepper-timestamp text-[10px] text-slate-400"><?php echo $t ? htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8') : '-'; ?></span>
-                                                        </div>
-
-                                                        <div class="stepper-step text-center text-xs" data-step="5" data-role="d">
-                                                            <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
-                                                            <span class="stepper-text block font-medium">課指組審核</span>
-                                                            <span class="stepper-subtext text-[11px] block">
-                                                                <?php
-                                                                    $t = $stageTimes['d'] ?? null;
-                                                                    $res = in_array('d', $approvedStages, true) ? 'approved' : (in_array('d', $needRevisionStages, true) ? 'need_revision' : (in_array('d', $rejectedStages, true) ? 'rejected' : ($row['_stage_results']['d'] ?? null)));
-                                                                    if ($res === 'approved') echo '審核通過';
-                                                                    elseif ($res === 'need_revision') echo '要求補件';
-                                                                    elseif ($res === 'rejected') echo '審核未通過';
-                                                                    elseif ($approvalStage === 'd' && $approvalStatus === 'pending') echo '審核中';
-                                                                ?>
-                                                            </span>
-                                                            <span class="stepper-timestamp text-[10px] text-slate-400"><?php echo $t ? htmlspecialchars((string)$t, ENT_QUOTES, 'UTF-8') : '-'; ?></span>
-                                                        </div>
-
-                                                        <div class="stepper-step text-center text-xs" data-step="6">
-                                                            <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
-                                                            <span class="stepper-text block font-medium">使用狀態</span>
-                                                            <span class="stepper-subtext text-[11px] block">
-                                                                <?php
-                                                                    $allApprovalsDone = in_array('d', $approvedStages, true) || $approvalStatus === 'approved';
-                                                                    if (!$allApprovalsDone) {
-                                                                        echo '審核尚未結束';
-                                                                    } else {
-                                                                        if ($approvalStatus === 'approved' && $isReturned) echo '已歸還';
-                                                                        else echo '審核完成';
-                                                                    }
-                                                                ?>
-                                                            </span>
                                                             <span class="stepper-timestamp text-[10px] text-slate-400">-</span>
-                                                        </div>
-
-                                                        <div class="stepper-step text-center text-xs" data-step="7">
-                                                            <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
-                                                            <span class="stepper-text block font-medium">已歸還</span>
-                                                            <?php if ($approvalStatus === 'approved' && $isReturned) { ?>
-                                                                <span class="stepper-timestamp text-[10px] text-slate-400 block"><?php echo htmlspecialchars((string)$row['return_confirmed_at'], ENT_QUOTES, 'UTF-8'); ?></span>
-                                                            <?php } else { ?>
-                                                                <span class="stepper-timestamp text-[10px] text-slate-400 block">-</span>
-                                                            <?php } ?>
                                                         </div>
                                                     </div>
                                                 </div>
-                                                
-                                                <?php if ($approvalStatus === 'rejected' && !empty($row['rejection_reason'])) { ?>
-                                                    <div class="rejection-alert bg-rose-50 text-rose-700 border-l-4 border-rose-500 p-3 mt-3 text-sm rounded">
-                                                        <strong><i class="fa-solid fa-triangle-exclamation mr-1"></i> 拒絕原因：</strong>
-                                                        <?php echo htmlspecialchars($row['rejection_reason'], ENT_QUOTES, 'UTF-8'); ?>
-                                                    </div>
-                                                <?php } elseif ($approvalStatus === 'need_revision') { ?>
-                                                    <div class="rejection-alert bg-yellow-50 text-yellow-800 border-l-4 border-yellow-500 p-3 mt-3 text-sm rounded">
-                                                        <strong><i class="fa-solid fa-circle-exclamation mr-1"></i> 補件說明：</strong>
-                                                        請盡快繳交缺件或重新上傳企劃書。
-                                                        <?php if (!empty($row['rejection_reason'])) { ?>
-                                                            <br/><strong>備註：</strong><?php echo htmlspecialchars($row['rejection_reason'], ENT_QUOTES, 'UTF-8'); ?>
-                                                        <?php } ?>
-                                                        <br/><strong>補件期限：</strong><?php echo htmlspecialchars((string)$row['revision_deadline'], ENT_QUOTES, 'UTF-8'); ?>
-                                                        <div class="mt-2">
-                                                            <a href="amend_application.php?reservation_id=<?php echo (int)$row['reservation_id']; ?>" class="bg-amber-600 text-white px-3 py-1 rounded text-xs inline-block font-medium hover:bg-amber-700 transition">修改補件</a>
-                                                        </div>
-                                                    </div>
-                                                <?php } ?>
                                             </td>
                                         </tr>
                                     <?php } ?>
@@ -1136,11 +1019,81 @@ if ($dbError === '' && count($rows) > 0) {
                             </tbody>
                         </table>
                     </div>
-
                 <?php } ?>
-            </section>
-        </main>
+            </div>
+        <div id="points-tab-content" class="card bg-white p-6 rounded-xl shadow-sm" style="display: none;">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-slate-200">
+                        <thead class="bg-slate-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">相關預約</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">違規原因</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">備註</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">記點時間</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">點數</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-slate-200">
+                            <?php if (!empty($violationLogs)): ?>
+                                <?php foreach ($violationLogs as $log): ?>
+                                    <tr class="hover:bg-slate-50 transition">
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                                            <?php if (!empty($log['reservations_id'])): ?>
+                                                <span class="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
+                                                    #<?php echo $log['reservations_id']; ?>
+                                                </span>
+                                            <?php else: ?>
+                                                <span class="text-slate-400">-</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td class="px-6 py-4 text-sm text-slate-700 max-w-xs break-words">
+                                <?php 
+                                    // 1. 定義規則對照表
+                                    $ruleMapping = [
+                                        'rule_1' => '器材逾期領取或逾期歸還 / 未按時領取且未事先取消',
+                                        'rule_2' => '領取或歸還器材時，器材證持有人未親自到場',
+                                        'rule_3' => '未於規定時間內辦理器材預約 (臨時預約)',
+                                        'rule_cancel' => '器材超過兩日未領/未還且未通知，直接註銷器材證',
+                                        'rule_other' => '其他（請見備註）',
+                                    ];
+                                    $category = $log['reason_category'] ?? '';
+                                    // 修正點：加上 echo 把對照後的中文印出來
+                                    echo htmlspecialchars($ruleMapping[$category] ?? $category, ENT_QUOTES, 'UTF-8');
+                                ?>
+                            </td>
+                            <td class="px-6 py-4 text-sm text-slate-500 max-w-xs break-words">
+                                <?php 
+                                    if (!empty($log['custom_reason'])) {
+                                        echo htmlspecialchars($log['custom_reason'], ENT_QUOTES, 'UTF-8');
+                                    } else {
+                                        echo '<span class="text-slate-400">-</span>';
+                                    }
+                                ?>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                                <?php echo date('Y-m-d H:i', strtotime($log['created_at'])); ?>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-rose-600 font-semibold">
+                                +<?php echo (int)$log['points']; ?> 點
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <tr>
+                        <td colspan="5" class="px-6 py-12 text-center text-sm text-slate-400">
+                            <div class="flex flex-col items-center justify-center space-y-2">
+                                <span class="text-2xl">🎉</span>
+                                <p>目前沒有任何記點紀錄</p>
+                            </div>
+                        </td>
+                    </tr>
+                <?php endif; ?>
+            </tbody>
+        </table>
     </div>
+</div>
+
+            
 
     <div id="drawer-overlay" class="fixed inset-0 bg-slate-900/40 z-40 hidden backdrop-blur-xs transition-opacity duration-300 opacity-0" onclick="closeDrawer()"></div>
     <div id="detail-drawer" class="fixed right-0 top-0 bottom-0 w-[550px] max-w-[90vw] bg-white border-l border-slate-200 z-50 p-8 shadow-2xl overflow-y-auto translate-x-full transition-transform duration-300 ease-out">
@@ -1203,6 +1156,31 @@ if ($dbError === '' && count($rows) > 0) {
     </div>
 
     <script>
+    function switchTab(tabId) {
+        const applyTabBtn = document.getElementById('tab-btn-apply');
+        const pointsTabBtn = document.getElementById('tab-btn-points');
+        const applyContent = document.getElementById('apply-tab-content');
+        const pointsContent = document.getElementById('points-tab-content');
+
+        if (tabId === 'apply-tab') {
+            // 顯示 申請紀錄
+            applyContent.style.display = 'block';
+            pointsContent.style.display = 'none';
+            
+            // 切換按鈕樣式 (Indigo 啟用高亮)
+            applyTabBtn.className = "px-5 py-2.5 text-sm font-semibold border-b-2 border-indigo-600 text-indigo-600 transition focus:outline-none";
+            pointsTabBtn.className = "px-5 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 transition focus:outline-none";
+        } else if (tabId === 'points-tab') {
+            // 顯示 記點紀錄
+            applyContent.style.display = 'none';
+            pointsContent.style.display = 'block';
+            
+            // 切換按鈕樣式 (Indigo 啟用高亮)
+            applyTabBtn.className = "px-5 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 transition focus:outline-none";
+            pointsTabBtn.className = "px-5 py-2.5 text-sm font-semibold border-b-2 border-indigo-600 text-indigo-600 transition focus:outline-none";
+        }
+    }
+
         /**
          * 點擊整列或左側箭頭展開/收起 Accordion 進度條
          */
@@ -1569,6 +1547,7 @@ if ($dbError === '' && count($rows) > 0) {
                     ${buildDetailItem('聯絡電話', formatDetailValue(data.coordinator_phone))}
                     ${buildDetailItem('其他聯絡方式', formatDetailValue(data.coordinator_other_contact))}
                     ${buildDetailItem('是否車輛入校', formatYesNo(data.vehicle_entry))}
+                    ${buildDetailItem('用途說明', formatDetailValue(data.purpose), 'md:col-span-2')}
                     <div class="md:col-span-2 space-y-3">
                         ${buildDetailItem('酒精', formatYesNo(data.has_alcohol))}
                         ${buildToggleSection('明火', hasFire, '有', fireDetailHtml)}

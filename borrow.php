@@ -537,6 +537,26 @@ $formData['fire_date'] = !empty($_POST['fire_date']) ? trim((string)$_POST['fire
         ) {
             $borrowStartAtSql = $formData['borrow_start_date'] . ' ' . $formData['borrow_start_time'];
             $borrowEndAtSql = $formData['borrow_end_date'] . ' ' . $formData['borrow_end_time'];
+
+            // 入場時間/離場時間：07:00～22:50，且分鐘必須以 10 分鐘為單位。
+            $isBorrowEntryExitTimeValid = function (string $time): bool {
+                if (!preg_match('/^(\d{2}):(\d{2}):00$/', $time, $matches)) {
+                    return false;
+                }
+
+                $hour = (int)$matches[1];
+                $minute = (int)$matches[2];
+
+                if ($minute % 10 !== 0) {
+                    return false;
+                }
+
+                return $time >= '07:00:00' && $time <= '22:50:00';
+            };
+
+            if (!$isBorrowEntryExitTimeValid($formData['borrow_start_time']) || !$isBorrowEntryExitTimeValid($formData['borrow_end_time'])) {
+                $borrowError = '入場時間/離場時間必須在 07:00～22:50 之間，且以 10 分鐘為單位。';
+            }
             
             // --- 在這裡插入實際領取/歸還時間的檢查 ---
             if (
@@ -549,6 +569,76 @@ $formData['fire_date'] = !empty($_POST['fire_date']) ? trim((string)$_POST['fire
                 if (strtotime($actualReturnAtSql) <= strtotime($actualPickupAtSql)) {
                     $borrowError = '實際歸還/離開時間必須晚於實際領取/進入時間。';
                 }
+                
+                // 實際領取/進入與實際歸還/離開時間：08:30～16:30，且分鐘必須以 10 分鐘為單位。
+                $pickupTime = $formData['actual_pickup_time']; // HH:MM:SS
+                $returnTime = $formData['actual_return_time']; // HH:MM:SS
+                $isActualPickupReturnTimeValid = function (string $time): bool {
+                    if (!preg_match('/^(\d{2}):(\d{2}):00$/', $time, $matches)) {
+                        return false;
+                    }
+
+                    $minute = (int)$matches[2];
+                    if ($minute % 10 !== 0) {
+                        return false;
+                    }
+
+                    return $time >= '08:30:00' && $time <= '16:30:00';
+                };
+                
+                if ($borrowError === '') {
+                    if (!$isActualPickupReturnTimeValid($pickupTime)) {
+                        $borrowError = '實際領取器材與進入場地時間必須在 08:30～16:30 之間，且以 10 分鐘為單位。';
+                    } elseif (!$isActualPickupReturnTimeValid($returnTime)) {
+                        $borrowError = '實際歸還器材與離開場地時間必須在 08:30～16:30 之間，且以 10 分鐘為單位。';
+                    }
+                }
+                
+                // 實際領取/進入時間：可早於借用開始時間，但最多只能早一天；不可晚於借用開始時間。
+                // 不使用 86400 秒或工作天迴圈，直接用日期 -1 day 判斷。
+                if ($borrowError === '' && $formData['borrow_start_date'] !== '' && $formData['borrow_start_time'] !== '') {
+                    $borrowStartAtSql = $formData['borrow_start_date'] . ' ' . $formData['borrow_start_time'];
+
+                    $borrowStartDateTime = DateTime::createFromFormat('Y-m-d H:i:s', $borrowStartAtSql);
+                    $minPickupDateTime = DateTime::createFromFormat('Y-m-d H:i:s', $formData['borrow_start_date'] . ' 08:30:00');
+
+                    if (!$borrowStartDateTime || !$minPickupDateTime) {
+                        $borrowError = '借用開始時間格式有誤，請重新選擇。';
+                    } else {
+                        $minPickupDateTime->modify('-1 day');
+                        $actualPickupDateTime = DateTime::createFromFormat('Y-m-d H:i:s', $actualPickupAtSql);
+
+                        if (!$actualPickupDateTime) {
+                            $borrowError = '實際領取/進入時間格式有誤，請重新選擇。';
+                        } elseif ($actualPickupDateTime < $minPickupDateTime) {
+                            $borrowError = '實際領取/進入時間最早只能在借用開始日前一天 08:30 之後。';
+                        } elseif ($actualPickupDateTime > $borrowStartDateTime) {
+                            $borrowError = '實際領取/進入時間不可晚於借用開始時間。';
+                        }
+                    }
+                }
+                
+                // 實際歸還/離開時間：可選範圍為借用開始時間～借用迄日後一天 16:30。
+                // 不使用 86400 秒或工作天迴圈，直接用日期 +1 day 判斷。
+                if ($borrowError === '' && $formData['borrow_start_date'] !== '' && $formData['borrow_start_time'] !== '' && $formData['borrow_end_date'] !== '') {
+                    $borrowStartAtSql = $formData['borrow_start_date'] . ' ' . $formData['borrow_start_time'];
+
+                    $borrowStartDateTime = DateTime::createFromFormat('Y-m-d H:i:s', $borrowStartAtSql);
+                    $maxReturnDateTime = DateTime::createFromFormat('Y-m-d H:i:s', $formData['borrow_end_date'] . ' 16:30:00');
+                    $actualReturnDateTime = DateTime::createFromFormat('Y-m-d H:i:s', $actualReturnAtSql);
+
+                    if (!$borrowStartDateTime || !$maxReturnDateTime || !$actualReturnDateTime) {
+                        $borrowError = '實際歸還/離開時間格式有誤，請重新選擇。';
+                    } else {
+                        $maxReturnDateTime->modify('+1 day');
+
+                        if ($actualReturnDateTime < $borrowStartDateTime) {
+                            $borrowError = '實際歸還/離開時間不可早於借用開始時間。';
+                        } elseif ($actualReturnDateTime > $maxReturnDateTime) {
+                            $borrowError = '實際歸還/離開時間不能超過借用迄日後一天 16:30。';
+                        }
+                    }
+                }
             }
             // --- 插入結束 ---
 
@@ -557,11 +647,11 @@ $formData['fire_date'] = !empty($_POST['fire_date']) ? trim((string)$_POST['fire
             } elseif (strtotime($borrowEndAtSql) <= strtotime($borrowStartAtSql)) {
                 $borrowError = '活動結束時間必須晚於活動開始時間。';
             } else {
-                $startDateOnly = strtotime($formData['borrow_start_date']);
-                $endDateOnly = strtotime($formData['borrow_end_date']);
+                $startDateOnly = DateTime::createFromFormat('Y-m-d', $formData['borrow_start_date']);
+                $endDateOnly = DateTime::createFromFormat('Y-m-d', $formData['borrow_end_date']);
 
-                if ($startDateOnly !== false && $endDateOnly !== false) {
-                    $diffDays = (int)ceil(($endDateOnly - $startDateOnly) / 86400);
+                if ($startDateOnly && $endDateOnly) {
+                    $diffDays = (int)$startDateOnly->diff($endDateOnly)->format('%r%a');
 
                     if ($diffDays > 4) {
                         $borrowError = '活動天數最多不可超過 4 天，請重新選擇。';
@@ -606,34 +696,35 @@ $formData['fire_date'] = !empty($_POST['fire_date']) ? trim((string)$_POST['fire
                             $borrowError = "{$selectedE['equipment_name']} 借用數量須大於 0。";
                             break;
                         }
-                        if ($selectedE['borrow_limit_quantity'] !== null && $cQty > (int)$selectedE['borrow_limit_quantity']) {
-                            $borrowError = "{$selectedE['equipment_name']} 借用數量超過限借數量。";
-                            break;
-                        }
                         if ($cQty > (int)$selectedE['available_quantity']) {
                             $borrowError = "{$selectedE['equipment_name']} 借用數量超過目前可借用數量。";
                             break;
                         }
                         
                         if ($selectedE['borrow_limit_quantity'] !== null) {
-                            $reservApplicantCol = $reservationApplicantColumn;
-                            // 1. 強制鎖定 reservations 的 user_id 欄位，並確保查詢的是「目前登入者」的 Session ID
+                            // 限借規則：同一申請單位 + 同一器材 + 活動時間重疊，累計數量不可超過限借數量。
+                            // 不再用 user_id 判斷，也不再單獨限制「本次單項數量」必須小於限借數量。
                             $tqSql = 'SELECT COALESCE(COUNT(eri.equipment_id), 0) AS total_quantity
                                     FROM reservations r
                                     JOIN equipment_reservation_items eri ON r.reservation_id = eri.reservation_id
                                     JOIN equipments e ON eri.equipment_id = e.equipment_id
-                                    WHERE r.user_id = ? 
+                                    WHERE r.organization_name = ?
+                                        AND e.equipment_code = ?
                                         AND r.approval_status IN ("pending", "approved")
-                                        AND r.approval_status NOT IN ("returned", "rejected", "canceled") 
                                         AND r.returned_at IS NULL
-                                        AND e.equipment_code = ?';
+                                        AND r.borrow_start_at < ?
+                                        AND r.borrow_end_at > ?';
 
                             $tqStmt = mysqli_prepare($link, $tqSql);
                             if ($tqStmt) {
-                                // 2. 關鍵修正：將原本模糊的 $userId 強制改為 $_SESSION['user_id']
-                                // 這樣能保證算出來的「未完成預約」百分之百是此時此刻正在填表的這個人
-                                $currentLoggedInUser = $_SESSION['user_id'];
-                                mysqli_stmt_bind_param($tqStmt, 'ss', $currentLoggedInUser, $cCode);
+                                mysqli_stmt_bind_param(
+                                    $tqStmt,
+                                    'ssss',
+                                    $formData['organization_name'],
+                                    $cCode,
+                                    $borrowEndAtSql,
+                                    $borrowStartAtSql
+                                );
                                 
                                 mysqli_stmt_execute($tqStmt);
                                 $tqRes = mysqli_stmt_get_result($tqStmt);
@@ -644,8 +735,7 @@ $formData['fire_date'] = !empty($_POST['fire_date']) ? trim((string)$_POST['fire
                                 $nTotal = $cTotal + $cQty;
                                 if ($nTotal > (int)$selectedE['borrow_limit_quantity']) {
                                     $borrowError = sprintf(
-                                        '%s 未完成預約共 %d 個，加上本次申請 %d 個共 %d 個，超過限借數量 %d 個。',
-                                        $selectedE['equipment_name'],
+                                        '該申請單位在相同活動時間內，已借用此器材 %d 個，加上本次申請 %d 個共 %d 個，超過限借數量 %d 個。',
                                         $cTotal,
                                         $cQty,
                                         $nTotal,
@@ -719,12 +809,20 @@ $formData['fire_date'] = !empty($_POST['fire_date']) ? trim((string)$_POST['fire
                 $requires30Days = true;
             }
 
-            $min30Timestamp = strtotime('+30 days', strtotime(date('Y-m-d')));
+            // 一般借用：至少 3 天後；特殊活動：至少 30 天後。
+            $requiredLeadDays = $requires30Days ? 30 : 3;
+            $minBorrowTimestamp = strtotime('+' . $requiredLeadDays . ' days', strtotime(date('Y-m-d')));
+            $borrowStartTimestamp = $formData['borrow_start_date'] !== '' ? strtotime($formData['borrow_start_date']) : false;
+            $borrowEndTimestamp = $formData['borrow_end_date'] !== '' ? strtotime($formData['borrow_end_date']) : false;
 
-            if ($requires30Days && $formData['borrow_start_date'] !== '' && strtotime($formData['borrow_start_date']) < $min30Timestamp) {
-                $borrowError = '包含特殊性質（酒精、明火、攤販或超過100人）的活動，開始日期必須在 30 天之後。';
-            } elseif ($requires30Days && $formData['borrow_end_date'] !== '' && strtotime($formData['borrow_end_date']) < $min30Timestamp) {
-                $borrowError = '包含特殊性質（酒精、明火、攤販或超過100人）的活動，結束日期也必須在 30 天之後。';
+            if ($borrowStartTimestamp !== false && $borrowStartTimestamp < $minBorrowTimestamp) {
+                $borrowError = $requires30Days
+                    ? '包含特殊性質（酒精、明火、攤販或100人以上）的活動，開始日期必須在 30 天之後。'
+                    : '一般借用需至少提前 3 天申請，三天內不開放借用。';
+            } elseif ($borrowEndTimestamp !== false && $borrowEndTimestamp < $minBorrowTimestamp) {
+                $borrowError = $requires30Days
+                    ? '包含特殊性質（酒精、明火、攤販或100人以上）的活動，結束日期也必須在 30 天之後。'
+                    : '一般借用需至少提前 3 天申請，三天內不開放借用。';
             } elseif ($formData['setup_flags'] === 'yes' && $formData['borrow_start_date'] !== '' && strtotime($formData['borrow_start_date']) < strtotime('+7 weekdays', strtotime(date('Y-m-d')))) {
                 $borrowError = '插立旗幟使用日期只能選 7 個工作天之後的日期。';
             } else {
@@ -2164,7 +2262,7 @@ SQL;
                                             ?>
                                             <select name="actual_pickup_time_h" class="form-control" required style="padding: 8px; width: 80px;">
                                                 <option value="">選擇</option>
-                                                <?php for($h=7; $h<=22; $h++) { ?>
+                                                <?php for($h=8; $h<=16; $h++) { ?>
                                                     <option value="<?php echo $h; ?>" <?php echo ($curAph !== '' && (int)$curAph === $h) ? 'selected' : ''; ?>><?php echo $h; ?></option>
                                                 <?php } ?>
                                             </select>
@@ -2188,7 +2286,7 @@ SQL;
                                             ?>
                                             <select name="actual_return_time_h" class="form-control" required style="padding: 8px; width: 80px;">
                                                 <option value="">選擇</option>
-                                                <?php for($h=7; $h<=22; $h++) { ?>
+                                                <?php for($h=8; $h<=16; $h++) { ?>
                                                     <option value="<?php echo $h; ?>" <?php echo ($curArh !== '' && (int)$curArh === $h) ? 'selected' : ''; ?>><?php echo $h; ?></option>
                                                 <?php } ?>
                                             </select>
@@ -3060,12 +3158,14 @@ function validateFireForm() {
 
                                 function is30DaysRequired() {
                                     const participantCount = document.getElementById('participant_count')?.value;
+                                    const staffCountEl = document.getElementById('staff_count') || document.querySelector('[name="staff_count"]');
+                                    const staffCount = staffCountEl ? (parseInt(staffCountEl.value || '0', 10) || 0) : 0;
                                     const hasAlcohol = document.querySelector('input[name="has_alcohol"]')?.checked;
                                     const hasFire = document.querySelector('input[name="has_fire"]')?.checked;
                                     const hasSales = document.querySelector('input[name="has_sales"]')?.checked;
                                     
                                     return (participantCount === '100~200人' || participantCount === '200人以上') ||
-                                           hasAlcohol || hasFire || hasSales;
+                                           staffCount >= 100 || hasAlcohol || hasFire || hasSales;
                                 }
 
                                 function validateStartDate() {
@@ -3080,14 +3180,14 @@ function validateFireForm() {
 
                                     let errorMsg = '';
                                     
-                                    if (req30) {
-                                        const min30Date = new Date();
-                                        min30Date.setDate(min30Date.getDate() + 30);
-                                        min30Date.setHours(0,0,0,0);
-                                        
-                                        if (selectedDate < min30Date) {
-                                            errorMsg = '注意：由於您的活動包含特殊性質（酒精、明火、攤販或超過100人），必須在 30 天之前申請！\n系統已清空不合規的日期，請重新選擇至少為 ' + formatDate(min30Date) + ' 的日期。';
-                                        }
+                                    const minLeadDate = new Date();
+                                    minLeadDate.setDate(minLeadDate.getDate() + (req30 ? 30 : 3));
+                                    minLeadDate.setHours(0,0,0,0);
+
+                                    if (selectedDate < minLeadDate) {
+                                        errorMsg = req30
+                                            ? '注意：由於您的活動包含特殊性質（酒精、明火、攤販、活動對象100人以上或工作人員100人以上），必須在 30 天之前申請！\n系統已清空不合規的日期，請重新選擇至少為 ' + formatDate(minLeadDate) + ' 的日期。'
+                                            : '一般借用需至少提前 3 天申請，三天內不開放借用。\n系統已清空不合規的日期，請重新選擇至少為 ' + formatDate(minLeadDate) + ' 的日期。';
                                     }
 
                                     if (!errorMsg && reqFlag) {
@@ -5070,39 +5170,40 @@ document.addEventListener('DOMContentLoaded', () => {
 
 let selectedDays = 0;
 
-// 計算 n 個工作天後的日期 (跳過六、日)
-function getWorkingDaysFromToday(days) {
-    let date = new Date();
-    let addedDays = 0;
-    while (addedDays < days) {
-        date.setDate(date.getDate() + 1);
-        if (date.getDay() !== 0 && date.getDay() !== 6) {
-            addedDays++;
-        }
-    }
+// 借用日期限制：一般借用為今天後 3 天；特殊活動為今天後 30 天。
+// 特殊活動包含：有酒精、有明火、需擺攤販售、活動對象 100 人以上、工作人員 100 人以上。
+function addCalendarDaysFromToday(days) {
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() + days);
     return date;
 }
 
-// 根據人數取得最短限制日期
-function getMinDateByParticipantCount(countValue) {
-    if (countValue === '100~200人' || countValue === '200人以上') {
-        // 大於 100 人：30 天 (日曆天)
-        let d = new Date();
-        d.setDate(d.getDate() + 30);
-        return d;
-    } else {
-        // 一般情況：7 個工作天後
-        return getWorkingDaysFromToday(7);
-    }
+function isSpecialActivityForDateLimit() {
+    const participantCount = document.getElementById('participant_count')?.value || '';
+    const staffCountEl = document.getElementById('staff_count') || document.querySelector('[name="staff_count"]');
+    const staffCount = staffCountEl ? (parseInt(staffCountEl.value || '0', 10) || 0) : 0;
+    const hasAlcohol = !!document.querySelector('input[name="has_alcohol"]:checked');
+    const hasFire = !!document.querySelector('input[name="has_fire"]:checked');
+    const hasSales = !!document.querySelector('input[name="has_sales"]:checked');
+
+    return hasAlcohol || hasFire || hasSales ||
+        participantCount === '100~200人' ||
+        participantCount === '200人以上' ||
+        staffCount >= 100;
 }
 
-let initialMinDate = getMinDateByParticipantCount(document.getElementById('participant_count') ? document.getElementById('participant_count').value : ''); 
+function getBorrowMinDateByCurrentForm() {
+    return addCalendarDaysFromToday(isSpecialActivityForDateLimit() ? 30 : 3);
+}
 
 // Resolve locale safely: prefer registered zh_tw locale object, fallback to no locale option
 let _flatpickrLocale = null;
 if (typeof flatpickr !== 'undefined' && flatpickr.l10ns) {
     _flatpickrLocale = flatpickr.l10ns.zh_tw || flatpickr.l10ns['zh_tw'] || flatpickr.l10ns.zh || null;
 }
+
+let initialMinDate = getBorrowMinDateByCurrentForm();
 
 const fpStartDate = flatpickr("#borrow_start_date", Object.assign({
     minDate: initialMinDate,
@@ -5114,43 +5215,55 @@ const fpEndDate = flatpickr("#borrow_end_date", Object.assign({
     dateFormat: "Y-m-d"
 }, _flatpickrLocale ? { locale: _flatpickrLocale } : {}));
 
-// --- 新增：綁定新的兩個時間欄位 ---
+// 實際領取／歸還日期不要吃一般 3 天或特殊 30 天限制，改由借用起訖時間另外控制。
 const fpActualPickupDate = flatpickr("#actual_pickup_date", Object.assign({
-    minDate: initialMinDate,
     dateFormat: "Y-m-d"
 }, _flatpickrLocale ? { locale: _flatpickrLocale } : {}));
 
 const fpActualReturnDate = flatpickr("#actual_return_date", Object.assign({
-    minDate: initialMinDate,
     dateFormat: "Y-m-d"
 }, _flatpickrLocale ? { locale: _flatpickrLocale } : {}));
-// --- 新增結束 ---
 
-// 當改變人數時，動態更新鎖定日期
-const participantSelect = document.getElementById('participant_count');
-if (participantSelect) {
-participantSelect.addEventListener('change', function(e) {
-        const newMinDate = getMinDateByParticipantCount(e.target.value);
-        
-        // 更新日曆的最小可選日期
-        fpStartDate.set('minDate', newMinDate);
-        fpEndDate.set('minDate', newMinDate);
-        // 新增這兩行
-        if (fpActualPickupDate) fpActualPickupDate.set('minDate', newMinDate);
-        if (fpActualReturnDate) fpActualReturnDate.set('minDate', newMinDate);
-        
-        // 如果目前已選日期早於新規定日期，則清空重選
-        const startSel = fpStartDate.selectedDates;
-        if (startSel.length > 0) {
-            const minTime = new Date(newMinDate).setHours(0,0,0,0);
-            if (startSel[0].getTime() < minTime) {
-                alert("人數達 100 人以上之大型活動需提前 30 天申請！\n系統已清空您的舊日期，請重新按規定選擇。");
-                fpStartDate.clear();
-                fpEndDate.clear();
-            }
-        }
-    });
+function refreshBorrowDateMinLimit(shouldClearInvalidDates = true) {
+    const newMinDate = getBorrowMinDateByCurrentForm();
+    const minTime = new Date(newMinDate).setHours(0, 0, 0, 0);
+
+    if (fpStartDate) fpStartDate.set('minDate', newMinDate);
+    if (fpEndDate) fpEndDate.set('minDate', newMinDate);
+
+    const startInput = document.getElementById('borrow_start_date');
+    const endInput = document.getElementById('borrow_end_date');
+    const startDate = startInput && startInput.value ? new Date(startInput.value) : null;
+    const endDate = endInput && endInput.value ? new Date(endInput.value) : null;
+
+    if (startDate) startDate.setHours(0, 0, 0, 0);
+    if (endDate) endDate.setHours(0, 0, 0, 0);
+
+    if (shouldClearInvalidDates && ((startDate && startDate.getTime() < minTime) || (endDate && endDate.getTime() < minTime))) {
+        alert(
+            (isSpecialActivityForDateLimit()
+                ? '特殊活動需至少提前 30 天申請。\n'
+                : '一般借用需至少提前 3 天申請，三天內不開放借用。\n') +
+            '請重新選擇至少為 ' + formatDate(newMinDate) + ' 的日期。'
+        );
+        if (fpStartDate) fpStartDate.clear(); else if (startInput) startInput.value = '';
+        if (fpEndDate) fpEndDate.clear(); else if (endInput) endInput.value = '';
+    }
 }
+
+['participant_count', 'staff_count'].forEach(function (id) {
+    const el = document.getElementById(id) || document.querySelector('[name="' + id + '"]');
+    if (el) {
+        el.addEventListener('change', function () { refreshBorrowDateMinLimit(true); });
+        el.addEventListener('input', function () { refreshBorrowDateMinLimit(true); });
+    }
+});
+
+['has_alcohol', 'has_fire', 'has_sales'].forEach(function (name) {
+    document.querySelectorAll('input[name="' + name + '"]').forEach(function (el) {
+        el.addEventListener('change', function () { refreshBorrowDateMinLimit(true); });
+    });
+});
 
 function goToStep(stepNo) {
     const currentStepInput = document.getElementById("current_step");
@@ -5264,6 +5377,98 @@ function goToStep(stepNo) {
         if (days > 4) {
             alert("活動天數最多不可超過 4 天，請重新選擇！");
             return;
+        }
+
+        // 驗證入場/離場時間：07:00～22:50，10 分鐘為單位
+        const borrowStartHour = parseInt(document.querySelector('select[name="borrow_start_time_h"]')?.value || '');
+        const borrowStartMin = parseInt(document.querySelector('select[name="borrow_start_time_m"]')?.value || '');
+        const borrowEndHour = parseInt(document.querySelector('select[name="borrow_end_time_h"]')?.value || '');
+        const borrowEndMin = parseInt(document.querySelector('select[name="borrow_end_time_m"]')?.value || '');
+        const isValidEntryExitTime = (hour, minute) => {
+            if (Number.isNaN(hour) || Number.isNaN(minute)) return false;
+            if (minute % 10 !== 0) return false;
+            return (hour > 7 || (hour === 7 && minute >= 0)) &&
+                   (hour < 22 || (hour === 22 && minute <= 50));
+        };
+        if (!isValidEntryExitTime(borrowStartHour, borrowStartMin) || !isValidEntryExitTime(borrowEndHour, borrowEndMin)) {
+            alert("入場時間/離場時間必須在 07:00～22:50 之間，且以 10 分鐘為單位！");
+            return;
+        }
+
+        // 驗證實際領取和歸還時間在 8:30-16:30 範圍內
+        const pickupHour = parseInt(document.querySelector('select[name="actual_pickup_time_h"]')?.value || '');
+        const pickupMin = parseInt(document.querySelector('select[name="actual_pickup_time_m"]')?.value || '');
+        const returnHour = parseInt(document.querySelector('select[name="actual_return_time_h"]')?.value || '');
+        const returnMin = parseInt(document.querySelector('select[name="actual_return_time_m"]')?.value || '');
+
+        if (pickupHour > 0 && pickupMin >= 0) {
+            // 檢查實際領取時間不能早於 8:30
+            if (pickupHour < 8 || (pickupHour === 8 && pickupMin < 30)) {
+                alert("實際領取器材與進入場地時間不能早於 8:30！");
+                document.querySelector('select[name="actual_pickup_time_h"]').focus();
+                return;
+            }
+            // 檢查實際領取時間不能晚於 16:30
+            if (pickupHour > 16 || (pickupHour === 16 && pickupMin > 30)) {
+                alert("實際領取器材與進入場地時間不能晚於 16:30！");
+                document.querySelector('select[name="actual_pickup_time_h"]').focus();
+                return;
+            }
+        }
+
+        if (returnHour > 0 && returnMin >= 0) {
+            // 檢查實際歸還時間不能早於 8:30
+            if (returnHour < 8 || (returnHour === 8 && returnMin < 30)) {
+                alert("實際歸還器材與離開場地時間不能早於 8:30！");
+                document.querySelector('select[name="actual_return_time_h"]').focus();
+                return;
+            }
+            // 檢查實際歸還時間不能晚於 16:30
+            if (returnHour > 16 || (returnHour === 16 && returnMin > 30)) {
+                alert("實際歸還器材與離開場地時間不能晚於 16:30！");
+                document.querySelector('select[name="actual_return_time_h"]').focus();
+                return;
+            }
+        }
+
+        // 驗證實際領取和歸還時間與借用時間的關係
+        const pickupDateEl = document.getElementById('actual_pickup_date');
+        const returnDateEl = document.getElementById('actual_return_date');
+        const borrowStartDateEl = document.getElementById('borrow_start_date');
+        const borrowEndDateEl = document.getElementById('borrow_end_date');
+        
+        if (pickupDateEl && pickupDateEl.value && borrowStartDateEl && borrowStartDateEl.value) {
+            const actualPickupDate = new Date(pickupDateEl.value + 'T00:00:00');
+            const borrowStartDate = new Date(borrowStartDateEl.value + 'T00:00:00');
+            const minPickupDate = new Date(borrowStartDate);
+            minPickupDate.setDate(minPickupDate.getDate() - 1);
+            
+            if (actualPickupDate < minPickupDate || actualPickupDate > borrowStartDate) {
+                alert("實際領取/進入日期只能選借用開始日前一天到借用開始日之間！");
+                pickupDateEl.focus();
+                return;
+            }
+        }
+        
+        if (returnDateEl && returnDateEl.value && borrowStartDateEl && borrowStartDateEl.value && borrowEndDateEl && borrowEndDateEl.value) {
+            const actualReturnDate = new Date(returnDateEl.value + 'T00:00:00');
+            const borrowStartDate = new Date(borrowStartDateEl.value + 'T00:00:00');
+            const borrowEndDate = new Date(borrowEndDateEl.value + 'T00:00:00');
+            const maxReturnDate = new Date(borrowEndDate);
+            maxReturnDate.setDate(maxReturnDate.getDate() + 1);
+            
+            if (actualReturnDate < borrowStartDate) {
+                alert("實際歸還/離開日期不可早於借用開始日！");
+                returnDateEl.focus();
+                return;
+            }
+
+            if (actualReturnDate > maxReturnDate) {
+                alert("實際歸還/離開日期不能超過借用迄日後一天！");
+                returnDateEl.focus();
+                return;
+            }
+            
         }
     }
 
@@ -5702,24 +5907,24 @@ if (typeof window.toggleFireDetails === 'function') {
             return false;
         }
 
-        if (window.is30DaysRequired()) {
-            const minAllowedDate = new Date(today);
+        const requires30Days = window.is30DaysRequired();
+        const minAllowedDate = new Date(today);
+        minAllowedDate.setDate(minAllowedDate.getDate() + (requires30Days ? 30 : 3));
 
-            minAllowedDate.setDate(minAllowedDate.getDate() + 30);
+        if (startDate < minAllowedDate || endDate < minAllowedDate) {
+            alert(
+                (requires30Days
+                    ? '注意：由於您的活動包含特殊性質（酒精、明火、攤販、活動對象100人以上或工作人員100人以上），必須在 30 天之前申請！\n'
+                    : '一般借用需至少提前 3 天申請，三天內不開放借用。\n') +
+                '系統已清空不合規的日期，請重新選擇至少為 ' + formatDate(minAllowedDate) + ' 的日期。'
+            );
 
-            if (startDate < minAllowedDate || endDate < minAllowedDate) {
-                alert(
-                    '注意：由於您的活動包含特殊性質（酒精、明火、攤販、活動對象100人以上或工作人員100人以上），必須在 30 天之前申請！\n' +
-                    '系統已清空不合規的日期，請重新選擇至少為 ' + formatDate(minAllowedDate) + ' 的日期。'
-                );
-
-                if (shouldClearInvalidDates) {
-                    startDateInput.value = '';
-                    endDateInput.value = '';
-                }
-
-                return false;
+            if (shouldClearInvalidDates) {
+                startDateInput.value = '';
+                endDateInput.value = '';
             }
+
+            return false;
         }
 
         return true;
@@ -6174,6 +6379,233 @@ const fireAct = document.getElementById('fire_activity_name');     // 對應上�
 // 如果你的表單本來就是靠 HTML 內建的 required 阻擋，這段可以不加；
 // 但如果你的「下一步」是 JS 寫的，請把這段加入你的「切換步驟函數」裡面：
 
+// ========== 動態分鐘選項顯示 (8:30-16:30 限制) ==========
+document.addEventListener('DOMContentLoaded', function() {
+    // 初始化實際領取時間的動態分鐘選項
+    const pickupHourSelect = document.querySelector('select[name="actual_pickup_time_h"]');
+    const pickupMinSelect = document.querySelector('select[name="actual_pickup_time_m"]');
+    
+    // 初始化實際歸還時間的動態分鐘選項
+    const returnHourSelect = document.querySelector('select[name="actual_return_time_h"]');
+    const returnMinSelect = document.querySelector('select[name="actual_return_time_m"]');
+    
+    // 函數：更新分鐘選項的顯示狀態
+    function updateMinuteOptions(hourSelect, minuteSelect) {
+        if (!hourSelect || !minuteSelect) return;
+        
+        const selectedHour = parseInt(hourSelect.value);
+        const minOptions = minuteSelect.querySelectorAll('option[value!=""]');
+        
+        minOptions.forEach(option => {
+            const minValue = parseInt(option.value);
+            option.style.display = 'block';
+            
+            // 8點：只顯示 30 以上的分鐘 (30, 40, 50)
+            if (selectedHour === 8 && minValue < 30) {
+                option.style.display = 'none';
+            }
+            
+            // 16點：只顯示 30 以下的分鐘 (00, 10, 20, 30)
+            if (selectedHour === 16 && minValue > 30) {
+                option.style.display = 'none';
+            }
+        });
+        
+        // 如果當前選中的分鐘選項被隱藏，重置為空
+        const currentMinValue = parseInt(minuteSelect.value);
+        if (currentMinValue > 0) {
+            const currentOption = minuteSelect.querySelector(`option[value="${currentMinValue}"]`);
+            if (currentOption && currentOption.style.display === 'none') {
+                minuteSelect.value = '';
+            }
+        }
+    }
+    
+    // 為實際領取時間綁定事件
+    if (pickupHourSelect) {
+        pickupHourSelect.addEventListener('change', function() {
+            updateMinuteOptions(pickupHourSelect, pickupMinSelect);
+        });
+        // 初始化顯示
+        updateMinuteOptions(pickupHourSelect, pickupMinSelect);
+    }
+    
+    // 為實際歸還時間綁定事件
+    if (returnHourSelect) {
+        returnHourSelect.addEventListener('change', function() {
+            updateMinuteOptions(returnHourSelect, returnMinSelect);
+        });
+        // 初始化顯示
+        updateMinuteOptions(returnHourSelect, returnMinSelect);
+    }
+});
+// ========== 動態分鐘選項顯示結束 ==========
+
+// ========== 動態禁用不符合條件的借用日期 ==========
+document.addEventListener('DOMContentLoaded', function() {
+    const borrowStartDateEl = document.getElementById('borrow_start_date');
+    const borrowEndDateEl = document.getElementById('borrow_end_date');
+    
+    if (!borrowStartDateEl || !borrowEndDateEl) return;
+    
+    // 函數：計算最小可選日期
+    function calculateMinAllowedDate() {
+        const today = new Date();
+        let minDate = new Date(today);
+        
+        // 基本要求：三天內不開放借用（最少提前3天）
+        minDate.setDate(minDate.getDate() + 3);
+        
+        // 檢查是否需要30天提前
+        const hasAlcohol = document.querySelector('input[name="has_alcohol"]')?.checked;
+        const hasFire = document.querySelector('input[name="has_fire"]')?.checked;
+        const hasSales = document.querySelector('input[name="has_sales"]')?.checked;
+        
+        const participantCount = document.querySelector('select[name="participant_count"]')?.value || '';
+        const participantRequires30Days = participantCount === '100~200人' || participantCount === '200人以上';
+        
+        const staffCountInput = document.querySelector('input[name="staff_count"]');
+        const staffCount = staffCountInput ? parseInt(staffCountInput.value) || 0 : 0;
+        const staffRequires30Days = staffCount >= 100;
+        
+        // 檢查是否有特殊性質需要30天提前申請
+        const requires30Days = hasAlcohol || hasFire || hasSales || participantRequires30Days || staffRequires30Days;
+        
+        if (requires30Days) {
+            minDate = new Date(today);
+            minDate.setDate(minDate.getDate() + 30);
+        }
+        
+        // 檢查是否有插旗需求（需要7個工作天提前）
+        const setupFlags = document.querySelector('input[name="setup_flags"]')?.checked;
+        if (setupFlags) {
+            const weekdayMin = new Date(today);
+            let workdaysToAdd = 7;
+            while (workdaysToAdd > 0) {
+                weekdayMin.setDate(weekdayMin.getDate() + 1);
+                const dayOfWeek = weekdayMin.getDay();
+                if (dayOfWeek !== 0 && dayOfWeek !== 6) { // 非週末
+                    workdaysToAdd--;
+                }
+            }
+            
+            if (weekdayMin > minDate) {
+                minDate = weekdayMin;
+            }
+        }
+        
+        return minDate.toISOString().split('T')[0];
+    }
+    
+    // 函數：更新日期選擇器的禁用日期
+    function updateDateConstraints() {
+        const minAllowedDate = calculateMinAllowedDate();
+        
+        // 更新開始日期的最小日期
+        borrowStartDateEl.min = minAllowedDate;
+        borrowEndDateEl.min = minAllowedDate;
+        
+        // 如果 flatpickr 已初始化，也更新它的 minDate
+        if (borrowStartDateEl._flatpickr) {
+            borrowStartDateEl._flatpickr.set('minDate', minAllowedDate);
+        }
+        if (borrowEndDateEl._flatpickr) {
+            borrowEndDateEl._flatpickr.set('minDate', minAllowedDate);
+        }
+        
+        // 驗證現有選擇的日期是否仍然有效
+        if (borrowStartDateEl.value && borrowStartDateEl.value < minAllowedDate) {
+            borrowStartDateEl.value = '';
+        }
+        if (borrowEndDateEl.value && borrowEndDateEl.value < minAllowedDate) {
+            borrowEndDateEl.value = '';
+        }
+        
+        // 更新實際領取和歸還日期的約束
+        updateActualDateConstraints();
+    }
+    
+    // 函數：更新實際領取和歸還日期的約束
+    function updateActualDateConstraints() {
+        const pickupDateEl = document.getElementById('actual_pickup_date');
+        const returnDateEl = document.getElementById('actual_return_date');
+        
+        if (!pickupDateEl || !returnDateEl) return;
+        
+        // 實際領取日期：借用開始日前一天～借用開始日。直接用日期 -1 day，不跳過六日。
+        if (borrowStartDateEl && borrowStartDateEl.value) {
+            const borrowStartDate = new Date(borrowStartDateEl.value + 'T00:00:00');
+            const minPickupDate = new Date(borrowStartDate);
+            minPickupDate.setDate(minPickupDate.getDate() - 1);
+            const minPickupDateStr = minPickupDate.toISOString().split('T')[0];
+            pickupDateEl.min = minPickupDateStr;
+            pickupDateEl.max = borrowStartDateEl.value;
+            if (pickupDateEl._flatpickr) {
+                pickupDateEl._flatpickr.set('minDate', minPickupDateStr);
+                pickupDateEl._flatpickr.set('maxDate', borrowStartDateEl.value);
+            }
+            if (pickupDateEl.value && (pickupDateEl.value < minPickupDateStr || pickupDateEl.value > borrowStartDateEl.value)) {
+                pickupDateEl.value = '';
+            }
+        }
+        
+        // 實際歸還日期：最小為借用開始日期，最大為借用迄日後一天。直接用日期 +1 day，不跳過六日。
+        if (borrowEndDateEl && borrowEndDateEl.value) {
+            const borrowEndDate = new Date(borrowEndDateEl.value + 'T00:00:00');
+            const maxReturnDate = new Date(borrowEndDate);
+            maxReturnDate.setDate(maxReturnDate.getDate() + 1);
+            
+            const maxReturnDateStr = maxReturnDate.toISOString().split('T')[0];
+            
+            // 設置返回日期的最小和最大值
+            if (borrowStartDateEl && borrowStartDateEl.value) {
+                returnDateEl.min = borrowStartDateEl.value;
+            }
+            returnDateEl.max = maxReturnDateStr;
+            
+            if (returnDateEl._flatpickr) {
+                if (borrowStartDateEl && borrowStartDateEl.value) {
+                    returnDateEl._flatpickr.set('minDate', borrowStartDateEl.value);
+                }
+                returnDateEl._flatpickr.set('maxDate', maxReturnDateStr);
+            }
+            
+            // 驗證現有選擇是否仍然有效
+            if (returnDateEl.value && returnDateEl.value > maxReturnDateStr) {
+                returnDateEl.value = '';
+            }
+        }
+    }
+    
+    // 監聽相關條件的改變
+    const conditionFields = [
+        'input[name="has_alcohol"]',
+        'input[name="has_fire"]',
+        'input[name="has_sales"]',
+        'input[name="setup_flags"]',
+        'select[name="participant_count"]',
+        'input[name="staff_count"]'
+    ];
+    
+    conditionFields.forEach(selector => {
+        const elements = document.querySelectorAll(selector);
+        elements.forEach(el => {
+            el.addEventListener('change', updateDateConstraints);
+            el.addEventListener('input', updateDateConstraints);
+        });
+    });
+    
+    // 監聽借用開始/結束日期改變，更新實際領取/歸還日期的約束
+    borrowStartDateEl.addEventListener('change', updateActualDateConstraints);
+    borrowStartDateEl.addEventListener('input', updateActualDateConstraints);
+    borrowEndDateEl.addEventListener('change', updateActualDateConstraints);
+    borrowEndDateEl.addEventListener('input', updateActualDateConstraints);
+    
+    // 初始化
+    updateDateConstraints();
+    updateActualDateConstraints();
+});
+// ========== 動態禁用不符合條件的借用日期結束 ==========
 
 </script>
 

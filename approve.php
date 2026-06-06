@@ -121,7 +121,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reservation_ids'], $_
                     // Only allow user to process if their role matches the current approval stage
                     $canProcess = false;
                     // allow these roles to request revision regardless of stage
-                    if ($_POST['action'] === 'request_revision' && in_array($currentRole, ['a', 'b', 'c', '3'], true)) {
+                    if ($_POST['action'] === 'request_revision' && in_array($currentRole, ['a', 'b', 'c', 'd', '3'], true)) {
                         $canProcess = true;
                     } else {
                         if ($currentRole === '2') {

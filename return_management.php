@@ -38,16 +38,35 @@ if (isset($link)) {
         $violationPoints = (int)$pointsRow['total_points'];
     }
     
-    // 2. 檢查該學生的器材證是否處於「註銷 (cancelled)」狀態
-    $certSql = "SELECT validity_status FROM equipment_certificates WHERE holder_id = '{$safeUserId}'";
-    $certResult = mysqli_query($link, $certSql);
-    if ($certResult && mysqli_num_rows($certResult) > 0) {
-        $certRow = mysqli_fetch_assoc($certResult);
-        if (($certRow['validity_status'] ?? '') === 'cancelled') {
-            $isCertCancelled = true;
+    // 2. 檢查該學生的器材證狀態
+        $certSql = "SELECT valid_until 
+                    FROM equipment_certificates 
+                    WHERE holder_id = '{$safeUserId}' 
+                    ORDER BY valid_until DESC 
+                    LIMIT 1";
+        $certResult = mysqli_query($link, $certSql);
+        
+        $isCertCancelled = false;  // 這裡代表器材證已過期
+        
+        if ($certResult && mysqli_num_rows($certResult) > 0) {
+            $certRow = mysqli_fetch_assoc($certResult);
+            
+            if (!empty($certRow['valid_until'])) {
+                $validUntilTime = strtotime($certRow['valid_until']);
+                $now = time();
+                
+                if ($now > $validUntilTime) {
+                    $isCertCancelled = true; // 有證，但過期了
+                }
+            } else {
+                $isCertCancelled = true; // 欄位留白，視為無效
+            }
+        } else {
+            // 資料庫查不到這名學生的資料，代表他「從未申請過器材證」
+            $hasNoCert = true;
         }
     }
-}
+
 
 function pickExistingColumn(array $columns, array $candidates): ?string
 {

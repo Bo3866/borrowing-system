@@ -375,7 +375,6 @@ if ($dbError === '') {
             reservationSelectExpr($reservationColumns, 'vehicle_entry'),
             reservationSelectExpr($reservationColumns, 'setup_flags'),
             reservationSelectExpr($reservationColumns, 'flag_count'),
-            reservationSelectExpr($reservationColumns, 'purpose'),
             reservationSelectExpr($reservationColumns, 'proposal_file'),
             reservationSelectExpr($reservationColumns, 'proposal_original_name'),
             reservationSelectExpr($reservationColumns, 'proposal_uploaded_at'),
@@ -476,7 +475,6 @@ if ($dbError === '' && count($rows) > 0) {
             'vehicle_entry' => (string)($r['vehicle_entry'] ?? ''),
             'setup_flags' => (string)($r['setup_flags'] ?? ''),
             'flag_count' => (string)($r['flag_count'] ?? ''),
-            'purpose' => (string)($r['purpose'] ?? ''),
             'proposal_file' => (string)($r['proposal_file'] ?? ''),
             'proposal_original_name' => (string)($r['proposal_original_name'] ?? ''),
             'proposal_uploaded_at' => (string)($r['proposal_uploaded_at'] ?? ''),
@@ -1008,6 +1006,16 @@ if ($dbError === '' && count($rows) > 0) {
                                                         <div class="stepper-step text-center text-xs" data-step="3" data-role="b">
                                                             <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
                                                             <span class="stepper-text block font-medium">軍訓室審核</span>
+                                                            <span class="stepper-timestamp text-[10px] text-slate-400">-</span>
+                                                        </div>
+                                                        <div class="stepper-step text-center text-xs" data-step="4" data-role="c">
+                                                            <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
+                                                            <span class="stepper-text block font-medium">學務長審核</span>
+                                                            <span class="stepper-timestamp text-[10px] text-slate-400">-</span>
+                                                        </div>
+                                                        <div class="stepper-step text-center text-xs" data-step="5" data-role="3">
+                                                            <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
+                                                            <span class="stepper-text block font-medium">課指組審核</span>
                                                             <span class="stepper-timestamp text-[10px] text-slate-400">-</span>
                                                         </div>
                                                     </div>
@@ -1547,7 +1555,6 @@ if ($dbError === '' && count($rows) > 0) {
                     ${buildDetailItem('聯絡電話', formatDetailValue(data.coordinator_phone))}
                     ${buildDetailItem('其他聯絡方式', formatDetailValue(data.coordinator_other_contact))}
                     ${buildDetailItem('是否車輛入校', formatYesNo(data.vehicle_entry))}
-                    ${buildDetailItem('用途說明', formatDetailValue(data.purpose), 'md:col-span-2')}
                     <div class="md:col-span-2 space-y-3">
                         ${buildDetailItem('酒精', formatYesNo(data.has_alcohol))}
                         ${buildToggleSection('明火', hasFire, '有', fireDetailHtml)}

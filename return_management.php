@@ -32,9 +32,10 @@ $userId = $_SESSION['user_id'] ?? 0;
 $violationLogs = [];
 
 if (!empty($userId) && isset($link)) {
-    $violationSql = "SELECT vl.*, u.full_name 
+    $violationSql = "SELECT vl.*, u.full_name, r.activity_name AS activity_name
                      FROM violation_logs vl
                      JOIN users u ON vl.user_id = u.user_id
+                     LEFT JOIN reservations r ON vl.reservation_id = r.reservation_id
                      WHERE vl.user_id = ?
                      ORDER BY vl.created_at DESC";
                      
@@ -839,9 +840,6 @@ if ($dbError === '' && count($rows) > 0) {
                         <div style="font-size: 0.75rem; color: #991b1b;">
                             <span style="font-weight: 700;">租借權限受限！</span> 您目前已累計違規達 <span style="font-weight: 900; color: #dc2626; font-size: 0.875rem;"><?php echo $violationPoints; ?></span> 點，系統已自動暫停您的器材預約權限。
                         </div>
-                    </div>
-                    <a href="history.php" style="font-size: 0.75rem; font-weight: 700; color: #b91c1c; text-decoration: underline; white-space: nowrap;">查看違規明細 →</a>
-                </div>
             <?php else: ?>
                 
             <?php endif; ?>
@@ -1138,7 +1136,7 @@ if ($dbError === '' && count($rows) > 0) {
                     <table class="min-w-full divide-y divide-slate-200">
                         <thead class="bg-slate-50">
                             <tr>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">相關預約</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">活動名稱</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">違規原因</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">備註</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">記點時間</th>
@@ -1150,9 +1148,13 @@ if ($dbError === '' && count($rows) > 0) {
                                 <?php foreach ($violationLogs as $log): ?>
                                     <tr class="hover:bg-slate-50 transition">
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                                            <?php if (!empty($log['reservations_id'])): ?>
+                                            <?php if (!empty($log['activity_name'])): ?>
                                                 <span class="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
-                                                    #<?php echo $log['reservations_id']; ?>
+                                                    <?php echo htmlspecialchars($log['activity_name'], ENT_QUOTES, 'UTF-8'); ?>
+                                                </span>
+                                            <?php elseif (!empty($log['reservation_id'])): ?>
+                                                <span class="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
+                                                    單號: <?php echo htmlspecialchars($log['reservation_id'], ENT_QUOTES, 'UTF-8'); ?>
                                                 </span>
                                             <?php else: ?>
                                                 <span class="text-slate-400">-</span>

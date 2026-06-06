@@ -80,14 +80,29 @@ if ($link) {
             $violationPoints = (int)$pointsRow['total_points'];
         }
         
-        // 2. 檢查該學生的器材證是否處於「註銷 (cancelled)」狀態
-        $certSql = "SELECT validity_status FROM equipment_certificates WHERE holder_id = '{$safeUserId}'";
+        // 2. 檢查該學生的器材證狀態
+        $certSql = "SELECT valid_until FROM equipment_certificates WHERE holder_id = '{$safeUserId}'";
         $certResult = mysqli_query($link, $certSql);
+        
+        $hasNoCert = false;        // 新增：是否完全沒有器材證
+        $isCertCancelled = false;  // 這裡代表器材證已過期
+        
         if ($certResult && mysqli_num_rows($certResult) > 0) {
             $certRow = mysqli_fetch_assoc($certResult);
-            if (($certRow['validity_status'] ?? '') === 'cancelled') {
-                $isCertCancelled = true;
+            
+            if (!empty($certRow['valid_until'])) {
+                $validUntilTime = strtotime($certRow['valid_until']);
+                $now = time();
+                
+                if ($now > $validUntilTime) {
+                    $isCertCancelled = true; // 有證，但過期了
+                }
+            } else {
+                $isCertCancelled = true; // 欄位留白，視為無效
             }
+        } else {
+            // 💡 資料庫查不到這名學生的資料，代表他「從未申請過器材證」
+            $hasNoCert = true;
         }
     }
 
@@ -141,10 +156,25 @@ if ($link) {
 <body>
     <?php include __DIR__ . '/nav.php'; ?>
 
-    <?php if ($isLoggedIn): ?>
-    <div style="max-w: 80rem; margin: 1rem auto 0 auto; padding: 0 1rem; font-family: system-ui, sans-serif;">
+<?php if ($isLoggedIn): ?>
+    <div style="max-width: 80rem; margin: 1rem auto 0 auto; padding: 0 1rem; font-family: system-ui, sans-serif;">
         
-        <?php if ($isCertCancelled): ?>
+        <?php if ($hasNoCert): ?>
+            <div style="background-color: #eff6ff; border: 2px solid #93c5fd; border-radius: 0.75rem; padding: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); display: flex; align-items: start; gap: 0.75rem;">
+                <div style="color: #3b82f6; margin-top: 0.15rem; flex-shrink: 0; width: 16px; height: 16px;">
+                    <svg style="width: 16px; height: 16px; display: block;" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 111.084 1.085l-.041.02H11.25v2.25h1.5m-6.75 2.25V6a2.25 2.25 0 012.25-2.25h1.5A2.25 2.25 0 0113.5 6v12a2.25 2.25 0 01-2.25 2.25h-1.5A2.25 2.25 0 016 18z"></path>
+                    </svg>
+                </div>
+                <div style="flex: 1; display: flex; flex-direction: column; md-flex-direction: row; justify-content: space-between; gap: 1rem;">
+                    <div>
+                        <h4 style="margin: 0; font-weight: 700; font-size: 0.875rem; color: #1e40af;">您尚未取得器材證</h4>
+                        <p style="margin: 0.15rem 0 0 0; font-size: 0.75rem; color: #1d4ed8; line-height: 1.4;">本系統之器材預約僅開放給持有「器材證」之學員。若您有租借需求，請先完成相關培訓或親洽課指組辦公室申請。</p>
+                    </div>
+                </div>
+            </div>
+
+        <?php elseif ($isCertCancelled): ?>
             <div style="background-color: #fef2f2; border: 2px solid #fca5a5; border-radius: 0.75rem; padding: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); display: flex; align-items: start; gap: 0.75rem;">
                 <div style="color: #ef4444; margin-top: 0.15rem; flex-shrink: 0; width: 16px; height: 16px;">
                     <svg style="width: 16px; height: 16px; display: block;" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
@@ -153,14 +183,14 @@ if ($link) {
                 </div>
                 <div style="flex: 1; display: flex; flex-direction: column; md-flex-direction: row; justify-content: space-between; gap: 1rem;">
                     <div>
-                        <h4 style="margin: 0; font-weight: 700; font-size: 0.875rem; color: #991b1b;">您的器材證已被註銷！</h4>
-                        <p style="margin: 0.15rem 0 0 0; font-size: 0.75rem; color: #b91c1c; line-height: 1.4;">因嚴重違反器材租借管理規範（如器材逾期未領或未歸還超過兩日），課指組老師已註銷您的器材證。您目前無法使用線上預約功能。</p>
+                        <h4 style="margin: 0; font-weight: 700; font-size: 0.875rem; color: #991b1b;">您的器材證已過期！</h4>
+                        <p style="margin: 0.15rem 0 0 0; font-size: 0.75rem; color: #b91c1c; line-height: 1.4;">您的器材證已超過有效期限（valid_until）。為了維護租借權益，請攜帶相關證明文件親洽課指組辦公室辦理展延，謝謝。</p>
                     </div>
-                    <a href="history.php" style="font-size: 0.75rem; font-weight: 700; color: #b91c1c; text-decoration: underline; white-space: nowrap; align-self: start;">親洽課指組辦公室 →</a>
                 </div>
             </div>
 
         <?php elseif ($violationPoints > 0): ?>
+            
             <?php if ($violationPoints >= 3): ?>
                 <div style="background-color: #fef2f2; border: 2px solid #fca5a5; border-radius: 0.75rem; padding: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); display: flex; align-items: center; justify-content: space-between; gap: 1rem;">
                     <div style="display: flex; align-items: center; gap: 0.6rem;">
@@ -189,6 +219,7 @@ if ($link) {
                     </div>
                 </div>
             <?php endif; ?>
+
         <?php endif; ?>
         
     </div>

@@ -139,11 +139,20 @@ if ($link && $searchId !== '') {
         .form-group { margin-bottom: 1.2rem; }
         .form-group label { display: block; margin-bottom: 0.4rem; font-weight: bold; color: #334155; }
         .form-control { width: 100%; padding: 0.6rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; }
-        .search-row { display: flex; gap: 0.5rem; }
+        .search-row { display: flex; gap: 0.5rem; width: 100%;}
         .search-row .form-control { flex: 1; }
-        .search-row button { padding: 0 1.2rem; background: #0f766e; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        .search-row button { 
+            width: 110px; /* 嚴格限制搜尋按鈕的寬度（變短） */
+            flex-shrink: 0; /* 防止按鈕被彈性佈局壓縮變形 */
+            padding: 0; /* 移除內邊距改用固定寬度控制 */
+            background: #0f766e; 
+            color: white; 
+            border: none; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            font-weight: bold; 
+        }
         .divider { border-top: 1px solid #e2e8f0; margin: 2rem 0; }
-        
         .result-table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 14px; }
         .result-table th, .result-table td { padding: 0.8rem; text-align: left; border-bottom: 1px solid #e2e8f0; vertical-align: middle; }
         .result-table th { background: #f1f5f9; color: #475569; }
@@ -186,8 +195,8 @@ if ($link && $searchId !== '') {
                     <div class="form-group">
                         <label for="search_id">請輸入搜尋關鍵字（學號或姓名）</label>
                         <div class="search-row">
-                            <input type="text" id="search_id" name="search_id" class="form-control" placeholder="例如：王小明、110..." required value="<?php echo htmlspecialchars($searchId, ENT_QUOTES, 'UTF-8'); ?>">
-                            <button type="submit">🔍 搜尋</button>
+                            <input type="text" id="search_id" name="search_id" class="form-control" required value="<?php echo htmlspecialchars($searchId, ENT_QUOTES, 'UTF-8'); ?>">
+                            <button type="submit">搜尋</button>
                         </div>
                     </div>
                 </form>

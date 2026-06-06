@@ -61,31 +61,74 @@ $dbError = '';
 $link = getMysqliConnection($dbError);
 
 // ==========================================
-// 💡 新增：檢查該名學生目前的累積違規點數
+// 💡 針對已登入的使用者，查詢其違規點數與器材證狀態，並執行安全鎖定
 // ==========================================
-$totalViolationPoints = 0;
+$violationPoints = 0;
+$isCertCancelled = false;
+$hasNoCert = false;
 $isUserBlocked = false;
 
-if ($dbError === '') {
-    $vSql = "SELECT COALESCE(SUM(points), 0) as total FROM violation_logs WHERE user_id = ?";
-    $vStmt = mysqli_prepare($link, $vSql);
-    if ($vStmt) {
-        mysqli_stmt_bind_param($vStmt, 's', $userId);
-        mysqli_stmt_execute($vStmt);
-        mysqli_stmt_bind_result($vStmt, $totalViolationPoints);
-        mysqli_stmt_fetch($vStmt);
-        mysqli_stmt_close($vStmt);
+// 這裡配合你的頁面變數，如果原本是用 $dbError === ''，可保留或換成 $link
+if ($dbError === '' && isset($_SESSION['user_id'])) {
+    $safeUserId = mysqli_real_escape_string($link, (string)$_SESSION['user_id']);
+    
+    // 1. 統計該學生的累積違規總點數（扣除手動銷點）
+    $pointsSql = "SELECT 
+                    GREATEST(SUM(CASE WHEN custom_reason LIKE '[系統銷點]%' THEN -points ELSE points END), 0) AS total_points 
+                  FROM violation_logs 
+                  WHERE user_id = '{$safeUserId}'";
+
+    $pointsResult = mysqli_query($link, $pointsSql);
+    if ($pointsResult) {
+        $pointsRow = mysqli_fetch_assoc($pointsResult);
+        $violationPoints = (int)($pointsRow['total_points'] ?? 0);
     }
     
-    // 🎯 核心規則：如果記點大於等於 3 點，將狀態設為被封鎖
-    if ($totalViolationPoints >= 3) {
+    // 2. 檢查該學生的器材證狀態
+    $certSql = "SELECT valid_until 
+                FROM equipment_certificates 
+                WHERE holder_id = '{$safeUserId}' 
+                ORDER BY valid_until DESC 
+                LIMIT 1";
+    $certResult = mysqli_query($link, $certSql);
+    
+    if ($certResult && mysqli_num_rows($certResult) > 0) {
+        $certRow = mysqli_fetch_assoc($certResult);
+        
+        if (!empty($certRow['valid_until'])) {
+            $validUntilTime = strtotime($certRow['valid_until']);
+            $now = time();
+            
+            if ($now > $validUntilTime) {
+                $isCertCancelled = true; // 有證，但過期了
+            }
+        } else {
+            $isCertCancelled = true; // 欄位留白，視為無效
+        }
+    } else {
+        // 資料庫查不到這名學生的資料，代表他「從未申請過器材證」
+        $hasNoCert = true;
+    }
+
+    // 🎯 核心鎖定規則：
+    // 如果記點大於等於 3 點，或是器材證過期，或是根本沒有器材證，皆設為封鎖（無法租借）
+    if ($violationPoints >= 3 || $isCertCancelled || $hasNoCert) {
         $isUserBlocked = true;
     }
 }
 
-// 💡 額外保護防呆：如果已經被封鎖，而對方嘗試用 POST 強行送出表單，直接回絕
+// 💡 額外保護防呆：如果已經被封鎖，而對方嘗試用 POST 強行送出表單，直接拒絕並給出具體原因
 if ($isUserBlocked && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    die('<h2 style="color:red; text-align:center; margin-top:50px;">您的違規記點已達 ' . $totalViolationPoints . ' 點，系統已限制您的租借權限，無法提交申請！</h2>');
+    $errorReason = '';
+    if ($violationPoints >= 3) {
+        $errorReason = '您的違規記點已達 ' . $violationPoints . ' 點，已達懲戒標準（3點）！';
+    } elseif ($isCertCancelled) {
+        $errorReason = '您的器材證已過期，無法辦理租借！';
+    } elseif ($hasNoCert) {
+        $errorReason = '您尚未取得核發之器材證，無法辦理租借！';
+    }
+
+    die('<h2 style="color:#b91c1c; text-align:center; margin-top:50px; font-family: sans-serif;">🛑 權限受限：' . $errorReason . '<br><br><span style="color:#64748b; font-size:16px;">系統已限制您的租借權限，無法提交申請。</span></h2>');
 }
 
 $userPhone = '';
@@ -1928,16 +1971,27 @@ SQL;
         </div>
     </div>
 
-    <?php if ($isUserBlocked): ?>
-    <div style="background-color: #fef2f2; border: 2px solid #ef4444; padding: 20px; rounded-xl; border-radius: 12px; margin-bottom: 25px; text-align: center;">
+    <?php if (isset($isUserBlocked) && $isUserBlocked): ?>
+    <div style="background-color: #fef2f2; border: 2px solid #ef4444; padding: 20px; border-radius: 12px; margin-bottom: 25px; text-align: center;">
         <h3 style="color: #b91c1c; font-size: 18px; font-weight: bold; margin-bottom: 8px;">
             ⚠️ 帳號租借權限限制中
         </h3>
-        <p style="color: #7f1d1d; font-size: 14px; margin: 0;">
-            您目前在系統中已累積 <strong style="font-size: 18px; color: #ef4444;"><?php echo $totalViolationPoints; ?></strong> 點違規紀錄。<br>
-            依校方課指組規範，違規記點達 3 點（含）以上者，將暫停資源與場地租借權限，請洽課指組老師處理。
+        <p style="color: #7f1d1d; font-size: 14px; margin: 0; line-height: 1.6;">
+            <?php if (($violationPoints ?? 0) >= 3): ?>
+                您目前在系統中已累積 <strong style="font-size: 18px; color: #ef4444;"><?php echo (int)$violationPoints; ?></strong> 點違規紀錄。<br>
+                依校方課指組規範，違規記點達 3 點（含）以上者，將暫停資源與場地租借權限，請洽課指組老師處理。
+            <?php elseif (isset($isCertCancelled) && $isCertCancelled): ?>
+                系統偵測到您的<strong style="color: #ef4444;">器材證已過期</strong>。<br>
+                未持有有效器材證者無法辦理租借，請洽管理員或課指組核發新證。
+            <?php elseif (isset($hasNoCert) && $hasNoCert): ?>
+                您目前<strong style="color: #ef4444;">尚未取得器材證</strong>。<br>
+                本系統限制僅限持有器材證之人員進行租借，請先完成考核並洽管理員核發。
+            <?php else: ?>
+                您的帳號目前暫時無法進行租借申請，如有疑問請洽課指組老師。
+            <?php endif; ?>
         </p>
     </div>
+
     <style>
         /* 💡 透過 CSS 直接把「下一步」以及「暫存」等按鈕隱藏，讓對方徹底無法操作 */
         .btn-next, .saveDraftBtn, .step-actions, #submitButton {

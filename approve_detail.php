@@ -345,9 +345,41 @@ if ($spStmt) {
                 <?php if (!empty($salesRoster)) { ?>
                     <div style="grid-column:1/3;margin-top:0.5rem;padding:0.5rem;border-radius:6px;background:#fafbfd;border:1px solid #eef6ff;">
                         <label class="meta-label">攤位人員名冊</label>
-                        <?php foreach ($salesRoster as $p) { ?>
-                            <div style="margin:6px 0;"><input type="text" value="<?php echo safe_html((string)$p, ENT_QUOTES, 'UTF-8'); ?>" disabled style="width:40%;"></div>
+                        <div style="overflow:auto;margin-top:0.5rem;">
+                        <table style="width:100%;border-collapse:collapse;border:1px solid #e6eefc;">
+                            <thead>
+                                <tr style="background:#f3f9ff;">
+                                    <th style="text-align:left;padding:8px;border-bottom:1px solid #e6eefc;">編號</th>
+                                    <th style="text-align:left;padding:8px;border-bottom:1px solid #e6eefc;">負責人</th>
+                                    <th style="text-align:left;padding:8px;border-bottom:1px solid #e6eefc;">販售物品</th>
+                                    <th style="text-align:left;padding:8px;border-bottom:1px solid #e6eefc;">連絡電話</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                        <?php foreach ($salesRoster as $p) {
+                            if (is_array($p)) {
+                                $no = trim((string)($p['booth_no'] ?? ''));
+                                $manager = trim((string)($p['manager'] ?? ''));
+                                $name = trim((string)($p['booth_name'] ?? ''));
+                                $phone = trim((string)($p['phone'] ?? ''));
+                            } else {
+                                // If stored as plain string, put it into 販售物品 column
+                                $no = '';
+                                $manager = '';
+                                $name = trim((string)$p);
+                                $phone = '';
+                            }
+                        ?>
+                                <tr>
+                                    <td style="padding:8px;border-top:1px solid #f0f6ff;vertical-align:top;min-width:80px;"><?php echo safe_html($no, ENT_QUOTES, 'UTF-8'); ?></td>
+                                    <td style="padding:8px;border-top:1px solid #f0f6ff;vertical-align:top;min-width:140px;"><?php echo safe_html($manager, ENT_QUOTES, 'UTF-8'); ?></td>
+                                    <td style="padding:8px;border-top:1px solid #f0f6ff;vertical-align:top;"><?php echo safe_html($name, ENT_QUOTES, 'UTF-8'); ?></td>
+                                    <td style="padding:8px;border-top:1px solid #f0f6ff;vertical-align:top;min-width:120px;"><?php echo safe_html($phone, ENT_QUOTES, 'UTF-8'); ?></td>
+                                </tr>
                         <?php } ?>
+                            </tbody>
+                        </table>
+                        </div>
                     </div>
                 <?php } else { ?>
                     <div style="grid-column:1/3;margin-top:0.5rem;padding:0.5rem;border-radius:6px;background:#fafbfd;border:1px solid #eef6ff;">

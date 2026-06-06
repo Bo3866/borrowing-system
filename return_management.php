@@ -1026,9 +1026,9 @@ if ($dbError === '' && count($rows) > 0) {
                     <table class="min-w-full divide-y divide-slate-200">
                         <thead class="bg-slate-50">
                             <tr>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">紀錄姓名</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">相關預約</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">違規原因</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">備註</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">記點時間</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">點數</th>
                             </tr>
@@ -1037,9 +1037,6 @@ if ($dbError === '' && count($rows) > 0) {
                             <?php if (!empty($violationLogs)): ?>
                                 <?php foreach ($violationLogs as $log): ?>
                                     <tr class="hover:bg-slate-50 transition">
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">
-                                            <?php echo htmlspecialchars($log['full_name']); ?>
-                                        </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
                                             <?php if (!empty($log['reservations_id'])): ?>
                                                 <span class="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
@@ -1050,38 +1047,50 @@ if ($dbError === '' && count($rows) > 0) {
                                             <?php endif; ?>
                                         </td>
                                         <td class="px-6 py-4 text-sm text-slate-700 max-w-xs break-words">
-                                            <?php 
-                                                if (!empty($log['custom_reason'])) {
-                                                    echo htmlspecialchars($log['custom_reason']);
-                                                } else {
-                                                    echo htmlspecialchars($log['reason_category'] ?? '未分類違規');
-                                                }
-                                            ?>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                                            <?php echo date('Y-m-d H:i', strtotime($log['created_at'])); ?>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-rose-600 font-semibold">
-                                            +<?php echo (int)$log['point']; ?> 點
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            <?php else: ?>
-                                <tr>
-                                    <td colspan="5" class="px-6 py-12 text-center text-sm text-slate-400">
-                                        <div class="flex flex-col items-center justify-center space-y-2">
-                                            <span class="text-2xl">🎉</span>
-                                            <p>太棒了！目前沒有任何記點紀錄</p>
-                                        </div>
-                                    </td>
-                                </tr>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-        </main>    
+                                <?php 
+                                    // 1. 定義規則對照表
+                                    $ruleMapping = [
+                                        'rule_1' => '器材逾期領取或逾期歸還 / 未按時領取且未事先取消',
+                                        'rule_2' => '領取或歸還器材時，器材證持有人未親自到場',
+                                        'rule_3' => '未於規定時間內辦理器材預約 (臨時預約)',
+                                        'rule_cancel' => '器材超過兩日未領/未還且未通知，直接註銷器材證',
+                                        'rule_other' => '其他（請見備註）',
+                                    ];
+                                    $category = $log['reason_category'] ?? '';
+                                    // 修正點：加上 echo 把對照後的中文印出來
+                                    echo htmlspecialchars($ruleMapping[$category] ?? $category, ENT_QUOTES, 'UTF-8');
+                                ?>
+                            </td>
+                            <td class="px-6 py-4 text-sm text-slate-500 max-w-xs break-words">
+                                <?php 
+                                    if (!empty($log['custom_reason'])) {
+                                        echo htmlspecialchars($log['custom_reason'], ENT_QUOTES, 'UTF-8');
+                                    } else {
+                                        echo '<span class="text-slate-400">-</span>';
+                                    }
+                                ?>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                                <?php echo date('Y-m-d H:i', strtotime($log['created_at'])); ?>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-rose-600 font-semibold">
+                                +<?php echo (int)$log['points']; ?> 點
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <tr>
+                        <td colspan="5" class="px-6 py-12 text-center text-sm text-slate-400">
+                            <div class="flex flex-col items-center justify-center space-y-2">
+                                <span class="text-2xl">🎉</span>
+                                <p>目前沒有任何記點紀錄</p>
+                            </div>
+                        </td>
+                    </tr>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
 </div>
 
             

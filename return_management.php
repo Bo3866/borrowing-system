@@ -59,12 +59,16 @@ if (isset($link)) {
     $safeUserId = mysqli_real_escape_string($link, (string)$_SESSION['user_id']);
     
     // 1. 統計該學生的累積違規總點數
-    $pointsSql = "SELECT COALESCE(SUM(points), 0) AS total_points FROM violation_logs WHERE user_id = '{$safeUserId}'";
-    $pointsResult = mysqli_query($link, $pointsSql);
-    if ($pointsResult) {
-        $pointsRow = mysqli_fetch_assoc($pointsResult);
-        $violationPoints = (int)$pointsRow['total_points'];
-    }
+        $pointsSql = "SELECT 
+                        GREATEST(SUM(CASE WHEN custom_reason LIKE '[系統銷點]%' THEN -points ELSE points END), 0) AS total_points 
+                      FROM violation_logs 
+                      WHERE user_id = '{$safeUserId}'";
+
+        $pointsResult = mysqli_query($link, $pointsSql);
+        if ($pointsResult) {
+            $pointsRow = mysqli_fetch_assoc($pointsResult);
+            $violationPoints = (int)($pointsRow['total_points'] ?? 0);
+        }
     
     // 2. 檢查該學生的器材證狀態
         $certSql = "SELECT valid_until FROM equipment_certificates WHERE holder_id = '{$safeUserId}'";
@@ -1181,9 +1185,13 @@ if ($dbError === '' && count($rows) > 0) {
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
                                 <?php echo date('Y-m-d H:i', strtotime($log['created_at'])); ?>
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-rose-600 font-semibold">
-                                +<?php echo (int)$log['points']; ?> 點
-                            </td>
+                            <?php 
+// 💡 判斷這筆紀錄的理由開頭是不是 [系統銷點]
+$isReduce = (strpos($log['custom_reason'] ?? '', '[系統銷點]') === 0); 
+?>
+<td class="px-6 py-4 whitespace-nowrap text-sm font-semibold <?php echo $isReduce ? 'text-emerald-600' : 'text-rose-600'; ?>">
+    <?php echo $isReduce ? '消 ' : '記 '; ?><?php echo (int)$log['points']; ?> 點
+</td>
                         </tr>
                     <?php endforeach; ?>
                 <?php else: ?>

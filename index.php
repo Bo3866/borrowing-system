@@ -68,23 +68,31 @@ if ($link) {
     // ==========================================
     $violationPoints = 0;
     $isCertCancelled = false;
+    $hasNoCert = false;
 
     if ($isLoggedIn) {
         $safeUserId = mysqli_real_escape_string($link, (string)$_SESSION['user_id']);
         
         // 1. 統計該學生的累積違規總點數
-        $pointsSql = "SELECT COALESCE(SUM(points), 0) AS total_points FROM violation_logs WHERE user_id = '{$safeUserId}'";
+        $pointsSql = "SELECT 
+                        GREATEST(SUM(CASE WHEN custom_reason LIKE '[系統銷點]%' THEN -points ELSE points END), 0) AS total_points 
+                      FROM violation_logs 
+                      WHERE user_id = '{$safeUserId}'";
+
         $pointsResult = mysqli_query($link, $pointsSql);
         if ($pointsResult) {
             $pointsRow = mysqli_fetch_assoc($pointsResult);
-            $violationPoints = (int)$pointsRow['total_points'];
+            $violationPoints = (int)($pointsRow['total_points'] ?? 0);
         }
         
         // 2. 檢查該學生的器材證狀態
-        $certSql = "SELECT valid_until FROM equipment_certificates WHERE holder_id = '{$safeUserId}'";
+        $certSql = "SELECT valid_until 
+                    FROM equipment_certificates 
+                    WHERE holder_id = '{$safeUserId}' 
+                    ORDER BY valid_until DESC 
+                    LIMIT 1";
         $certResult = mysqli_query($link, $certSql);
         
-        $hasNoCert = false;        // 新增：是否完全沒有器材證
         $isCertCancelled = false;  // 這裡代表器材證已過期
         
         if ($certResult && mysqli_num_rows($certResult) > 0) {
@@ -101,7 +109,7 @@ if ($link) {
                 $isCertCancelled = true; // 欄位留白，視為無效
             }
         } else {
-            // 💡 資料庫查不到這名學生的資料，代表他「從未申請過器材證」
+            // 資料庫查不到這名學生的資料，代表他「從未申請過器材證」
             $hasNoCert = true;
         }
     }

@@ -401,6 +401,14 @@ if ($dbError === '') {
             reservationSelectExpr($reservationColumns, 'holiday_fee_count'),
             reservationSelectExpr($reservationColumns, 'holiday_fee'),
             reservationSelectExpr($reservationColumns, 'sales_roster_json'),
+            // 交接時間（若有多筆則取最新一筆 handover_at）
+            "(
+                SELECT hs.handover_at
+                FROM handover_schedules hs
+                WHERE hs.reservation_id = r.reservation_id
+                ORDER BY hs.handover_at DESC
+                LIMIT 1
+            ) AS handover_at",
         ];
 
         $safeUserId = mysqli_real_escape_string($link, $currentUserId);
@@ -522,6 +530,33 @@ if ($dbError === '' && count($rows) > 0) {
                 }
             }
             mysqli_stmt_close($logStmt);
+        }
+        // 讀取交接時間（若有），並把它放到 row 中；若沒有 checked_in_at 我們也用 handover_at 填入以利顯示
+        $handoverAt = null; $handoverReturnedAt = null;
+        $handoverStmt = mysqli_prepare($link, 'SELECT handover_at, returned_at FROM handover_schedules WHERE reservation_id = ? ORDER BY handover_at DESC LIMIT 1');
+        if ($handoverStmt) {
+            mysqli_stmt_bind_param($handoverStmt, 'i', $reservationId);
+            mysqli_stmt_execute($handoverStmt);
+            $handoverRes = mysqli_stmt_get_result($handoverStmt);
+            if ($handoverRes) {
+                $hRow = mysqli_fetch_assoc($handoverRes);
+                if ($hRow) {
+                    if (!empty($hRow['handover_at'])) $handoverAt = $hRow['handover_at'];
+                    if (!empty($hRow['returned_at'])) $handoverReturnedAt = $hRow['returned_at'];
+                }
+            }
+            mysqli_stmt_close($handoverStmt);
+        }
+
+        if ($handoverAt !== null) {
+            $rows[$idx]['handover_at'] = $handoverAt;
+            // 如果資料表沒有 checked_in_at，或為空，使用 handover_at 作為顯示時間
+            if (empty($rows[$idx]['_stage_times']['checked_in_at']) && empty($rows[$idx]['checked_in_at'])) {
+                $rows[$idx]['checked_in_at'] = $handoverAt;
+            }
+        }
+        if ($handoverReturnedAt !== null) {
+            $rows[$idx]['handover_returned_at'] = $handoverReturnedAt;
         }
     }
 }
@@ -926,6 +961,7 @@ if ($dbError === '' && count($rows) > 0) {
                         data-organization-name="<?php echo htmlspecialchars((string)($row['organization_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
                         data-activity-name="<?php echo htmlspecialchars((string)($row['activity_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
                         data-stage="<?php echo htmlspecialchars((string)($row['approval_stage'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                        data-handover="<?php echo htmlspecialchars((string)($row['handover_at'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
                         data-application="<?php echo htmlspecialchars(json_encode($row['_detail_payload'] ?? []), ENT_QUOTES, 'UTF-8'); ?>">
                                             
                                             <td class="left-trigger-zone text-center text-indigo-600 font-bold" style="cursor: pointer;" onclick="event.stopPropagation(); toggleAccordion(this.closest('tr'), <?php echo (int)$row['reservation_id']; ?>)">
@@ -1039,7 +1075,7 @@ if ($dbError === '' && count($rows) > 0) {
                                     return '待審核';
                                 };
                             ?>
-                            <div class="stepper-simple" data-status="<?php echo $progressStatus; ?>" data-approval="<?php echo htmlspecialchars($approvalStatus, ENT_QUOTES, 'UTF-8'); ?>" data-stage="<?php echo htmlspecialchars($approvalStage, ENT_QUOTES, 'UTF-8'); ?>" data-approved="<?php echo htmlspecialchars($approvedAttr, ENT_QUOTES, 'UTF-8'); ?>" data-rejected="<?php echo htmlspecialchars($rejectedAttr, ENT_QUOTES, 'UTF-8'); ?>">
+                            <div class="stepper-simple" data-status="<?php echo $progressStatus; ?>" data-approval="<?php echo htmlspecialchars($approvalStatus, ENT_QUOTES, 'UTF-8'); ?>" data-stage="<?php echo htmlspecialchars($approvalStage, ENT_QUOTES, 'UTF-8'); ?>" data-approved="<?php echo htmlspecialchars($approvedAttr, ENT_QUOTES, 'UTF-8'); ?>" data-rejected="<?php echo htmlspecialchars($rejectedAttr, ENT_QUOTES, 'UTF-8'); ?>" data-handover="<?php echo htmlspecialchars((string)($row['handover_at'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" data-handover-return="<?php echo htmlspecialchars((string)($row['handover_returned_at'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" data-return="<?php echo htmlspecialchars((string)($row['return_confirmed_at'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
                                 <div class="stepper-track flex items-center justify-between border border-slate-200 py-4 bg-white rounded-lg p-4 shadow-inner">
                                     <div class="stepper-step text-center text-xs" data-step="1">
                                         <div class="stepper-dot w-3 h-3 rounded-full bg-slate-300 mx-auto mb-1"></div>
@@ -1356,6 +1392,33 @@ if ($dbError === '' && count($rows) > 0) {
                 if (dots[currentStageIndex]) dots[currentStageIndex].className = 'stepper-dot w-3 h-3 rounded-full bg-rose-500 mx-auto mb-1';
             } else if (approval === 'revision_overdue') {
                 if (dots[currentStageIndex]) dots[currentStageIndex].className = 'stepper-dot w-3 h-3 rounded-full bg-slate-500 mx-auto mb-1';
+            }
+
+            // 如果有交接時間，將第 6 步（借出/報到）標為已借出（綠色），並顯示交接時間與文字標示
+            const handoverRaw = (stepper.getAttribute('data-handover') || '').trim();
+            if (handoverRaw) {
+                if (dots[5]) dots[5].className = 'stepper-dot w-3 h-3 rounded-full bg-emerald-500 mx-auto mb-1';
+                const step6 = stepper.querySelector('.stepper-step[data-step="6"]');
+                if (step6) {
+                    const sub = step6.querySelector('.stepper-subtext');
+                    if (sub) sub.textContent = handoverRaw;
+                    const label = step6.querySelector('.stepper-timestamp');
+                    if (label) label.textContent = '已借出';
+                }
+            }
+
+            // 如果 handover_schedule.returned_at 有時間，且 reservations.returned_at (data-return) 也有時間，則第7步標示為已離場
+            const handoverReturnRaw = (stepper.getAttribute('data-handover-return') || '').trim();
+            const reservationReturnRaw = (stepper.getAttribute('data-return') || '').trim();
+            if (handoverReturnRaw && reservationReturnRaw) {
+                if (dots[6]) dots[6].className = 'stepper-dot w-3 h-3 rounded-full bg-emerald-500 mx-auto mb-1';
+                const step7 = stepper.querySelector('.stepper-step[data-step="7"]');
+                if (step7) {
+                    const sub7 = step7.querySelector('.stepper-subtext');
+                    if (sub7) sub7.textContent = reservationReturnRaw;
+                    const label7 = step7.querySelector('.stepper-timestamp');
+                    if (label7) label7.textContent = '已離場';
+                }
             }
         }
         

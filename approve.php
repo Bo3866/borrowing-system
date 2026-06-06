@@ -784,8 +784,14 @@ function fetchReservationDetails(mysqli $link, int $reservationId): array
                                                     <input type="hidden" name="reservation_ids" value="<?php echo htmlspecialchars(implode(',', $p['reservation_ids']), ENT_QUOTES, 'UTF-8'); ?>">
                                                     <select name="canned_message">
                                                         <option value="">— 退回原因 —</option>
-                                                        <option value="活動用途不明">活動用途不明</option>
-                                                        <option value="活動企劃書資訊不足">活動企劃書資訊不足</option>
+                                                        <option value="目的不符或違反宗旨">目的不符或違反宗旨</option>
+                                                        <option value="安全隱患與風險過高">安全隱患與風險過高</option>
+                                                        <option value="企劃可行性低">企劃可行性低</option>
+                                                        <option value="涉及不當營利或商業爭議">涉及不當營利或商業爭議</option>
+                                                        <option value="活動性質過度損耗器材">活動性質過度損耗器材</option>
+                                                        <option value="經費缺失">經費缺失</option>
+                                                        <option value="保險規劃缺失">保險規劃缺失</option>
+                                                        <option value="用途不符規定">用途不符規定</option>
                                                     </select>
                                                     <textarea name="comment" rows="2" placeholder="審核備註（可選）"></textarea>
                                                     <button type="submit" name="action" value="approve" class="small-btn approve-btn" onclick="return confirm('確認要核准此批申請？')">核准</button>

@@ -342,6 +342,7 @@ if ($pageError === '' && $link) {
     $statusFilter = trim((string)($_GET['status'] ?? ''));
 
     if ($canViewEquipment) {
+        $approvedRows = [];
     $approvedSql = "
         SELECT
             r.reservation_id,
@@ -418,7 +419,6 @@ if ($pageError === '' && $link) {
     // 6. 執行查詢與資料綁定
     $approvedResult = mysqli_query($link, $approvedSql);
     if ($approvedResult) {
-        $approvedRows = [];
         while ($row = mysqli_fetch_assoc($approvedResult)) {
             $approvedRows[] = $row;
         }
@@ -427,7 +427,9 @@ if ($pageError === '' && $link) {
     }
     }
 
+// 【部分二：空間排程查詢】
     if ($pageError === '' && $canViewSpace) {
+        $spaceRows = [];
 $spaceSql = "
             SELECT
                 r.reservation_id,
@@ -464,9 +466,34 @@ $spaceSql = "
               AND EXISTS (
                   SELECT 1 FROM space_reservation_items sri WHERE sri.reservation_id = r.reservation_id
               )
-            ORDER BY r.actual_pickup_at ASC
-            LIMIT 300
             ";
+
+        // 💡 修正：幫空間排程加上「關鍵字搜尋」邏輯（姓名/學號/空間名稱）
+        if ($keyword !== '') {
+            $escapedKeyword = mysqli_real_escape_string($link, $keyword);
+            $spaceSql .= " AND (
+                u.full_name LIKE '%{$escapedKeyword}%' 
+                OR r.user_id LIKE '%{$escapedKeyword}%'
+                OR EXISTS (
+                    SELECT 1 FROM space_reservation_items sri2
+                    JOIN spaces s2 ON s2.space_id = sri2.space_id
+                    WHERE sri2.reservation_id = r.reservation_id AND s2.space_name LIKE '%{$escapedKeyword}%'
+                )
+            )";
+        }
+
+        // 💡 修正：幫空間排程加上「狀態篩選」邏輯（對應 pending / opened）
+        if ($statusFilter !== '') {
+            if ($statusFilter === 'pending') {
+                $spaceSql .= " AND hs.opened_at IS NULL";
+            } elseif ($statusFilter === 'opened' || $statusFilter === 'handover' || $statusFilter === 'returned') {
+                // 防呆：因為空間狀態只有 pending 跟 opened，若前台傳入 handover 或 returned，統一視為已開門(opened) 
+                $spaceSql .= " AND hs.opened_at IS NOT NULL";
+            }
+        }
+
+        // 💡 修正：最後才補上排序與限制數量
+        $spaceSql .= " ORDER BY r.actual_pickup_at ASC LIMIT 300";
 
         $spaceResult = mysqli_query($link, $spaceSql);
         if ($spaceResult) {

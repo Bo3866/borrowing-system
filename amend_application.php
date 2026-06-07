@@ -11,7 +11,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 $currentUserId = (string)$_SESSION['user_id'];
-$displayName = (string)($_SESSION['full_name'] ?? $_SESSION['user_id']);
+$displayName   = (string)($_SESSION['full_name'] ?? $_SESSION['user_id']);
 $reservationId = (int)($_GET['reservation_id'] ?? 0);
 
 if ($reservationId <= 0) {
@@ -19,14 +19,14 @@ if ($reservationId <= 0) {
     exit;
 }
 
-$dbError = '';
-$link = getMysqliConnection($dbError);
-
-$amendError = '';
+$dbError      = '';
+$link         = getMysqliConnection($dbError);
+$amendError   = '';
 $amendSuccess = '';
 $revisionData = [];
 
 if ($dbError === '') {
+    // 取得所有欄位清單
     $availableCols = [];
     $colRes = mysqli_query($link, 'SHOW COLUMNS FROM reservations');
     if ($colRes) {
@@ -36,22 +36,29 @@ if ($dbError === '') {
         mysqli_free_result($colRes);
     }
 
-    // 擴充 wantedCols，加入所有特殊需求與路旗欄位
     $wantedCols = [
         'reservation_id', 'user_id', 'approval_status', 'revision_data_json', 'revision_deadline',
+        'organization_name', 'activity_name', 'participant_count', 'staff_count',
+        'activity_coordinator', 'coordinator_phone', 'coordinator_other_contact',
+        'vehicle_entry',
         'has_alcohol', 'has_fire', 'has_sales',
-        'organization_name', 'activity_name', 'participant_count', 'staff_count', 'club_president',
-        'activity_coordinator', 'coordinator_department', 'coordinator_phone', 'coordinator_other_contact',
-        'vehicle_entry', 'has_alcohol', 'has_fire', 'has_sales',
-        'setup_flags', 'flag_count', 'flag_details', 'flag_applicant_unit', 'flag_manager', 
-        'flag_phone', 'flag_activity_name', 'flag_start_date', 'flag_end_date', 'flag_location', 'flag_agreement',
-        'proposal_file', 'proposal_uploaded_at', 'purpose', 'borrow_start_at', 'borrow_end_at', 'space_id'
+        'setup_flags',
+        // 明火
+        'fire_activity_name', 'fire_date', 'fire_start_time', 'fire_end_time', 'fire_location',
+        'fire_staff_json', 'fire_performers', 'fire_oilers', 'fire_extinguishers',
+        'fire_security', 'fire_emergency', 'fire_medical',
+        // 攤位
+        'sales_location', 'sales_count', 'sales_roster_json', 'sales_layout_map',
+        // 企劃書
+        'proposal_file', 'proposal_uploaded_at',
+        // 時間（唯讀）
+        'borrow_start_at', 'borrow_end_at',
     ];
-    
+
     $selectCols = [];
-    foreach ($wantedCols as $columnName) {
-        if (in_array($columnName, $availableCols, true)) {
-            $selectCols[] = 'r.' . $columnName;
+    foreach ($wantedCols as $cn) {
+        if (in_array($cn, $availableCols, true)) {
+            $selectCols[] = 'r.' . $cn;
         }
     }
 
@@ -59,12 +66,12 @@ if ($dbError === '') {
         $amendError = '資料表欄位不足，無法讀取申請資料。';
         $reservationRow = null;
     } else {
-        $checkSql = 'SELECT ' . implode(', ', $selectCols) . ' FROM reservations r WHERE r.reservation_id = ? AND r.user_id = ? LIMIT 1';
+        $checkSql  = 'SELECT ' . implode(', ', $selectCols) . ' FROM reservations r WHERE r.reservation_id = ? AND r.user_id = ? LIMIT 1';
         $checkStmt = mysqli_prepare($link, $checkSql);
         if ($checkStmt) {
             mysqli_stmt_bind_param($checkStmt, 'is', $reservationId, $currentUserId);
             mysqli_stmt_execute($checkStmt);
-            $checkResult = mysqli_stmt_get_result($checkStmt);
+            $checkResult    = mysqli_stmt_get_result($checkStmt);
             $reservationRow = $checkResult ? mysqli_fetch_assoc($checkResult) : null;
             mysqli_stmt_close($checkStmt);
         } else {
@@ -72,6 +79,7 @@ if ($dbError === '') {
         }
     }
 
+    // 器材 / 空間（僅顯示，不可修改）
     $equipmentItems = [];
     $equipStmt = mysqli_prepare($link, '
         SELECT eri.equipment_id, e.equipment_code, ec.equipment_name
@@ -109,102 +117,204 @@ if ($dbError === '') {
         mysqli_stmt_close($spaceStmt);
     }
 
-    $hasProposalFileColumn = in_array('proposal_file', $availableCols, true);
-    $hasProposalUploadedAtColumn = in_array('proposal_uploaded_at', $availableCols, true);
-        
     if (!$reservationRow) {
         $amendError = '找不到該申請或無權限修改。';
+    } elseif ($reservationRow['approval_status'] === 'pending') {
+        $amendError = '您的補件已提交並進入審核，目前無法再修改。';
     } elseif ($reservationRow['approval_status'] !== 'need_revision') {
         $amendError = '該申請不在補件狀態，無法修改。';
     } else {
-        if (!empty($reservationRow['revision_data_json'])) {
-            $revisionData = (array)json_decode($reservationRow['revision_data_json'], true) ?: [];
-        }
-        
-        // Fallback 初始化，已補齊所有必備及漏掉的欄位
-        if (empty($revisionData)) {
-            $revisionData = [
-                'organization_name'         => $reservationRow['organization_name'] ?? '',
-                'activity_name'             => $reservationRow['activity_name'] ?? '',
-                'participant_count'         => $reservationRow['participant_count'] ?? '',
-                'staff_count'               => $reservationRow['staff_count'] ?? 0,
-                'club_president'            => $reservationRow['club_president'] ?? '',
-                'activity_coordinator'      => $reservationRow['activity_coordinator'] ?? '',
-                'coordinator_department'    => $reservationRow['coordinator_department'] ?? '',
-                'coordinator_phone'         => $reservationRow['coordinator_phone'] ?? '',
-                'coordinator_other_contact' => $reservationRow['coordinator_other_contact'] ?? '',
-                'vehicle_entry'             => $reservationRow['vehicle_entry'] ?? 'no',
-                
-                // 特殊勾選
-                'has_alcohol'               => $reservationRow['has_alcohol'] ?? '0',
-                'has_fire'                  => $reservationRow['has_fire'] ?? '0',
-                'has_sales'                 => $reservationRow['has_sales'] ?? '0',
-                
-                // 路旗欄位
-                'setup_flags'               => $reservationRow['setup_flags'] ?? 'no',
-                'flag_count'                => $reservationRow['flag_count'] ?? 0,
-                'flag_details'              => $reservationRow['flag_details'] ?? '',
-                'flag_applicant_unit'       => $reservationRow['flag_applicant_unit'] ?? '',
-                'flag_manager'              => $reservationRow['flag_manager'] ?? '',
-                'flag_phone'                => $reservationRow['flag_phone'] ?? '',
-                'flag_activity_name'        => $reservationRow['flag_activity_name'] ?? '',
-                'flag_start_date'           => $reservationRow['flag_start_date'] ?? '',
-                'flag_end_date'             => $reservationRow['flag_end_date'] ?? '',
-                'flag_location'             => $reservationRow['flag_location'] ?? '',
-                'flag_agreement'            => $reservationRow['flag_agreement'] ?? '0',
-                
-                'proposal_file'             => $reservationRow['proposal_file'] ?? '',
-                'proposal_uploaded_at'      => $reservationRow['proposal_uploaded_at'] ?? '',
-                'purpose'                   => $reservationRow['purpose'] ?? '',
-                'borrow_start_at'           => $reservationRow['borrow_start_at'] ?? '',
-                'borrow_end_at'             => $reservationRow['borrow_end_at'] ?? '',
-                'space_id'                  => $reservationRow['space_id'] ?? '',
-            ];
-        }
-        
+        // 原始特殊勾選（從 DB，不受 revisionData 影響）
+        $originalHasAlcohol = (string)($reservationRow['has_alcohol'] ?? '0');
+        $originalHasFire    = (string)($reservationRow['has_fire']    ?? '0');
+        $originalHasSales   = (string)($reservationRow['has_sales']   ?? '0');
+        // 旗幟：完全不開放補件修改
+        // $originalSetupFlags = (string)($reservationRow['setup_flags'] ?? 'no');
+
+        // 初始化 revisionData
+        $revisionData = [
+            'organization_name'         => $reservationRow['organization_name'] ?? '',
+            'activity_name'             => $reservationRow['activity_name'] ?? '',
+            'participant_count'         => $reservationRow['participant_count'] ?? '',
+            'staff_count'               => $reservationRow['staff_count'] ?? 0,
+            'activity_coordinator'      => $reservationRow['activity_coordinator'] ?? '',
+            'coordinator_phone'         => $reservationRow['coordinator_phone'] ?? '',
+            'coordinator_other_contact' => $reservationRow['coordinator_other_contact'] ?? '',
+            'vehicle_entry'             => $reservationRow['vehicle_entry'] ?? 'no',
+            'has_alcohol'               => $reservationRow['has_alcohol'] ?? '0',
+            'has_fire'                  => $reservationRow['has_fire'] ?? '0',
+            'has_sales'                 => $reservationRow['has_sales'] ?? '0',
+            // 明火
+            'fire_activity_name'        => $reservationRow['fire_activity_name'] ?? '',
+            'fire_date'                 => $reservationRow['fire_date'] ?? '',
+            'fire_start_time'           => $reservationRow['fire_start_time'] ?? '',
+            'fire_end_time'             => $reservationRow['fire_end_time'] ?? '',
+            'fire_location'             => $reservationRow['fire_location'] ?? '',
+            'fire_staff_json'           => $reservationRow['fire_staff_json'] ?? null,
+            'fire_performers'           => $reservationRow['fire_performers'] ?? null,
+            'fire_oilers'               => $reservationRow['fire_oilers'] ?? null,
+            'fire_extinguishers'        => $reservationRow['fire_extinguishers'] ?? null,
+            'fire_security'             => $reservationRow['fire_security'] ?? null,
+            'fire_emergency'            => $reservationRow['fire_emergency'] ?? null,
+            'fire_medical'              => $reservationRow['fire_medical'] ?? null,
+            // 攤位
+            'sales_location'            => $reservationRow['sales_location'] ?? '',
+            'sales_count'               => $reservationRow['sales_count'] ?? '',
+            'sales_roster_json'         => $reservationRow['sales_roster_json'] ?? null,
+            'sales_layout_map'          => $reservationRow['sales_layout_map'] ?? '',
+            // 企劃書
+            'proposal_file'             => $reservationRow['proposal_file'] ?? '',
+            'proposal_uploaded_at'      => $reservationRow['proposal_uploaded_at'] ?? '',
+            // 時間（唯讀）
+            'borrow_start_at'           => $reservationRow['borrow_start_at'] ?? '',
+            'borrow_end_at'             => $reservationRow['borrow_end_at'] ?? '',
+        ];
+
         $revisionData['equipment_items'] = $equipmentItems;
-        $revisionData['space_items'] = $spaceItems;
-        
+        $revisionData['space_items']     = $spaceItems;
+
+        // ── POST 處理 ──────────────────────────────────────────────────────
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            // 收集並處理所有變更欄位（含路旗與勾選機制）
+
+            // 基本欄位
             $updatedFields = [
                 'organization_name'         => trim((string)($_POST['organization_name'] ?? '')),
                 'activity_name'             => trim((string)($_POST['activity_name'] ?? '')),
                 'participant_count'         => trim((string)($_POST['participant_count'] ?? '')),
                 'staff_count'               => (int)($_POST['staff_count'] ?? 0),
-                'club_president'            => trim((string)($_POST['club_president'] ?? '')),
                 'activity_coordinator'      => trim((string)($_POST['activity_coordinator'] ?? '')),
-                'coordinator_department'    => trim((string)($_POST['coordinator_department'] ?? '')),
                 'coordinator_phone'         => trim((string)($_POST['coordinator_phone'] ?? '')),
                 'coordinator_other_contact' => trim((string)($_POST['coordinator_other_contact'] ?? '')),
                 'vehicle_entry'             => isset($_POST['vehicle_entry']) ? 'yes' : 'no',
-                
-                // 補齊特殊活動勾選處理
+                // 特殊勾選（後面會強制覆蓋）
                 'has_alcohol'               => isset($_POST['has_alcohol']) ? '1' : '0',
                 'has_fire'                  => isset($_POST['has_fire']) ? '1' : '0',
                 'has_sales'                 => isset($_POST['has_sales']) ? '1' : '0',
-                
-                // 補齊路旗相關 POST 處理
-                'setup_flags'               => trim((string)($_POST['setup_flags'] ?? 'no')),
-                'flag_count'                => trim((string)($_POST['flag_count'] ?? '')),
-                'flag_details'              => trim((string)($_POST['flag_details'] ?? '')),
-                'flag_applicant_unit'       => trim((string)($_POST['flag_applicant_unit'] ?? '')),
-                'flag_manager'              => trim((string)($_POST['flag_manager'] ?? '')),
-                'flag_phone'                => trim((string)($_POST['flag_phone'] ?? '')),
-                'flag_activity_name'        => trim((string)($_POST['flag_activity_name'] ?? '')),
-                'flag_start_date'           => trim((string)($_POST['flag_start_date'] ?? '')),
-                'flag_end_date'             => trim((string)($_POST['flag_end_date'] ?? '')),
-                'flag_location'             => trim((string)($_POST['flag_location'] ?? '')),
-                'flag_agreement'            => isset($_POST['flag_agreement']) ? '1' : '0',
-                
-                'purpose'                   => trim((string)($_POST['purpose'] ?? '')),
             ];
 
-            $uploadedProposalPath = null;
-            $uploadedProposalDbPath = null;
-            $uploadedProposalAt = null;
+            // 限制：原本未勾選者不可新增
+            if ($originalHasAlcohol !== '1') { $updatedFields['has_alcohol'] = '0'; }
+            if ($originalHasFire    !== '1') { $updatedFields['has_fire']    = '0'; }
+            if ($originalHasSales   !== '1') { $updatedFields['has_sales']   = '0'; }
 
-            if (isset($_FILES['proposal_file']) && $_FILES['proposal_file']['error'] !== UPLOAD_ERR_NO_FILE) {
+            // ── 明火人員名單（只有原本有明火才開放）
+            $updatedFireStaffJson = $revisionData['fire_staff_json']; // 預設保留原值
+            $updatedFirePerformers = $revisionData['fire_performers'];
+            $updatedFireOilers     = $revisionData['fire_oilers'];
+            $updatedFireExtinguishers = $revisionData['fire_extinguishers'];
+            $updatedFireSecurity   = $revisionData['fire_security'];
+            $updatedFireEmergency  = $revisionData['fire_emergency'];
+            $updatedFireMedical    = $revisionData['fire_medical'];
+
+            if ($originalHasFire === '1') {
+                $staffRoleMap = [
+                    'fire_performers'    => 'fire_staff_performer',
+                    'fire_oilers'        => 'fire_staff_oiler',
+                    'fire_extinguishers' => 'fire_staff_extinguisher',
+                    'fire_security'      => 'fire_staff_security',
+                    'fire_emergency'     => 'fire_staff_emergency',
+                    'fire_medical'       => 'fire_staff_medical',
+                ];
+                $staffData = [];
+                foreach ($staffRoleMap as $jsonKey => $postKey) {
+                    $names = [];
+                    if (isset($_POST[$postKey]) && is_array($_POST[$postKey])) {
+                        foreach ($_POST[$postKey] as $n) {
+                            $n = trim((string)$n);
+                            if ($n !== '') { $names[] = $n; }
+                        }
+                    }
+                    $staffData[$jsonKey] = $names;
+                }
+                $updatedFireStaffJson      = json_encode($staffData, JSON_UNESCAPED_UNICODE);
+                $updatedFirePerformers     = !empty($staffData['fire_performers'])    ? implode("\n", $staffData['fire_performers'])    : null;
+                $updatedFireOilers         = !empty($staffData['fire_oilers'])        ? implode("\n", $staffData['fire_oilers'])        : null;
+                $updatedFireExtinguishers  = !empty($staffData['fire_extinguishers']) ? implode("\n", $staffData['fire_extinguishers']) : null;
+                $updatedFireSecurity       = !empty($staffData['fire_security'])      ? implode("\n", $staffData['fire_security'])      : null;
+                $updatedFireEmergency      = !empty($staffData['fire_emergency'])     ? implode("\n", $staffData['fire_emergency'])     : null;
+                $updatedFireMedical        = !empty($staffData['fire_medical'])       ? implode("\n", $staffData['fire_medical'])       : null;
+            }
+
+            // ── 攤位資料（只有原本有攤位才開放）
+            $updatedSalesLocation   = $revisionData['sales_location'];
+            $updatedSalesCount      = $revisionData['sales_count'];
+            $updatedSalesRosterJson = $revisionData['sales_roster_json'];
+            $uploadedSalesMapPath   = null;
+            $uploadedSalesMapDbPath = null;
+
+            if ($originalHasSales === '1') {
+                $updatedSalesLocation = trim((string)($_POST['sales_location'] ?? ''));
+                $updatedSalesCount    = (int)($_POST['sales_count'] ?? 0);
+                if ($updatedSalesCount < 1)  { $updatedSalesCount = 1; }
+                if ($updatedSalesCount > 20) { $updatedSalesCount = 20; }
+
+                // 攤位清冊
+                $salesRoster = [];
+                if (isset($_POST['sales_booth_no']) && is_array($_POST['sales_booth_no'])) {
+                    foreach ($_POST['sales_booth_no'] as $idx => $no) {
+                        $no      = trim((string)$no);
+                        $bname   = trim((string)($_POST['sales_booth_name'][$idx]    ?? ''));
+                        $bmgr    = trim((string)($_POST['sales_booth_manager'][$idx] ?? ''));
+                        $bphone  = trim((string)($_POST['sales_booth_phone'][$idx]   ?? ''));
+                        $bcont   = trim((string)($_POST['sales_booth_content'][$idx] ?? ''));
+                        if ($no !== '' || $bname !== '') {
+                            $salesRoster[] = [
+                                'booth_no'      => $no,
+                                'booth_name'    => $bname,
+                                'booth_manager' => $bmgr,
+                                'booth_phone'   => $bphone,
+                                'booth_content' => $bcont,
+                            ];
+                        }
+                    }
+                }
+                $updatedSalesRosterJson = empty($salesRoster) ? null : json_encode($salesRoster, JSON_UNESCAPED_UNICODE);
+
+                // 攤位圖冊上傳
+                if (isset($_FILES['sales_layout_map']) && $_FILES['sales_layout_map']['error'] !== UPLOAD_ERR_NO_FILE) {
+                    $sFile = $_FILES['sales_layout_map'];
+                    if ($sFile['error'] !== UPLOAD_ERR_OK) {
+                        $amendError = '攤位圖冊上傳失敗（錯誤碼：' . (int)$sFile['error'] . '）。';
+                    } else {
+                        $maxBytes = 5 * 1024 * 1024;
+                        if ((int)$sFile['size'] > $maxBytes) {
+                            $amendError = '攤位圖冊大小不可超過 5MB。';
+                        } else {
+                            if (class_exists('finfo')) {
+                                $finfo  = new finfo(FILEINFO_MIME_TYPE);
+                                $smime  = (string)$finfo->file($sFile['tmp_name']);
+                            } else {
+                                $smime = (string)(mime_content_type($sFile['tmp_name']) ?: '');
+                            }
+                            if (!in_array($smime, ['image/jpeg', 'image/png'], true)) {
+                                $amendError = '攤位圖冊僅支援 JPG 與 PNG 格式。';
+                            } else {
+                                $salesMapDir = __DIR__ . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'sales_maps';
+                                if (!is_dir($salesMapDir) && !mkdir($salesMapDir, 0755, true) && !is_dir($salesMapDir)) {
+                                    $amendError = '建立上傳目錄失敗。';
+                                } else {
+                                    $ext        = ($smime === 'image/png') ? 'png' : 'jpg';
+                                    $targetName = time() . '_sales_map_' . $reservationId . '.' . $ext;
+                                    $targetPath = $salesMapDir . DIRECTORY_SEPARATOR . $targetName;
+                                    if (!move_uploaded_file($sFile['tmp_name'], $targetPath)) {
+                                        $amendError = '攤位圖冊儲存失敗。';
+                                    } else {
+                                        $uploadedSalesMapPath   = $targetPath;
+                                        $uploadedSalesMapDbPath = 'uploads/sales_maps/' . $targetName;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── 企劃書上傳 ──
+            $uploadedProposalPath   = null;
+            $uploadedProposalDbPath = null;
+            $uploadedProposalAt     = null;
+
+            if ($amendError === '' && isset($_FILES['proposal_file']) && $_FILES['proposal_file']['error'] !== UPLOAD_ERR_NO_FILE) {
                 $proposalFile = $_FILES['proposal_file'];
                 if ($proposalFile['error'] !== UPLOAD_ERR_OK) {
                     $amendError = '企劃書上傳失敗（錯誤碼：' . (int)$proposalFile['error'] . '）。';
@@ -214,188 +324,149 @@ if ($dbError === '') {
                         $amendError = '企劃書大小不可超過 5MB。';
                     } else {
                         if (class_exists('finfo')) {
-                            $finfo = new finfo(FILEINFO_MIME_TYPE);
-                            $mime = (string)$finfo->file($proposalFile['tmp_name']);
+                            $finfo2 = new finfo(FILEINFO_MIME_TYPE);
+                            $pmime  = (string)$finfo2->file($proposalFile['tmp_name']);
                         } elseif (function_exists('mime_content_type')) {
-                            $mime = (string)mime_content_type($proposalFile['tmp_name']);
+                            $pmime  = (string)mime_content_type($proposalFile['tmp_name']);
                         } else {
-                            $ext = strtolower(pathinfo((string)$proposalFile['name'], PATHINFO_EXTENSION));
-                            $mime = ($ext === 'pdf') ? 'application/pdf' : '';
+                            $pext  = strtolower(pathinfo((string)$proposalFile['name'], PATHINFO_EXTENSION));
+                            $pmime = ($pext === 'pdf') ? 'application/pdf' : '';
                         }
 
-                        if ($mime !== 'application/pdf') {
+                        if ($pmime !== 'application/pdf') {
                             $amendError = '企劃書格式不支援，僅接受 PDF。';
                         } else {
                             $uploadDir = __DIR__ . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'proposals';
                             if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
                                 $amendError = '建立上傳目錄失敗。';
                             } else {
-                                $safeBasename = preg_replace('/[^a-zA-Z0-9_-]/', '_', pathinfo((string)$proposalFile['name'], PATHINFO_FILENAME));
-                                $targetName = time() . '_' . $safeBasename . '.pdf';
+                                $safeBase   = preg_replace('/[^a-zA-Z0-9_-]/', '_', pathinfo((string)$proposalFile['name'], PATHINFO_FILENAME));
+                                $targetName = time() . '_' . $safeBase . '.pdf';
                                 $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $targetName;
                                 if (!move_uploaded_file($proposalFile['tmp_name'], $targetPath)) {
                                     $amendError = '企劃書儲存失敗。';
                                 } else {
-                                    $uploadedProposalPath = $targetPath;
+                                    $uploadedProposalPath   = $targetPath;
                                     $uploadedProposalDbPath = 'uploads/proposals/' . $targetName;
-                                    $uploadedProposalAt = date('Y-m-d H:i:s');
+                                    $uploadedProposalAt     = date('Y-m-d H:i:s');
                                 }
                             }
                         }
                     }
                 }
             }
-            
-            // 驗證必填欄位
-            if ($updatedFields['organization_name'] === '') {
-                $amendError = '請填寫單位名稱。';
-            } elseif ($updatedFields['activity_name'] === '') {
-                $amendError = '請填寫活動名稱。';
-            } elseif ($updatedFields['purpose'] === '') {
-                $amendError = '請填寫用途說明。';
-            } elseif ($amendError === '') {
-                // 執行更新
+
+            // ── 驗證必填 ──
+            if ($amendError === '') {
+                if ($updatedFields['organization_name'] === '') {
+                    $amendError = '請填寫單位名稱。';
+                } elseif ($updatedFields['activity_name'] === '') {
+                    $amendError = '請填寫活動名稱。';
+                } elseif ($updatedFields['activity_coordinator'] === '') {
+                    $amendError = '請填寫活動負責人。';
+                } elseif ($updatedFields['coordinator_phone'] === '') {
+                    $amendError = '請填寫聯絡電話。';
+                }
+            }
+
+            // ── 寫入 DB ──
+            if ($amendError === '') {
                 mysqli_begin_transaction($link);
                 try {
-                    $updateFields = [];
-                    $updateValues = [];
-                    $updateTypes = '';
-                    
-                    foreach ($updatedFields as $key => $value) {
-                        // 確保該欄位確實在資料庫中才做更新，防止結構衝突
-                        if (in_array($key, $availableCols, true)) {
-                            if ($key === 'flag_count') {
-                                $value = ($updatedFields['setup_flags'] ?? 'no') === 'yes' && $value !== '' ? (int)$value : null;
-                            }
-                            $updateFields[] = "{$key} = ?";
-                            $updateValues[] = $value;
-                            $updateTypes .= is_int($value) ? 'i' : 's';
-                        }
+                    // 基本欄位更新
+                    $baseUpdateCols  = [];
+                    $baseUpdateVals  = [];
+                    $baseUpdateTypes = '';
+
+                    $fieldsToWrite = array_merge($updatedFields, [
+                        'fire_staff_json'    => $updatedFireStaffJson,
+                        'fire_performers'    => $updatedFirePerformers,
+                        'fire_oilers'        => $updatedFireOilers,
+                        'fire_extinguishers' => $updatedFireExtinguishers,
+                        'fire_security'      => $updatedFireSecurity,
+                        'fire_emergency'     => $updatedFireEmergency,
+                        'fire_medical'       => $updatedFireMedical,
+                        'sales_location'     => $updatedSalesLocation,
+                        'sales_count'        => $updatedSalesCount,
+                        'sales_roster_json'  => $updatedSalesRosterJson,
+                    ]);
+
+                    foreach ($fieldsToWrite as $key => $value) {
+                        if (!in_array($key, $availableCols, true)) { continue; }
+                        $baseUpdateCols[]  = "{$key} = ?";
+                        $baseUpdateVals[]  = $value;
+                        $baseUpdateTypes  .= is_int($value) ? 'i' : 's';
                     }
-                    
-                    $updateValues[] = $reservationId;
-                    $updateTypes .= 'i';
-                    
-                    $updateSql = 'UPDATE reservations SET ' . implode(', ', $updateFields) . ', approval_status = "pending", updated_at = NOW() WHERE reservation_id = ?';
-                    $updateStmt = mysqli_prepare($link, $updateSql);
-                    
-                    if (!$updateStmt) {
+
+                    $baseUpdateVals[]  = $reservationId;
+                    $baseUpdateTypes  .= 'i';
+
+                    $baseSql  = 'UPDATE reservations SET ' . implode(', ', $baseUpdateCols) . ', approval_status = "pending", updated_at = NOW() WHERE reservation_id = ?';
+                    $baseStmt = mysqli_prepare($link, $baseSql);
+                    if (!$baseStmt) {
                         throw new RuntimeException('準備更新語句失敗：' . mysqli_error($link));
                     }
-                    
-                    mysqli_stmt_bind_param($updateStmt, $updateTypes, ...$updateValues);
-                    mysqli_stmt_execute($updateStmt);
-                    mysqli_stmt_close($updateStmt);
+                    mysqli_stmt_bind_param($baseStmt, $baseUpdateTypes, ...$baseUpdateVals);
+                    mysqli_stmt_execute($baseStmt);
+                    mysqli_stmt_close($baseStmt);
 
+                    // 攤位圖冊
+                    if ($uploadedSalesMapDbPath !== null && in_array('sales_layout_map', $availableCols, true)) {
+                        $mapStmt = mysqli_prepare($link, 'UPDATE reservations SET sales_layout_map = ?, updated_at = NOW() WHERE reservation_id = ?');
+                        if (!$mapStmt) { throw new RuntimeException('準備更新攤位圖冊欄位失敗：' . mysqli_error($link)); }
+                        mysqli_stmt_bind_param($mapStmt, 'si', $uploadedSalesMapDbPath, $reservationId);
+                        mysqli_stmt_execute($mapStmt);
+                        mysqli_stmt_close($mapStmt);
+                    }
+
+                    // 企劃書
                     if ($uploadedProposalDbPath !== null) {
-                        if ($hasProposalFileColumn && $hasProposalUploadedAtColumn) {
-                            $proposalStmt = mysqli_prepare($link, 'UPDATE reservations SET proposal_file = ?, proposal_uploaded_at = ?, updated_at = NOW() WHERE reservation_id = ?');
-                            if (!$proposalStmt) {
-                                throw new RuntimeException('準備更新企劃書欄位失敗：' . mysqli_error($link));
-                            }
-                            mysqli_stmt_bind_param($proposalStmt, 'ssi', $uploadedProposalDbPath, $uploadedProposalAt, $reservationId);
-                            mysqli_stmt_execute($proposalStmt);
-                            mysqli_stmt_close($proposalStmt);
+                        if (in_array('proposal_file', $availableCols, true) && in_array('proposal_uploaded_at', $availableCols, true)) {
+                            $pStmt = mysqli_prepare($link, 'UPDATE reservations SET proposal_file = ?, proposal_uploaded_at = ?, updated_at = NOW() WHERE reservation_id = ?');
+                            if (!$pStmt) { throw new RuntimeException('準備更新企劃書欄位失敗：' . mysqli_error($link)); }
+                            mysqli_stmt_bind_param($pStmt, 'ssi', $uploadedProposalDbPath, $uploadedProposalAt, $reservationId);
+                            mysqli_stmt_execute($pStmt);
+                            mysqli_stmt_close($pStmt);
                         } else {
                             throw new RuntimeException('資料表尚未建立 proposal_file / proposal_uploaded_at 欄位。');
                         }
                     }
-                    
+
                     mysqli_commit($link);
                     $amendSuccess = '補件已提交，已重新進入審核流程。';
 
-                    // 重新計算並更新例假日費用（若資料表有相關欄位）
-                    try {
-                        $HOLIDAY_RATE = 200;
-                        $feeCount = 0;
-                        $feeAmount = 0;
-                        $fetchStmt = mysqli_prepare($link, 'SELECT borrow_start_at, borrow_end_at FROM reservations WHERE reservation_id = ? LIMIT 1');
-                        if ($fetchStmt) {
-                            mysqli_stmt_bind_param($fetchStmt, 'i', $reservationId);
-                            mysqli_stmt_execute($fetchStmt);
-                            $fres = mysqli_stmt_get_result($fetchStmt);
-                            $frow = $fres ? mysqli_fetch_assoc($fres) : null;
-                            mysqli_stmt_close($fetchStmt);
-                            if ($frow && !empty($frow['borrow_start_at']) && !empty($frow['borrow_end_at'])) {
-                                $start = date('Y-m-d', strtotime($frow['borrow_start_at']));
-                                $end = date('Y-m-d', strtotime($frow['borrow_end_at']));
-                                $startDate = DateTime::createFromFormat('Y-m-d', $start);
-                                $endDate = DateTime::createFromFormat('Y-m-d', $end);
-                                if ($startDate && $endDate && $startDate <= $endDate) {
-                                    $holidayDates = [];
-                                    $holTableRes = mysqli_query($link, "SHOW TABLES LIKE 'holidays'");
-                                    if ($holTableRes && mysqli_num_rows($holTableRes) > 0) {
-                                        $safeStart = mysqli_real_escape_string($link, $startDate->format('Y-m-d'));
-                                        $safeEnd = mysqli_real_escape_string($link, $endDate->format('Y-m-d'));
-                                        $holRes = mysqli_query($link, "SELECT `date` FROM `holidays` WHERE `date` BETWEEN '{$safeStart}' AND '{$safeEnd}'");
-                                        if ($holRes) {
-                                            while ($h = mysqli_fetch_assoc($holRes)) { $holidayDates[] = $h['date']; }
-                                        }
-                                    }
-                                    $d = clone $startDate;
-                                    while ($d <= $endDate) {
-                                        $ymd = $d->format('Y-m-d');
-                                        $weekday = (int)$d->format('w');
-                                        $isHoliday = in_array($ymd, $holidayDates, true);
-                                        if (empty($holidayDates) && ($weekday === 0 || $weekday === 6)) $isHoliday = true;
-                                        if ($isHoliday) $feeCount++;
-                                        $d->modify('+1 day');
-                                    }
-                                    $feeAmount = $feeCount * $HOLIDAY_RATE;
-                                }
-                            }
-                        }
-                        if (in_array('holiday_fee', $availableCols, true) || in_array('holiday_fee_count', $availableCols, true)) {
-                            $updCols = [];
-                            $types = '';
-                            $vals = [];
-                            if (in_array('holiday_fee_count', $availableCols, true)) { $updCols[] = 'holiday_fee_count = ?'; $types .= 'i'; $vals[] = $feeCount; }
-                            if (in_array('holiday_fee', $availableCols, true)) { $updCols[] = 'holiday_fee = ?'; $types .= 'i'; $vals[] = $feeAmount; }
-                            if (!empty($updCols)) {
-                                $vals[] = $reservationId; $types .= 'i';
-                                $updSql = 'UPDATE reservations SET ' . implode(', ', $updCols) . ' WHERE reservation_id = ?';
-                                $updStmt = mysqli_prepare($link, $updSql);
-                                if ($updStmt) {
-                                    mysqli_stmt_bind_param($updStmt, $types, ...$vals);
-                                    mysqli_stmt_execute($updStmt);
-                                    mysqli_stmt_close($updStmt);
-                                }
-                            }
-                        }
-                    } catch (Throwable $e) {
-                        @error_log('Holiday fee update failed for reservation ' . $reservationId . ': ' . $e->getMessage());
-                    }
-                    
-                    // 修正：用 array_merge 融合新舊資料，確保設備與空間陣列不會被洗掉
-                    $revisionData = array_merge($revisionData, $updatedFields);
-                    if ($uploadedProposalDbPath !== null) {
-                        $revisionData['proposal_file'] = $uploadedProposalDbPath;
-                        $revisionData['proposal_uploaded_at'] = $uploadedProposalAt;
-                    }
+                    // 更新 revisionData 顯示用
+                    $revisionData = array_merge($revisionData, $updatedFields, [
+                        'fire_staff_json'   => $updatedFireStaffJson,
+                        'sales_location'    => $updatedSalesLocation,
+                        'sales_count'       => $updatedSalesCount,
+                        'sales_roster_json' => $updatedSalesRosterJson,
+                    ]);
+                    if ($uploadedSalesMapDbPath   !== null) { $revisionData['sales_layout_map']    = $uploadedSalesMapDbPath; }
+                    if ($uploadedProposalDbPath   !== null) { $revisionData['proposal_file']        = $uploadedProposalDbPath; }
+                    if ($uploadedProposalAt       !== null) { $revisionData['proposal_uploaded_at'] = $uploadedProposalAt; }
+
                 } catch (Throwable $e) {
                     mysqli_rollback($link);
-                    if ($uploadedProposalPath !== null && is_file($uploadedProposalPath)) {
-                        @unlink($uploadedProposalPath);
-                    }
+                    if ($uploadedSalesMapPath   !== null && is_file($uploadedSalesMapPath))   { @unlink($uploadedSalesMapPath); }
+                    if ($uploadedProposalPath   !== null && is_file($uploadedProposalPath))   { @unlink($uploadedProposalPath); }
                     $amendError = $e->getMessage();
                 }
             }
-        }
-            // 寄送修改成功通知（含需繳金額）
-            if ($amendSuccess !== '' && isset($reservationId) && $reservationId > 0) {
+
+            // 寄送通知信
+            if ($amendSuccess !== '') {
                 $userEmail = null;
-                $userEmailStmt = mysqli_prepare($link, 'SELECT email FROM users WHERE user_id = ? LIMIT 1');
-                if ($userEmailStmt) {
-                    mysqli_stmt_bind_param($userEmailStmt, 's', $currentUserId);
-                    mysqli_stmt_execute($userEmailStmt);
-                    $ures = mysqli_stmt_get_result($userEmailStmt);
-                    if ($urow = mysqli_fetch_assoc($ures)) {
-                        $userEmail = $urow['email'];
-                    }
-                    mysqli_stmt_close($userEmailStmt);
+                $uStmt = mysqli_prepare($link, 'SELECT email FROM users WHERE user_id = ? LIMIT 1');
+                if ($uStmt) {
+                    mysqli_stmt_bind_param($uStmt, 's', $currentUserId);
+                    mysqli_stmt_execute($uStmt);
+                    $ures = mysqli_stmt_get_result($uStmt);
+                    if ($urow = mysqli_fetch_assoc($ures)) { $userEmail = $urow['email']; }
+                    mysqli_stmt_close($uStmt);
                 }
                 if (!empty($userEmail)) {
-                    if (!class_exists('PHPMailer\PHPMailer\PHPMailer')) {
+                    if (!class_exists('PHPMailer\\PHPMailer\\PHPMailer')) {
                         require_once __DIR__ . '/lib/PHPMailer/Exception.php';
                         require_once __DIR__ . '/lib/PHPMailer/PHPMailer.php';
                         require_once __DIR__ . '/lib/PHPMailer/SMTP.php';
@@ -404,7 +475,7 @@ if ($dbError === '') {
                     $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
                     try {
                         if (empty($MAIL_ENABLED) || empty($MAIL_USERNAME) || empty($MAIL_PASSWORD)) {
-                            throw new RuntimeException('郵件設定未啟用或未完成，請檢查 config/mail.php');
+                            throw new RuntimeException('郵件設定未啟用或未完成。');
                         }
                         $mailFrom = !empty($MAIL_FROM) ? $MAIL_FROM : $MAIL_USERNAME;
                         $mail->isSMTP();
@@ -418,44 +489,46 @@ if ($dbError === '') {
                         $mail->setFrom($mailFrom, $MAIL_FROM_NAME ?? '器材借用系統');
                         $mail->addAddress($userEmail, $displayName);
                         $mail->isHTML(true);
-                        $mail->Subject = '【系統通知】申請修改已提交';
-
-                        // 取得此申請的 holiday_fee 總和
-                        $totalDue = 0;
-                        $feeSql = "SELECT COALESCE(SUM(holiday_fee),0) AS total_due FROM reservations WHERE reservation_id = " . intval($reservationId);
-                        $feeRes = mysqli_query($link, $feeSql);
-                        if ($feeRes) { $frow = mysqli_fetch_assoc($feeRes); $totalDue = isset($frow['total_due']) ? (int)$frow['total_due'] : 0; }
-
-                        if ($totalDue > 0) {
-                            $mail->Body = "您好，{$displayName}：<br><br>您的申請（單號：{$reservationId}）已修改成功，目前狀態為<b>「審核中」</b>。<br><br>※ 本次申請需繳費：<b>新台幣 {$totalDue} 元</b>。<br><br>管理團隊將儘速處理，審核結果會再通知您。<br><br>感謝您的使用！";
-                            $mail->AltBody = "您好，{$displayName}：\n\n您的申請（單號：{$reservationId}）已修改成功，目前狀態為「審核中」。\n\n※ 本次申請需繳費：新台幣 {$totalDue} 元。\n\n管理團隊將儘速處理，審核結果會再通知您。\n\n感謝您的使用！";
-                        } else {
-                            $mail->Body = "您好，{$displayName}：<br><br>您的申請（單號：{$reservationId}）已修改成功，目前狀態為<b>「審核中」</b>。管理團隊將儘速處理，審核結果會再通知您。<br><br>感謝您的使用！";
-                            $mail->AltBody = "您好，{$displayName}：\n\n您的申請（單號：{$reservationId}）已修改成功，目前狀態為「審核中」。管理團隊將儘速處理，審核結果會再通知您。\n\n感謝您的使用！";
-                        }
+                        $mail->Subject = '【系統通知】申請補件已提交';
+                        $mail->Body    = "您好，{$displayName}：<br><br>您的申請（單號：{$reservationId}）補件已提交成功，目前狀態為<b>「審核中」</b>。管理團隊將儘速處理，審核結果會再通知您。<br><br>感謝您的使用！";
+                        $mail->AltBody = "您好，{$displayName}：\n\n您的申請（單號：{$reservationId}）補件已提交成功，目前狀態為「審核中」。管理團隊將儘速處理，審核結果會再通知您。\n\n感謝您的使用！";
                         $mail->send();
-                        @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " 補件/修改成功通知已寄送至: " . $userEmail . "\n", FILE_APPEND | LOCK_EX);
                     } catch (Exception $e) {
-                        @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " 補件/修改成功通知寄送失敗 (to: {$userEmail}): " . $e->getMessage() . " | ErrorInfo: " . $mail->ErrorInfo . "\n", FILE_APPEND | LOCK_EX);
+                        @file_put_contents(__DIR__ . '/borrow_debug.log', date('c') . " 補件通知寄送失敗 (to: {$userEmail}): " . $e->getMessage() . "\n", FILE_APPEND | LOCK_EX);
                     }
                 }
             }
+        }
     }
 }
 
-// 頁面用的假日清單（JS 端會用到，若存在 holidays 資料表則輸出）
-$pageHolidayDates = [];
-if ($dbError === '') {
-    $holTableRes = mysqli_query($link, "SHOW TABLES LIKE 'holidays'");
-    if ($holTableRes && mysqli_num_rows($holTableRes) > 0) {
-        $hres = mysqli_query($link, "SELECT `date` FROM `holidays` ORDER BY `date` ASC");
-        if ($hres) {
-            while ($hrow = mysqli_fetch_assoc($hres)) {
-                $pageHolidayDates[] = $hrow['date'];
-            }
-            mysqli_free_result($hres);
-        }
-    }
+// 解析明火人員 JSON 供回填（已有資料時）
+$fireStaffDecoded = [];
+if (!empty($revisionData['fire_staff_json'])) {
+    $tmp = json_decode((string)$revisionData['fire_staff_json'], true);
+    if (is_array($tmp)) { $fireStaffDecoded = $tmp; }
+}
+
+// 解析攤位清冊 JSON 供回填
+$salesRosterDecoded = [];
+if (!empty($revisionData['sales_roster_json'])) {
+    $tmp = json_decode((string)$revisionData['sales_roster_json'], true);
+    if (is_array($tmp)) { $salesRosterDecoded = $tmp; }
+}
+
+// 補件前各區段是否可編輯
+$canEditAlcohol = isset($originalHasAlcohol) && ($originalHasAlcohol === '1');
+$canEditFire    = isset($originalHasFire)    && ($originalHasFire    === '1');
+$canEditSales   = isset($originalHasSales)   && ($originalHasSales   === '1');
+// 旗幟完全不開放
+
+// 明火時間輔助
+$fireStartH = ''; $fireStartM = ''; $fireEndH = ''; $fireEndM = '';
+if (!empty($revisionData['fire_start_time'])) {
+    [$fireStartH, $fireStartM] = explode(':', $revisionData['fire_start_time'] . ':00');
+}
+if (!empty($revisionData['fire_end_time'])) {
+    [$fireEndH, $fireEndM] = explode(':', $revisionData['fire_end_time'] . ':00');
 }
 ?>
 <!DOCTYPE html>
@@ -473,286 +546,483 @@ if ($dbError === '') {
             border-radius: 6px;
             margin-bottom: 20px;
         }
-        .amend-header h3 {
-            margin: 0 0 5px 0;
-            color: #1565c0;
+        .amend-header h3 { margin: 0 0 5px 0; color: #1565c0; }
+        .amend-header p  { margin: 0; color: #555; font-size: 14px; }
+        .section-card {
+            background: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
         }
-        .amend-header p {
-            margin: 0;
+        .section-card h4 {
+            color: #1e40af;
+            margin: 0 0 12px 0;
+            font-size: 15px;
+            font-weight: bold;
+            border-bottom: 1px solid #e8eef7;
+            padding-bottom: 8px;
+        }
+        .readonly-block {
+            background: #f5f5f5;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 12px 15px;
             color: #555;
             font-size: 14px;
         }
+        .disabled-note { font-size: 13px; color: #999; margin: 4px 0 8px; }
+        table.staff-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        table.staff-table th { background: #f3f6fc; color: #333; padding: 8px; font-weight: 600; border: 1px solid #d4dbe8; }
+        table.staff-table td { padding: 6px 8px; border: 1px solid #d4dbe8; }
+        .btn-add-staff {
+            display: inline-flex; align-items: center; gap: 5px;
+            margin-top: 8px; padding: 6px 14px;
+            background: #1e40af; color: #fff;
+            border: none; border-radius: 5px; cursor: pointer; font-size: 13px;
+        }
+        .btn-add-staff:hover { background: #1e3a8a; }
+        .btn-del-row { background: #dc3545; color:#fff; border:none; border-radius:4px; padding:3px 8px; cursor:pointer; font-size:12px; }
+        table.booth-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        table.booth-table th { background: #f3f6fc; color: #333; padding: 8px; font-weight: 600; border: 1px solid #d4dbe8; }
+        table.booth-table td { padding: 6px 8px; border: 1px solid #d4dbe8; }
+        .btn-add-booth {
+            display: inline-flex; align-items: center; gap: 5px;
+            margin-top: 10px; padding: 7px 16px;
+            background: #374151; color: #fff;
+            border: none; border-radius: 5px; cursor: pointer; font-size: 13px;
+        }
+        .btn-add-booth:hover { background: #1f2937; }
+        .loc-option-group { display: flex; gap: 15px; flex-wrap: wrap; margin-top: 8px; }
+        .loc-option-group label { display: flex; align-items: center; gap: 7px; cursor: pointer; }
+        .amend-success-box {
+            background: #e8f5e9;
+            border-left: 4px solid #4caf50;
+            border-radius: 6px;
+            padding: 18px 20px;
+            margin-bottom: 16px;
+        }
+        .amend-success-box p { margin: 0 0 8px; }
     </style>
 </head>
 <body>
-    <!-- 導覽列 放到 container 之外以讓背景拉滿整個視窗 -->
-        <?php include __DIR__ . '/nav.php'; ?>
-
+    <?php include __DIR__ . '/nav.php'; ?>
     <div class="container">
-
         <main class="main-content">
             <section class="borrow-page">
                 <h2>補件修改</h2>
-                
-                <?php if ($dbError !== '') { ?>
+
+                <?php if ($dbError !== ''): ?>
                     <div class="login-alert"><?php echo htmlspecialchars($dbError, ENT_QUOTES, 'UTF-8'); ?></div>
-                <?php } ?>
+                <?php endif; ?>
 
-                <?php if ($amendError !== '') { ?>
+                <?php if ($amendError !== ''): ?>
                     <div class="login-alert"><?php echo htmlspecialchars($amendError, ENT_QUOTES, 'UTF-8'); ?></div>
-                <?php } ?>
+                <?php endif; ?>
 
-                <?php if ($amendSuccess !== '') { ?>
-                    <div class="borrow-success"><?php echo htmlspecialchars($amendSuccess, ENT_QUOTES, 'UTF-8'); ?></div>
-                <?php } ?>
+                <?php if ($amendSuccess !== ''): ?>
+                    <div class="amend-success-box">
+                        <p><strong><?php echo htmlspecialchars($amendSuccess, ENT_QUOTES, 'UTF-8'); ?></strong></p>
+                        <p style="color:#555; font-size:14px;">您的補件資料已提交，審核人員將重新審核此申請，結果將以 Email 通知您。</p>
+                        <a href="return_management.php" class="btn-primary" style="display:inline-block; margin-top:8px;">返回申請列表</a>
+                    </div>
+                <?php endif; ?>
 
-                <?php 
-                    // Debug log
-                    @error_log("DEBUG: reservationId=$reservationId, amendError=$amendError, revisionDataCount=" . count($revisionData) . ", jsonDebug=" . json_encode($revisionData));
-                ?>
-
-                <?php if ($dbError === '' && $amendSuccess === '' && empty($amendError)) { ?>
+                <?php if ($dbError === '' && $amendSuccess === '' && $amendError === '' || ($amendError !== '' && $amendSuccess === '' && $dbError === '')): ?>
+                    <?php if ($amendError === '' || ($amendError !== '' && !empty($revisionData))): ?>
                     <div class="amend-header">
                         <h3>補件說明</h3>
-                        <p>審核人員要求您修改此申請。請更新下方表單後重新提交，系統將重新進入審核流程。</p>
+                        <p>審核人員要求您修改此申請。請更新下方表單後重新提交，系統將重新進入審核流程。<br>
+                           <strong style="color:#c62828;">※ 補件提交後即無法再次修改，請確認後再送出。</strong></p>
                     </div>
 
                     <section class="card borrow-form-card">
-                        <form method="post" enctype="multipart/form-data" class="borrow-form" action="amend_application.php?reservation_id=<?php echo (int)$reservationId; ?>" novalidate>
+                        <form method="post" enctype="multipart/form-data" class="borrow-form"
+                              action="amend_application.php?reservation_id=<?php echo (int)$reservationId; ?>" novalidate>
                             <h3 class="step-title" style="margin-bottom: 10px;">修改申請內容</h3>
-                            <p class="step-desc" style="color: #7f8c8d; margin-bottom: 20px;">請更新相關欄位後按送出。</p>
 
-                            <div class="form-group">
-                                <label for="organization_name">單位名稱 / 主辦社團 <span style="color:red">*</span></label>
-                                <input type="text" id="organization_name" name="organization_name" class="form-control" placeholder="請輸入主辦單位名稱" value="<?php echo htmlspecialchars((string)($revisionData['organization_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" required>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label for="activity_name">活動名稱 <span style="color:red">*</span></label>
-                                <input type="text" id="activity_name" name="activity_name" class="form-control" placeholder="請輸入活動名稱" value="<?php echo htmlspecialchars((string)($revisionData['activity_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" required>
-                            </div>
+                            <?php if ($amendError !== ''): ?>
+                                <div class="login-alert" style="margin-bottom:14px;"><?php echo htmlspecialchars($amendError, ENT_QUOTES, 'UTF-8'); ?></div>
+                            <?php endif; ?>
 
-                            <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
-                                <div class="form-group" style="flex: 1; min-width: 150px;">
-                                    <label for="participant_count">活動對象人數 <span style="color:red">*</span></label>
-                                    <select id="participant_count" name="participant_count" class="form-control" required style="padding: 8px;">
-                                        <option value="" <?php echo (($revisionData['participant_count'] ?? '') === '') ? 'selected' : ''; ?>>請選擇</option>
-                                        <option value="50人以下" <?php echo (($revisionData['participant_count'] ?? '') === '50人以下') ? 'selected' : ''; ?>>50人以下</option>
-                                        <option value="50~100人" <?php echo (($revisionData['participant_count'] ?? '') === '50~100人') ? 'selected' : ''; ?>>50~100人</option>
-                                        <option value="100~200人" <?php echo (($revisionData['participant_count'] ?? '') === '100~200人') ? 'selected' : ''; ?>>100~200人</option>
-                                        <option value="200人以上" <?php echo (($revisionData['participant_count'] ?? '') === '200人以上') ? 'selected' : ''; ?>>200人以上</option>
-                                    </select>
+                            <!-- ══ 基本資料 ══ -->
+                            <div class="section-card">
+                                <h4>基本資料</h4>
+
+                                <div class="form-group">
+                                    <label for="organization_name">單位名稱 / 主辦社團 <span style="color:red">*</span></label>
+                                    <input type="text" id="organization_name" name="organization_name" class="form-control"
+                                           placeholder="請輸入主辦單位名稱"
+                                           value="<?php echo htmlspecialchars((string)($revisionData['organization_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" required>
                                 </div>
-                                <div class="form-group" style="flex: 1; min-width: 150px;">
-                                    <label for="staff_count">工作人員人數 <span style="color:red">*</span></label>
-                                    <input type="number" id="staff_count" name="staff_count" class="form-control" placeholder="請輸入人數" min="1" value="<?php echo htmlspecialchars((string)($revisionData['staff_count'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" required>
+
+                                <div class="form-group">
+                                    <label for="activity_name">活動名稱 <span style="color:red">*</span></label>
+                                    <input type="text" id="activity_name" name="activity_name" class="form-control"
+                                           placeholder="請輸入活動名稱"
+                                           value="<?php echo htmlspecialchars((string)($revisionData['activity_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" required>
+                                </div>
+
+                                <div style="display:flex; gap:15px; flex-wrap:wrap; margin-bottom:15px;">
+                                    <div class="form-group" style="flex:1; min-width:150px;">
+                                        <label for="participant_count">活動對象人數 <span style="color:red">*</span></label>
+                                        <select id="participant_count" name="participant_count" class="form-control" required style="padding:8px;">
+                                            <option value="" <?php echo (($revisionData['participant_count'] ?? '') === '') ? 'selected' : ''; ?>>請選擇</option>
+                                            <?php foreach (['50人以下','50~100人','100~200人','200人以上'] as $opt): ?>
+                                            <option value="<?php echo $opt; ?>" <?php echo (($revisionData['participant_count'] ?? '') === $opt) ? 'selected' : ''; ?>><?php echo $opt; ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="form-group" style="flex:1; min-width:150px;">
+                                        <label for="staff_count">工作人員人數 <span style="color:red">*</span></label>
+                                        <input type="number" id="staff_count" name="staff_count" class="form-control" placeholder="請輸入人數" min="1"
+                                               value="<?php echo htmlspecialchars((string)($revisionData['staff_count'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" required>
+                                    </div>
+                                </div>
+
+                                <div style="display:flex; gap:15px; flex-wrap:wrap; margin-bottom:15px;">
+                                    <div class="form-group" style="flex:1; min-width:150px; margin-bottom:0;">
+                                        <label for="activity_coordinator">活動負責人 <span style="color:red">*</span></label>
+                                        <input type="text" id="activity_coordinator" name="activity_coordinator" class="form-control"
+                                               placeholder="請輸入活動負責人姓名"
+                                               value="<?php echo htmlspecialchars((string)($revisionData['activity_coordinator'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" required>
+                                    </div>
+                                    <div class="form-group" style="flex:1; min-width:150px; margin-bottom:0;">
+                                        <label for="coordinator_phone">聯絡電話 <span style="color:red">*</span></label>
+                                        <input type="text" id="coordinator_phone" name="coordinator_phone" class="form-control"
+                                               placeholder="請輸入聯絡電話"
+                                               value="<?php echo htmlspecialchars((string)($revisionData['coordinator_phone'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" required>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="coordinator_other_contact">其他聯絡方式</label>
+                                    <input type="text" id="coordinator_other_contact" name="coordinator_other_contact" class="form-control"
+                                           placeholder="請輸入其他聯絡方式（如 Email）"
+                                           value="<?php echo htmlspecialchars((string)($revisionData['coordinator_other_contact'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
                                 </div>
                             </div>
 
-                            <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
-                                <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
-                                    <label for="coordinator_department">系級<span style="color:red">*</span></label>
-                                    <input type="text" id="coordinator_department" name="coordinator_department" class="form-control" placeholder="請輸入系級" value="<?php echo htmlspecialchars((string)($revisionData['coordinator_department'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
-                                </div>
-                                <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
-                                    <label for="coordinator_phone">聯絡電話<span style="color:red">*</span></label>
-                                    <input type="text" id="coordinator_phone" name="coordinator_phone" class="form-control" placeholder="請輸入聯絡電話" value="<?php echo htmlspecialchars((string)($revisionData['coordinator_phone'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
-                                </div>
-                            </div>
-
-                            <div class="form-group">
-                                <label for="coordinator_other_contact">其他聯絡方式</label>
-                                <input type="text" id="coordinator_other_contact" name="coordinator_other_contact" class="form-control" placeholder="請輸入其他聯絡方式（如 Email）" value="<?php echo htmlspecialchars((string)($revisionData['coordinator_other_contact'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
-                            </div>
-
-                            <div class="form-group" style="margin-top: 20px; border-top: 1px solid #ccc; padding-top: 15px;">
-                                <label>特殊需求</label>
-                                <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: center;">
-                                    <label style="display: flex; align-items: center; gap: 8px; margin: 0;">
+                            <!-- ══ 特殊需求 ══ -->
+                            <div class="section-card">
+                                <h4>特殊需求</h4>
+                                <?php if (!$canEditAlcohol && !$canEditFire && !$canEditSales): ?>
+                                    <p class="disabled-note">※ 以下酒精、明火、攤販項目申請時未勾選，補件時不可新增。</p>
+                                <?php endif; ?>
+                                <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:center; margin-bottom:12px;">
+                                    <label style="display:flex; align-items:center; gap:8px; margin:0;">
                                         <input type="checkbox" name="vehicle_entry" value="yes" <?php echo (($revisionData['vehicle_entry'] ?? '') === 'yes') ? 'checked' : ''; ?>>
                                         <span>需要車輛進場</span>
                                     </label>
-                                    <label style="display: flex; align-items: center; gap: 8px; margin: 0;">
-                                        <input type="checkbox" name="has_alcohol" value="1" <?php echo (($revisionData['has_alcohol'] ?? '0') === '1') ? 'checked' : ''; ?>>
-                                        <span>有酒精</span>
+                                    <label style="display:flex; align-items:center; gap:8px; margin:0; <?php echo !$canEditAlcohol ? 'opacity:0.5; cursor:not-allowed;' : ''; ?>">
+                                        <input type="checkbox" name="has_alcohol" value="1"
+                                               <?php echo ($canEditAlcohol && ($revisionData['has_alcohol'] ?? '0') === '1') ? 'checked' : ''; ?>
+                                               <?php echo !$canEditAlcohol ? 'disabled' : ''; ?>>
+                                        <span>有酒精</span><?php if (!$canEditAlcohol): ?><small style="color:#aaa;">（原未勾選）</small><?php endif; ?>
                                     </label>
-                                    <label style="display: flex; align-items: center; gap: 8px; margin: 0;">
-                                        <input type="checkbox" name="has_fire" value="1" <?php echo (($revisionData['has_fire'] ?? '0') === '1') ? 'checked' : ''; ?>>
-                                        <span>有明火</span>
+                                    <label style="display:flex; align-items:center; gap:8px; margin:0; <?php echo !$canEditFire ? 'opacity:0.5; cursor:not-allowed;' : ''; ?>">
+                                        <input type="checkbox" name="has_fire" value="1"
+                                               <?php echo ($canEditFire && ($revisionData['has_fire'] ?? '0') === '1') ? 'checked' : ''; ?>
+                                               <?php echo !$canEditFire ? 'disabled' : ''; ?>>
+                                        <span>有明火</span><?php if (!$canEditFire): ?><small style="color:#aaa;">（原未勾選）</small><?php endif; ?>
                                     </label>
-                                    <label style="display: flex; align-items: center; gap: 8px; margin: 0;">
-                                        <input type="checkbox" name="has_sales" value="1" <?php echo (($revisionData['has_sales'] ?? '0') === '1') ? 'checked' : ''; ?>>
-                                        <span>需擺攤販售</span>
+                                    <label style="display:flex; align-items:center; gap:8px; margin:0; <?php echo !$canEditSales ? 'opacity:0.5; cursor:not-allowed;' : ''; ?>">
+                                        <input type="checkbox" name="has_sales" value="1"
+                                               <?php echo ($canEditSales && ($revisionData['has_sales'] ?? '0') === '1') ? 'checked' : ''; ?>
+                                               <?php echo !$canEditSales ? 'disabled' : ''; ?>>
+                                        <span>需擺攤販售</span><?php if (!$canEditSales): ?><small style="color:#aaa;">（原未勾選）</small><?php endif; ?>
                                     </label>
                                 </div>
+
+                                <!-- 旗幟：完全唯讀 -->
+                                <div style="margin-top:10px;">
+                                    <label>申請插立旗幟</label>
+                                    <div class="readonly-block" style="margin-top:6px;">
+                                        <?php
+                                        $sfVal = $reservationRow['setup_flags'] ?? 'no';
+                                        echo ($sfVal === 'yes') ? '是（不開放補件修改）' : '否';
+                                        ?>
+                                    </div>
+                                    <input type="hidden" name="setup_flags" value="<?php echo htmlspecialchars((string)($reservationRow['setup_flags'] ?? 'no'), ENT_QUOTES, 'UTF-8'); ?>">
+                                    <p class="disabled-note">※ 旗幟相關資料不開放補件修改。</p>
+                                </div>
                             </div>
-                                <div class="form-group" style="margin-top: 12px;">
-                                    <label>特殊項目（請勾選適用項目）</label>
-                                    <div style="display:flex; gap:20px; margin-top:8px; align-items:center;">
-                                        <label style="display:flex; align-items:center; gap:8px; margin:0;">
-                                            <input type="checkbox" name="has_fire" value="1" >
-                                            <span>明火</span>
+
+                            <!-- ══ 明火人員名單 ══ -->
+                            <?php if ($canEditFire): ?>
+                            <div class="section-card">
+                                <h4>明火工作人員名單</h4>
+                                <p class="disabled-note" style="color:#555;">請更新各角色人員名單（可新增或刪除）。</p>
+                                <?php
+                                $fireRoles = [
+                                    'fire_staff_performer[]'    => ['key' => 'fire_performers',    'label' => '表演者',   'tableId' => 'amend_table_performer'],
+                                    'fire_staff_oiler[]'        => ['key' => 'fire_oilers',        'label' => '上油人員', 'tableId' => 'amend_table_oiler'],
+                                    'fire_staff_extinguisher[]' => ['key' => 'fire_extinguishers', 'label' => '滅火人員', 'tableId' => 'amend_table_extinguisher'],
+                                    'fire_staff_security[]'     => ['key' => 'fire_security',      'label' => '安保人員', 'tableId' => 'amend_table_security'],
+                                    'fire_staff_emergency[]'    => ['key' => 'fire_emergency',     'label' => '緊急應變人員', 'tableId' => 'amend_table_emergency'],
+                                    'fire_staff_medical[]'      => ['key' => 'fire_medical',       'label' => '醫護人員', 'tableId' => 'amend_table_medical'],
+                                ];
+                                $fireStaffJsonKey = [
+                                    'fire_staff_performer[]'    => 'fire_performers',
+                                    'fire_staff_oiler[]'        => 'fire_oilers',
+                                    'fire_staff_extinguisher[]' => 'fire_extinguishers',
+                                    'fire_staff_security[]'     => 'fire_security',
+                                    'fire_staff_emergency[]'    => 'fire_emergency',
+                                    'fire_staff_medical[]'      => 'fire_medical',
+                                ];
+                                foreach ($fireRoles as $inputName => $meta):
+                                    $jsonKey   = $fireStaffJsonKey[$inputName];
+                                    $existing  = (array)($fireStaffDecoded[$jsonKey] ?? []);
+                                    if (empty($existing)) { $existing = ['']; } // 預設一列空白
+                                    $tableId   = $meta['tableId'];
+                                ?>
+                                <div style="margin-bottom:18px;">
+                                    <label style="font-weight:600; color:#333;"><?php echo $meta['label']; ?></label>
+                                    <table class="staff-table" id="<?php echo $tableId; ?>" style="margin-top:6px;">
+                                        <thead><tr><th>姓名</th><th style="width:60px;">操作</th></tr></thead>
+                                        <tbody>
+                                        <?php foreach ($existing as $nm): ?>
+                                            <tr>
+                                                <td><input type="text" name="<?php echo $inputName; ?>" class="form-control" placeholder="請輸入姓名" value="<?php echo htmlspecialchars((string)$nm, ENT_QUOTES, 'UTF-8'); ?>"></td>
+                                                <td style="text-align:center;"><button type="button" class="btn-del-row" onclick="delStaffRow(this)">刪除</button></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                    <button type="button" class="btn-add-staff" onclick="addAmendStaffRow('<?php echo $tableId; ?>', '<?php echo $inputName; ?>')">＋ 新增人員</button>
+                                </div>
+                                <?php endforeach; ?>
+                            </div>
+                            <?php endif; ?>
+
+                            <!-- ══ 攤位詳細資料 ══ -->
+                            <?php if ($canEditSales): ?>
+                            <div class="section-card">
+                                <h4>攤位詳細資料</h4>
+
+                                <div class="form-group">
+                                    <label>攤位地點 <span style="color:red">*</span></label>
+                                    <div class="loc-option-group">
+                                        <?php
+                                        $locs = ['風華再現廣場 - 單側', '風華再現廣場 - 雙側', '真善美聖廣場'];
+                                        foreach ($locs as $loc):
+                                            $lid = 'loc_' . md5($loc);
+                                        ?>
+                                        <label>
+                                            <input type="radio" id="<?php echo $lid; ?>" name="sales_location"
+                                                   value="<?php echo htmlspecialchars($loc, ENT_QUOTES, 'UTF-8'); ?>"
+                                                   <?php echo (($revisionData['sales_location'] ?? '') === $loc) ? 'checked' : ''; ?>>
+                                            <?php echo htmlspecialchars($loc, ENT_QUOTES, 'UTF-8'); ?>
                                         </label>
-                                        <label style="display:flex; align-items:center; gap:8px; margin:0;">
-                                            <input type="checkbox" name="has_alcohol" value="1" >
-                                            <span>含</span>
-                                        </label>
-                                        <label style="display:flex; align-items:center; gap:8px; margin:0;">
-                                            <input type="checkbox" name="has_sales" value="1" >
-                                            <span>販售活動</span>
-                                        </label>
+                                        <?php endforeach; ?>
                                     </div>
                                 </div>
 
-                            <div class="form-group" style="margin-top: 15px;">
-                                <label for="purpose">用途說明 <span style="color:red">*</span></label>
-                                <textarea id="purpose" name="purpose" class="form-control" placeholder="請說明活動用途" required><?php echo htmlspecialchars((string)($revisionData['purpose'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></textarea>
-                            </div>
+                                <div class="form-group">
+                                    <label for="sales_count">攤位數量 (至多 20) <span style="color:red">*</span></label>
+                                    <input type="number" id="sales_count" name="sales_count" class="form-control"
+                                           placeholder="請輸入數量" min="1" max="20"
+                                           value="<?php echo htmlspecialchars((string)($revisionData['sales_count'] ?: 1), ENT_QUOTES, 'UTF-8'); ?>"
+                                           oninput="if(this.value>20)this.value=20; if(this.value!==''&&this.value<1)this.value=1;"
+                                           onchange="syncBoothCount(this.value)">
+                                </div>
 
-                            <div class="form-group" style="margin-top: 15px;">
-                                <label for="proposal_file">活動企劃書</label>
-                                <input type="file" id="proposal_file" name="proposal_file" class="form-control" accept=".pdf,application/pdf">
-                                <small style="display:block; margin-top:6px; color:#666;">若需補交或更新企劃書，請上傳 PDF 檔，大小上限 5MB。</small>
-                                <?php if (!empty($revisionData['proposal_file'])): ?>
-                                    <div style="margin-top:8px; font-size:13px; color:#444;">
-                                        目前檔案：
-                                        <a href="<?php echo htmlspecialchars((string)$revisionData['proposal_file'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener">
-                                            <?php echo htmlspecialchars(basename((string)$revisionData['proposal_file']), ENT_QUOTES, 'UTF-8'); ?>
+                                <!-- 攤位圖冊 -->
+                                <div style="margin-bottom:18px;">
+                                    <h4 style="border:none; padding:0; margin-bottom:8px; font-size:14px;">位置照片 / 攤位配置圖</h4>
+                                    <p style="color:#64748b; font-size:13px; margin-bottom:8px;">請上傳攤位配置圖（接受 JPG、PNG 格式，上限 5MB）。</p>
+                                    <?php if (!empty($revisionData['sales_layout_map'])): ?>
+                                    <div style="margin-bottom:8px; font-size:13px; color:#444;">
+                                        目前圖冊：
+                                        <a href="<?php echo htmlspecialchars((string)$revisionData['sales_layout_map'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener">
+                                            <?php echo htmlspecialchars(basename((string)$revisionData['sales_layout_map']), ENT_QUOTES, 'UTF-8'); ?>
                                         </a>
                                     </div>
+                                    <?php endif; ?>
+                                    <span id="amend_sales_map_display" style="font-size:14px; color:#1554b9; font-weight:500; display:block; margin-bottom:5px;"></span>
+                                    <input type="file" id="sales_layout_map" name="sales_layout_map" class="form-control"
+                                           accept="image/png, image/jpeg, image/jpg" style="padding:6px;"
+                                           onchange="if(this.files.length>0){document.getElementById('amend_sales_map_display').innerText='已選擇：'+this.files[0].name;}else{document.getElementById('amend_sales_map_display').innerText='';}">
+                                </div>
+
+                                <!-- 攤位清冊 -->
+                                <h4 style="border:none; padding:0; margin-bottom:8px; font-size:14px;">攤位清冊</h4>
+                                <p style="color:#64748b; font-size:13px; margin-bottom:12px;">請列出各攤位名冊。可點擊「＋ 新增攤位」增加列數。</p>
+                                <div style="overflow-x:auto;">
+                                    <table class="booth-table" id="amend_booth_table">
+                                        <thead>
+                                            <tr>
+                                                <th style="width:10%;">攤位編號</th>
+                                                <th style="width:22%;">攤位名稱</th>
+                                                <th style="width:18%;">負責人</th>
+                                                <th style="width:18%;">聯絡電話</th>
+                                                <th style="width:24%;">販售內容</th>
+                                                <th style="width:8%;">操作</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="amend_booth_tbody">
+                                        <?php
+                                        $boothRows = !empty($salesRosterDecoded) ? $salesRosterDecoded : [[]];
+                                        foreach ($boothRows as $br): ?>
+                                            <tr>
+                                                <td><input type="text" name="sales_booth_no[]" class="form-control" placeholder="數字" value="<?php echo htmlspecialchars((string)($br['booth_no'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"></td>
+                                                <td><input type="text" name="sales_booth_name[]" class="form-control" placeholder="名稱" value="<?php echo htmlspecialchars((string)($br['booth_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"></td>
+                                                <td><input type="text" name="sales_booth_manager[]" class="form-control" placeholder="姓名" value="<?php echo htmlspecialchars((string)($br['booth_manager'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"></td>
+                                                <td><input type="text" name="sales_booth_phone[]" class="form-control" placeholder="電話" value="<?php echo htmlspecialchars((string)($br['booth_phone'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"></td>
+                                                <td><input type="text" name="sales_booth_content[]" class="form-control" placeholder="販售內容" value="<?php echo htmlspecialchars((string)($br['booth_content'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"></td>
+                                                <td style="text-align:center;"><button type="button" class="btn-del-row" onclick="delBoothRow(this)">刪除</button></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <button type="button" class="btn-add-booth" onclick="addAmendBoothRow()" style="margin-top:12px;">＋ 新增攤位</button>
+                            </div>
+                            <?php endif; ?>
+
+                            <!-- ══ 企劃書 ══ -->
+                            <div class="section-card">
+                                <h4>活動企劃書</h4>
+                                <p style="color:#64748b; font-size:13px; margin-bottom:8px;">若需補交或更新企劃書，請上傳 PDF 檔，大小上限 5MB。</p>
+                                <?php if (!empty($revisionData['proposal_file'])): ?>
+                                <div style="margin-bottom:8px; font-size:13px; color:#444;">
+                                    目前檔案：
+                                    <a href="<?php echo htmlspecialchars((string)$revisionData['proposal_file'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener">
+                                        <?php echo htmlspecialchars(basename((string)$revisionData['proposal_file']), ENT_QUOTES, 'UTF-8'); ?>
+                                    </a>
+                                </div>
                                 <?php endif; ?>
+                                <input type="file" id="proposal_file" name="proposal_file" class="form-control" accept=".pdf,application/pdf">
                             </div>
 
-                            <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-top: 20px;">
-                                <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
-                                    <label for="borrow_start_at">借用開始時間</label>
-                                    <input type="datetime-local" id="borrow_start_at" name="borrow_start_at" class="form-control" value="<?php echo htmlspecialchars((string)($revisionData['borrow_start_at'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" readonly style="background-color: #f5f5f5;">
-                                </div>
-                                <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
-                                    <label for="borrow_end_at">借用結束時間</label>
-                                    <input type="datetime-local" id="borrow_end_at" name="borrow_end_at" class="form-control" value="<?php echo htmlspecialchars((string)($revisionData['borrow_end_at'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" readonly style="background-color: #f5f5f5;">
-                                </div>
-                            </div>
-
-                            <div class="form-group" style="margin-top:10px;">
-                                <label>例假日加收</label>
-                                <div id="holiday-fee-display" style="padding:8px; background:#fff; border:1px solid #e6e6e6; border-radius:6px;">例假日收場地費 200 元/次。已選 0 天，費用：0 元</div>
-                                <input type="hidden" name="holiday_fee_count" id="holiday_fee_count" value="<?php echo isset($revisionData['holiday_fee_count'])?(int)$revisionData['holiday_fee_count']:0; ?>">
-                                <input type="hidden" name="holiday_fee" id="holiday_fee" value="<?php echo isset($revisionData['holiday_fee'])?(int)$revisionData['holiday_fee']:0; ?>">
-                            </div>
-
-                            <?php if (!empty($revisionData['space_items'])): ?>
-                                <div class="form-group" style="margin-top: 15px;">
-                                    <label>預約空間</label>
-                                    <div style="background: #f9f9f9; padding: 10px; border-radius: 4px; border: 1px solid #e0e0e0;">
-                                        <?php foreach ($revisionData['space_items'] as $space): ?>
-                                            <div style="padding: 8px 0; border-bottom: 1px solid #e0e0e0;">
-                                                <strong><?php echo htmlspecialchars($space['space_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?></strong>
-                                                (容納人數: <?php echo htmlspecialchars((string)($space['capacity'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>)
-                                                - 代號: <?php echo htmlspecialchars($space['space_id'] ?? '', ENT_QUOTES, 'UTF-8'); ?>
-                                            </div>
-                                        <?php endforeach; ?>
+                            <!-- ══ 唯讀：時間 ══ -->
+                            <div class="section-card">
+                                <h4>活動時間 <small style="font-weight:normal; color:#999;">（不可修改）</small></h4>
+                                <div style="display:flex; gap:15px; flex-wrap:wrap;">
+                                    <div class="form-group" style="flex:1; min-width:180px; margin-bottom:0;">
+                                        <label>活動開始時間</label>
+                                        <input type="datetime-local" class="form-control" readonly style="background:#f0f0f0; cursor:not-allowed;"
+                                               value="<?php
+                                               $bs = $revisionData['borrow_start_at'] ?? '';
+                                               echo htmlspecialchars(str_replace(' ', 'T', substr($bs, 0, 16)), ENT_QUOTES, 'UTF-8');
+                                               ?>">
+                                    </div>
+                                    <div class="form-group" style="flex:1; min-width:180px; margin-bottom:0;">
+                                        <label>活動結束時間</label>
+                                        <input type="datetime-local" class="form-control" readonly style="background:#f0f0f0; cursor:not-allowed;"
+                                               value="<?php
+                                               $be = $revisionData['borrow_end_at'] ?? '';
+                                               echo htmlspecialchars(str_replace(' ', 'T', substr($be, 0, 16)), ENT_QUOTES, 'UTF-8');
+                                               ?>">
                                     </div>
                                 </div>
-                            <?php endif; ?>
+                            </div>
 
-                            <?php if (!empty($revisionData['equipment_items'])): ?>
-                                <div class="form-group" style="margin-top: 15px;">
-                                    <label>預約設備</label>
-                                    <div style="background: #f9f9f9; padding: 10px; border-radius: 4px; border: 1px solid #e0e0e0;">
-                                        <?php foreach ($revisionData['equipment_items'] as $equip): ?>
-                                            <div style="padding: 8px 0; border-bottom: 1px solid #e0e0e0;">
-                                                <strong><?php echo htmlspecialchars($equip['equipment_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?></strong>
-                                                - 代號: <?php echo htmlspecialchars($equip['equipment_code'] ?? '', ENT_QUOTES, 'UTF-8'); ?>
-                                                | 器材編號: <?php echo htmlspecialchars((string)($equip['equipment_id'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>
-                                            </div>
-                                        <?php endforeach; ?>
+                            <!-- ══ 唯讀：場地 / 器材 ══ -->
+                            <?php if (!empty($spaceItems)): ?>
+                            <div class="section-card">
+                                <h4>預約空間 <small style="font-weight:normal; color:#999;">（不可修改）</small></h4>
+                                <div class="readonly-block">
+                                    <?php foreach ($spaceItems as $space): ?>
+                                    <div style="padding:6px 0; border-bottom:1px solid #e0e0e0;">
+                                        <strong><?php echo htmlspecialchars($space['space_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?></strong>
+                                        （容納人數：<?php echo htmlspecialchars((string)($space['capacity'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>）
+                                        — 代號：<?php echo htmlspecialchars($space['space_id'] ?? '', ENT_QUOTES, 'UTF-8'); ?>
                                     </div>
+                                    <?php endforeach; ?>
                                 </div>
+                            </div>
                             <?php endif; ?>
 
-                            <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;">
+                            <?php if (!empty($equipmentItems)): ?>
+                            <div class="section-card">
+                                <h4>預約器材 <small style="font-weight:normal; color:#999;">（不可修改）</small></h4>
+                                <div class="readonly-block">
+                                    <?php foreach ($equipmentItems as $equip): ?>
+                                    <div style="padding:6px 0; border-bottom:1px solid #e0e0e0;">
+                                        <strong><?php echo htmlspecialchars($equip['equipment_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?></strong>
+                                        — 代號：<?php echo htmlspecialchars($equip['equipment_code'] ?? '', ENT_QUOTES, 'UTF-8'); ?>
+                                        | 器材編號：<?php echo htmlspecialchars((string)($equip['equipment_id'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>
+                                    </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                            <?php endif; ?>
+
+                            <!-- 送出按鈕 -->
+                            <div style="display:flex; gap:10px; margin-top:24px; justify-content:flex-end;">
                                 <button type="button" class="btn-secondary" onclick="location.href='return_management.php'">取消</button>
                                 <button type="submit" class="btn-primary">提交補件</button>
                             </div>
                         </form>
                     </section>
-                <?php } ?>
+                    <?php endif; ?>
+                <?php endif; ?>
+
             </section>
         </main>
     </div>
+
     <script>
-        function toggleFlagDetailsAmend() {
-            try {
-                const yes = document.querySelector('input[name="setup_flags"][value="yes"]');
-                const section = document.getElementById('flagDetailsSectionAmend');
-                if (!section || !yes) return;
-                section.style.display = yes.checked ? 'block' : 'none';
-            } catch (e) { /* ignore */ }
+    // ── 明火人員操作 ──────────────────────────────────
+    function addAmendStaffRow(tableId, inputName) {
+        const tbody = document.querySelector('#' + tableId + ' tbody');
+        if (!tbody) return;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><input type="text" name="${inputName}" class="form-control" placeholder="請輸入姓名"></td>
+            <td style="text-align:center;"><button type="button" class="btn-del-row" onclick="delStaffRow(this)">刪除</button></td>`;
+        tbody.appendChild(tr);
+    }
+    function delStaffRow(btn) {
+        const tr = btn.closest('tr');
+        const tbody = tr.parentElement;
+        if (tbody.rows.length <= 1) {
+            // 保留一列，清空內容
+            tbody.querySelectorAll('input').forEach(i => i.value = '');
+            return;
         }
-        document.addEventListener('DOMContentLoaded', function(){
-            toggleFlagDetailsAmend();
-        });
-    </script>
-    <script>
-        document.addEventListener('DOMContentLoaded', function(){
-            function countHolidayDaysJS(startStr, endStr) {
-                if (!startStr || !endStr) return 0;
-                const s = new Date(startStr);
-                const e = new Date(endStr);
-                if (isNaN(s.getTime()) || isNaN(e.getTime()) || s > e) return 0;
-                const holidays = (window.__PAGE_HOLIDAYS__ || []);
-                let cnt = 0;
-                for (let d = new Date(s.getFullYear(), s.getMonth(), s.getDate()); d <= e; d.setDate(d.getDate()+1)) {
-                    const y = d.getFullYear();
-                    const m = String(d.getMonth()+1).padStart(2,'0');
-                    const day = String(d.getDate()).padStart(2,'0');
-                    const key = `${y}-${m}-${day}`;
-                    if (holidays.length > 0) {
-                        if (holidays.indexOf(key) !== -1) cnt++;
-                    } else {
-                        const wd = d.getDay(); if (wd === 0 || wd === 6) cnt++;
-                    }
-                }
-                return cnt;
-            }
+        tr.remove();
+    }
 
-            function getStartDate() {
-                const d1 = document.getElementById('borrow_start_date');
-                if (d1 && d1.value) return d1.value;
-                const dt = document.getElementById('borrow_start_at');
-                if (dt && dt.value) return dt.value.substring(0,10);
-                return '';
-            }
-            function getEndDate() {
-                const d1 = document.getElementById('borrow_end_date');
-                if (d1 && d1.value) return d1.value;
-                const dt = document.getElementById('borrow_end_at');
-                if (dt && dt.value) return dt.value.substring(0,10);
-                return '';
-            }
-
-            function updateHolidayFeeDisplay() {
-                const start = getStartDate();
-                const end = getEndDate();
-                const cnt = countHolidayDaysJS(start, end);
-                const fee = cnt * 200;
-                const disp = document.getElementById('holiday-fee-display');
-                if (disp) disp.textContent = `例假日收場地費 200 元/次。已選 ${cnt} 天，費用：${fee} 元`;
-                const hfCnt = document.getElementById('holiday_fee_count');
-                const hf = document.getElementById('holiday_fee');
-                if (hfCnt) hfCnt.value = cnt;
-                if (hf) hf.value = fee;
-            }
-
-            try { window.__PAGE_HOLIDAYS__ = <?php echo json_encode($pageHolidayDates, JSON_HEX_TAG); ?> || []; } catch(e){ window.__PAGE_HOLIDAYS__ = []; }
-
-            document.getElementById('borrow_start_at')?.addEventListener('change', updateHolidayFeeDisplay);
-            document.getElementById('borrow_end_at')?.addEventListener('change', updateHolidayFeeDisplay);
-            document.getElementById('borrow_start_date')?.addEventListener('change', updateHolidayFeeDisplay);
-            document.getElementById('borrow_end_date')?.addEventListener('change', updateHolidayFeeDisplay);
-            updateHolidayFeeDisplay();
-        });
+    // ── 攤位操作 ──────────────────────────────────────
+    function addAmendBoothRow() {
+        const tbody = document.getElementById('amend_booth_tbody');
+        if (!tbody) return;
+        if (tbody.rows.length >= 20) { alert('攤位數量最多限制 20 個喔！'); return; }
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><input type="text" name="sales_booth_no[]" class="form-control" placeholder="數字"></td>
+            <td><input type="text" name="sales_booth_name[]" class="form-control" placeholder="名稱"></td>
+            <td><input type="text" name="sales_booth_manager[]" class="form-control" placeholder="姓名"></td>
+            <td><input type="text" name="sales_booth_phone[]" class="form-control" placeholder="電話"></td>
+            <td><input type="text" name="sales_booth_content[]" class="form-control" placeholder="販售內容"></td>
+            <td style="text-align:center;"><button type="button" class="btn-del-row" onclick="delBoothRow(this)">刪除</button></td>`;
+        tbody.appendChild(tr);
+        syncCountDisplay();
+    }
+    function delBoothRow(btn) {
+        const tr = btn.closest('tr');
+        const tbody = tr.parentElement;
+        if (tbody.rows.length <= 1) {
+            tbody.querySelectorAll('input').forEach(i => i.value = '');
+            return;
+        }
+        tr.remove();
+        syncCountDisplay();
+    }
+    function syncCountDisplay() {
+        const tbody = document.getElementById('amend_booth_tbody');
+        const countInput = document.getElementById('sales_count');
+        if (tbody && countInput) { countInput.value = tbody.rows.length; }
+    }
+    function syncBoothCount(val) {
+        const tbody = document.getElementById('amend_booth_tbody');
+        if (!tbody) return;
+        let target = Math.max(1, Math.min(20, parseInt(val) || 1));
+        while (tbody.rows.length < target) { addAmendBoothRow(); }
+        while (tbody.rows.length > target) { tbody.deleteRow(tbody.rows.length - 1); }
+    }
     </script>
 </body>
 </html>

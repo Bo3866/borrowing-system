@@ -672,7 +672,7 @@ if ($link) {
 
                 <div class="mt-6 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                     <div class="list-header bg-slate-800 text-white p-4 font-bold flex justify-between items-center">
-                        <span>📋 已通過最終審核的申請清單 (approval_stage = d)</span>
+                        <span>已通過最終審核的申請清單</span>
                         <span class="text-xs bg-indigo-500 text-white px-2.5 py-1 rounded-full">共 <?php echo count($approvedRows); ?> 筆</span>
                     </div>
 
@@ -729,7 +729,7 @@ if ($link) {
                         <?php else: ?>
                             <div class="text-center py-12 text-slate-400">
                                 <i class="fa-regular fa-folder-open text-4xl mb-3 block"></i>
-                                目前沒有符合最終審核通過（approval_stage = d）的申請資料。
+                                目前沒有符合最終審核通過的申請資料。
                             </div>
                         <?php endif; ?>
                     </div>

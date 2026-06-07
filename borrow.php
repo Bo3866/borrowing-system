@@ -2230,7 +2230,7 @@ SQL;
 
                                 <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px;">
                                     <div class="form-group" style="flex: 1; min-width: 150px;">
-                                        <label for="participant_count">活動對象人數 (100人以上的活動只能選擇30天後的日期) <span style="color:red">*</span></label>
+                                        <label for="participant_count" >活動對象人數 (100人以上的活動只能選擇30天後的日期) <span style="color:red">*</span></label>
                                         <select id="participant_count" name="participant_count" class="" required style="padding: 8px;">
                                             <option value="" <?php echo (($formData['participant_count'] ?? '') === '') ? 'selected' : ''; ?>>請選擇</option>
                                             <option value="50人以下" <?php echo (($formData['participant_count'] ?? '') === '50人以下') ? 'selected' : ''; ?>>50人以下</option>
@@ -2260,7 +2260,7 @@ SQL;
                                 </div>
 
                                 <div class="form-group" style="margin-top: 10px;">
-                                    <label>活動特殊性質（可複選）- 勾選則下一頁將出現表單</label>
+                                    <label style="color:Chocolate">活動特殊性質（可複選）- 勾選則下一頁將出現表單</label>
                                     <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-top: 8px;">
                                         <label style="display: flex; align-items: center; gap: 8px; margin: 0; font-weight: normal; cursor: pointer; white-space: nowrap;">
                                             <input type="checkbox" name="has_alcohol" value="1" <?php echo ($formData['has_alcohol'] === '1') ? 'checked' : ''; ?>>
@@ -2278,7 +2278,7 @@ SQL;
                                 </div>
 
                                 <div class="form-group" style="margin-top: 20px; border-top: 1px solid #ccc; padding-top: 15px;">
-                                    <label>活動開始時間 <span style="color:red">*</span></label>
+                                    <label>活動開始時間 <span style="color:red">*</span> </label>
                                     <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center;">
                                         <input type="date" id="borrow_start_date" name="borrow_start_date" class="form-control" value="<?php echo htmlspecialchars($formData['borrow_start_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
                                         <?php
@@ -2349,7 +2349,7 @@ SQL;
                                     </div>
 
                                     <div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #e2e8f0;">
-                                        <label>實際領取器材與進入場地時間 <span style="color:red">*</span></label>
+                                        <label>實際領取器材與進入場地時間 <span style="color:red">*</span> <b style="color:blue">(開放時間 08:30～16:30)</b></label>
                                         <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center;">
                                             <input type="date" id="actual_pickup_date" name="actual_pickup_date" class="form-control" value="<?php echo htmlspecialchars($formData['actual_pickup_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
                                             <?php
@@ -2373,7 +2373,7 @@ SQL;
                                             <span>分</span>
                                         </div>
                                         
-                                        <label>實際歸還器材與離開場地時間 <span style="color:red">*</span></label>
+                                        <label>實際歸還器材與離開場地時間 <span style="color:red">*</span> <b style="color:blue">(開放時間 08:30～16:30)</b></label>
                                         <div style="display: flex; gap: 10px; align-items: center;">
                                             <input type="date" id="actual_return_date" name="actual_return_date" class="form-control" value="<?php echo htmlspecialchars($formData['actual_return_date'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required>
                                             <?php
@@ -2425,27 +2425,27 @@ SQL;
                             
 <!-- ========== 步驟 2 內容區 ========== -->
                             <div class="step-content" id="step-content-2">
-                                <h3 class="step-title" style="margin-bottom: 10px;">第二步：場地需求</h3>
+                                <h3 class="step-title" style="margin-bottom: 10px; font-size: 24px;">第二步：場地需求</h3>
                                 
                                 <div class="form-group" style="margin-top: 20px;">
-                                    <label>車輛進出 <span style="color:red">*</span></label>
-                                    <div style="margin-top: 8px; display: flex; align-items: center; gap: 20px;">
-                                        <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
-                                            <input type="radio" name="vehicle_entry" value="no" id="vehicleNo" style="margin: 0;" <?php echo ($formData['vehicle_entry'] === 'no' || empty($formData['vehicle_entry'])) ? 'checked' : ''; ?>> 否
+                                    <label style="font-size: 20px;">車輛進出 <span style="color:red">*</span></label>
+                                    <div style="margin-top: 8px; display: flex; align-items: center; gap: 20px; font-size: 18px;">
+                                        <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0; font-size: 18px;">
+                                            <input type="radio" name="vehicle_entry" value="no" id="vehicleNo" style="margin: 0; " <?php echo ($formData['vehicle_entry'] === 'no' || empty($formData['vehicle_entry'])) ? 'checked' : ''; ?>> 否
                                         </label>
-                                        <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
-                                            <input type="radio" name="vehicle_entry" value="yes" id="vehicleYes" style="margin: 0;" <?php echo ($formData['vehicle_entry'] === 'yes') ? 'checked' : ''; ?>> 是
+                                        <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0; font-size: 18px;">
+                                            <input type="radio" name="vehicle_entry" value="yes" id="vehicleYes" style="margin: 0; " <?php echo ($formData['vehicle_entry'] === 'yes') ? 'checked' : ''; ?>> 是
                                         </label>
                                     </div>
                                 </div>
                                 
                                 <div class="form-group" style="margin-top: 20px;">
-                                    <label>插立旗幟(選擇"是"將填寫旗幟插立表單) <span style="color:red">*</span></label>
+                                    <label style="font-size: 20px;">插立旗幟(選擇"是"將填寫旗幟插立表單) <span style="color:red">*</span></label>
                                     <div style="margin-top: 8px; display: flex; align-items: center; gap: 20px;">
-                                        <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
+                                        <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0; font-size: 18px;">
                                             <input type="radio" name="setup_flags" value="no" id="flagOptionNo" style="margin: 0;" <?php echo ($formData['setup_flags'] === 'no' || empty($formData['setup_flags'])) ? 'checked' : ''; ?> onchange="toggleFlagDetails()"> 否
                                         </label>
-                                        <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0;">
+                                        <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0; font-size: 18px;">
                                             <input type="radio" name="setup_flags" value="yes" id="flagOptionYes" style="margin: 0;" <?php echo ($formData['setup_flags'] === 'yes') ? 'checked' : ''; ?> onchange="toggleFlagDetails()"> 是
                                         </label>
                                     </div>
@@ -2486,7 +2486,7 @@ SQL;
                                         }
                                     </style>
 
-                                    <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; background-color: #f8fafc; color: #1e293b;">
+                                    <div style="font-weight: bold; font-size: 25px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; background-color: #f8fafc; color: #1e293b;">
                                         旗幟插立申請表
                                     </div>
 
@@ -2537,17 +2537,17 @@ SQL;
 
                                     <label style="display: flex; align-items: flex-start; gap: 10px; margin: 0; font-weight: normal; cursor: pointer; background: #eff6ff; padding: 18px 20px; border-top: 1px solid #cbd5e1;">
                                         <input type="checkbox" name="flag_agreement" id="flag_agreement" value="1" <?php echo (isset($formData['flag_agreement']) && $formData['flag_agreement'] == '1') ? 'checked' : ''; ?> style="margin-top: 3px; width: 16px; height: 16px;" required>
-                                        <span style="color: #1e3a8a; line-height: 1.5; font-size: 14px;">本人為旗幟插立總負責人，已詳細閱讀並遵守以下各項注意事項，為維護校園安全與景觀，願無條件承擔所插旗幟所致之一切賠償責任，特此聲明。 <span style="color:red">*</span></span>
+                                        <span style="color: #1e3a8a; line-height: 1.5; font-size: 16px;">本人為旗幟插立總負責人，已詳細閱讀並遵守以下各項注意事項，為維護校園安全與景觀，願無條件承擔所插旗幟所致之一切賠償責任，特此聲明。 <span style="color:red">*</span></span>
                                     </label>
                                 </div>
 
                                 <!-- 👇 這裡幫你把遺失的【酒精申請表 HTML】補回來了 👇 -->
                                 <div id="alcoholDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:8px;">
-                                    <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
+                                    <div style="font-weight: bold; font-size: 24px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
                                         輔仁大學學生自治組織暨社團辦理提供酒精飲品活動須知
                                     </div>
                                     <div style="padding: 20px;">
-                                        <p style="color: #1e293b; font-size: 15px; margin-bottom: 15px; line-height: 1.6; font-weight: bold;">
+                                        <p style="color: #1e293b; font-size: 18px; margin-bottom: 15px; line-height: 1.6; font-weight: bold;">
                                             關於本校學生社團活動具酒精飲品活動，為避免參與人員酒後行為脫序、危及自身或他人安全，或造成飲用人健康上之負擔，請確認以下事項皆已納入活動規劃，並遵守相關規範︰
                                         </p>
                                         
@@ -2587,14 +2587,14 @@ SQL;
                                                 <label for="alcohol_president" style="margin: 0; font-size: 15px; font-weight: bold; white-space: nowrap;">社長</label>
                                                 <input type="text" id="alcohol_president" name="alcohol_president" placeholder="姓名" value="<?php echo htmlspecialchars($formData['alcohol_president'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" style="width: 150px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
                                             </div> -->
-                                            <span style="font-size: 15px; color: #1e293b; font-weight: bold;">(一) 活動負責人與社長已知悉以上事項，願負一切責任。</span>
-                                            <span style="font-size: 15px; color: #1e293b; font-weight: bold;">(二) 活動時所有接觸酒精飲品與會者請親自簽署《酒精飲品活動理性飲酒同意書》，請於活動結束翌日(遇例假日順延)送課指組備查。</span>
+                                            <span style="font-size: 18px; color: #1e293b; font-weight: bold;">(一) 活動負責人與社長已知悉以上事項，願負一切責任。</span>
+                                            <span style="font-size: 18px; color: #1e293b; font-weight: bold;">(二) 活動時所有接觸酒精飲品與會者請親自簽署《酒精飲品活動理性飲酒同意書》，請於活動結束翌日(遇例假日順延)送課指組備查。</span>
 
                                         </div>
 
                                       </div>
-                                    <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
-                                        輔仁大學學生活動上火確認表
+                                    <div style="font-weight: bold; font-size: 24px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
+                                        輔仁大學學生活動明火申請表 (僅限火舞活動)
                                     </div>
                                     <div style="padding: 20px;">
                                         <div class="form-group" style="margin-bottom: 15px;">

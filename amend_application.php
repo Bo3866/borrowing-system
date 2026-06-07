@@ -180,8 +180,9 @@ if ($dbError === '') {
             $updatedFields = [
                 'organization_name'         => trim((string)($_POST['organization_name'] ?? '')),
                 'activity_name'             => trim((string)($_POST['activity_name'] ?? '')),
-                'participant_count'         => trim((string)($_POST['participant_count'] ?? '')),
-                'staff_count'               => (int)($_POST['staff_count'] ?? 0),
+                // 人數欄位：鎖定為 DB 原值，不接受 POST 修改
+                'participant_count'         => (string)($reservationRow['participant_count'] ?? ''),
+                'staff_count'               => (int)($reservationRow['staff_count'] ?? 0),
                 'activity_coordinator'      => trim((string)($_POST['activity_coordinator'] ?? '')),
                 'coordinator_phone'         => trim((string)($_POST['coordinator_phone'] ?? '')),
                 'coordinator_other_contact' => trim((string)($_POST['coordinator_other_contact'] ?? '')),
@@ -665,18 +666,14 @@ if (!empty($revisionData['fire_end_time'])) {
 
                                 <div style="display:flex; gap:15px; flex-wrap:wrap; margin-bottom:15px;">
                                     <div class="form-group" style="flex:1; min-width:150px;">
-                                        <label for="participant_count">活動對象人數 <span style="color:red">*</span></label>
-                                        <select id="participant_count" name="participant_count" class="form-control" required style="padding:8px;">
-                                            <option value="" <?php echo (($revisionData['participant_count'] ?? '') === '') ? 'selected' : ''; ?>>請選擇</option>
-                                            <?php foreach (['50人以下','50~100人','100~200人','200人以上'] as $opt): ?>
-                                            <option value="<?php echo $opt; ?>" <?php echo (($revisionData['participant_count'] ?? '') === $opt) ? 'selected' : ''; ?>><?php echo $opt; ?></option>
-                                            <?php endforeach; ?>
-                                        </select>
+                                        <label>活動對象人數 <small style="color:#999;">（不可修改）</small></label>
+                                        <div class="readonly-block"><?php echo htmlspecialchars((string)($revisionData['participant_count'] ?? '—'), ENT_QUOTES, 'UTF-8'); ?></div>
+                                        <input type="hidden" name="participant_count" value="<?php echo htmlspecialchars((string)($revisionData['participant_count'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
                                     <div class="form-group" style="flex:1; min-width:150px;">
-                                        <label for="staff_count">工作人員人數 <span style="color:red">*</span></label>
-                                        <input type="number" id="staff_count" name="staff_count" class="form-control" placeholder="請輸入人數" min="1"
-                                               value="<?php echo htmlspecialchars((string)($revisionData['staff_count'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" required>
+                                        <label>工作人員人數 <small style="color:#999;">（不可修改）</small></label>
+                                        <div class="readonly-block"><?php echo htmlspecialchars((string)($revisionData['staff_count'] ?? '—'), ENT_QUOTES, 'UTF-8'); ?></div>
+                                        <input type="hidden" name="staff_count" value="<?php echo htmlspecialchars((string)($revisionData['staff_count'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
                                     </div>
                                 </div>
 

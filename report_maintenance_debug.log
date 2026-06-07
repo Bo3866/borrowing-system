@@ -1,2 +1,4 @@
 [2026-05-14 16:21:30] Attempting equipment insert: equipment_id=6 reporter_id=S000000002 fault_description_len=4 photo=uploads/maintenance/1778775690_1c8c020b5f5d_Screenshot_2026-05-11_145653.png
 [2026-06-05 18:08:53] Attempting equipment insert: equipment_id=1 reporter_id=413402162 fault_description_len=3 photo=NULL
+[2026-06-07 14:51:57] Attempting equipment insert: equipment_id=1 reporter_id=413402162 fault_description_len=2 photo=NULL
+[2026-06-07 14:53:46] Attempting space insert: space_id=ES002 reporter_id=413402162 fault_description_len=2 photo=NULL

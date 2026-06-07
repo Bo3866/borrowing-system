@@ -386,48 +386,57 @@ if ($pageError === '' && $link) {
     $mainSql = "";
 
     if ($canViewEquipment) {
-        // 【器材排程專屬 SQL】
-        $mainSql = "
-            SELECT
-                r.reservation_id,
-                r.user_id,
-                u.full_name,
-                u.email,
-                r.actual_pickup_at AS borrow_start_at,
-                r.actual_return_at AS borrow_end_at,
-                hs.handover_id,
-                hs.handover_at AS latest_handover_at,
-                hs.returned_at AS latest_returned_at,
-                hs.note AS latest_note,
-                CASE
-                    WHEN hs.handover_at IS NULL THEN 'pending'
-                    WHEN hs.returned_at IS NULL THEN 'handover'
-                    ELSE 'returned'
-                END AS handover_state,
-                (
-                    SELECT GROUP_CONCAT(DISTINCT ec.equipment_name ORDER BY ec.equipment_name SEPARATOR '、')
-                    FROM equipment_reservation_items eri
-                    JOIN equipments e ON e.equipment_id = eri.equipment_id
-                    JOIN equipment_categories ec ON ec.equipment_code = e.equipment_code
-                    WHERE eri.reservation_id = r.reservation_id
-                ) AS equipment_names,
-                NULL AS space_names -- 器材模式下補空欄位，確保結構一致
-            FROM reservations r
-            JOIN users u ON u.user_id = r.user_id
-            LEFT JOIN (
-                SELECT hs1.*
-                FROM handover_schedules hs1
-                INNER JOIN (
-                    SELECT reservation_id, MAX(handover_id) AS max_handover_id
-                    FROM handover_schedules
-                    GROUP BY reservation_id
-                ) latest ON latest.max_handover_id = hs1.handover_id
-            ) hs ON hs.reservation_id = r.reservation_id
-            WHERE r.approval_stage = 'd'
-              AND EXISTS (
-                  SELECT 1 FROM equipment_reservation_items eri WHERE eri.reservation_id = r.reservation_id
-              )
-        ";
+    // 【器材排程專屬 SQL】
+    $mainSql = "
+        SELECT
+            r.reservation_id,
+            r.user_id,
+            u.full_name,
+            u.email,
+            r.actual_pickup_at AS borrow_start_at,
+            r.actual_return_at AS borrow_end_at,
+            hs.handover_id,
+            hs.handover_at AS latest_opened_at,
+            hs.note AS latest_note,
+            CASE
+                WHEN hs.handover_at IS NULL THEN 'pending'
+                WHEN hs.handover_at IS NOT NULL AND hs.returned_at IS NULL THEN 'handover'
+                ELSE 'returned'
+            END AS handover_state,
+
+            -- 🎯 這裡放入你所描述的：計算同申請、同類別的器材總數
+            (
+    SELECT GROUP_CONCAT(CONCAT(category_counts.equipment_name, ' x', category_counts.item_count) SEPARATOR '、')
+    FROM (
+        SELECT 
+            eri2.reservation_id, 
+            ec2.equipment_name, 
+            COUNT(eri2.equipment_id) AS item_count
+        FROM equipment_reservation_items eri2
+        JOIN equipments e2 ON e2.equipment_id = eri2.equipment_id
+        JOIN equipment_categories ec2 ON ec2.equipment_code = e2.equipment_code
+        GROUP BY eri2.reservation_id, ec2.equipment_code
+    ) AS category_counts
+    WHERE category_counts.reservation_id = r.reservation_id
+) AS equipment_names,
+
+            NULL AS space_names -- 器材模式下補空欄位
+        FROM reservations r
+        JOIN users u ON u.user_id = r.user_id
+        LEFT JOIN (
+            SELECT hs1.*
+            FROM handover_schedules hs1
+            INNER JOIN (
+                SELECT reservation_id, MAX(handover_id) AS max_handover_id
+                FROM handover_schedules
+                GROUP BY reservation_id
+            ) latest ON latest.max_handover_id = hs1.handover_id
+        ) hs ON hs.reservation_id = r.reservation_id
+        WHERE r.approval_stage = 'd'
+          AND EXISTS (
+              SELECT 1 FROM equipment_reservation_items eri WHERE eri.reservation_id = r.reservation_id
+          )
+    ";
 
         // 動態加入關鍵字搜尋
         if ($keyword !== '') {

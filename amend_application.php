@@ -260,11 +260,11 @@ if ($dbError === '') {
                         $bcont   = trim((string)($_POST['sales_booth_content'][$idx] ?? ''));
                         if ($no !== '' || $bname !== '') {
                             $salesRoster[] = [
-                                'booth_no'      => $no,
-                                'booth_name'    => $bname,
-                                'booth_manager' => $bmgr,
-                                'booth_phone'   => $bphone,
-                                'booth_content' => $bcont,
+                                'booth_no'   => $no,
+                                'booth_name' => $bname,
+                                'manager'    => $bmgr,
+                                'phone'      => $bphone,
+                                'content'    => $bcont,
                             ];
                         }
                     }
@@ -864,9 +864,9 @@ if (!empty($revisionData['fire_end_time'])) {
                                             <tr>
                                                 <td><input type="text" name="sales_booth_no[]" class="form-control" placeholder="數字" value="<?php echo htmlspecialchars((string)($br['booth_no'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"></td>
                                                 <td><input type="text" name="sales_booth_name[]" class="form-control" placeholder="名稱" value="<?php echo htmlspecialchars((string)($br['booth_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"></td>
-                                                <td><input type="text" name="sales_booth_manager[]" class="form-control" placeholder="姓名" value="<?php echo htmlspecialchars((string)($br['booth_manager'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"></td>
-                                                <td><input type="text" name="sales_booth_phone[]" class="form-control" placeholder="電話" value="<?php echo htmlspecialchars((string)($br['booth_phone'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"></td>
-                                                <td><input type="text" name="sales_booth_content[]" class="form-control" placeholder="販售內容" value="<?php echo htmlspecialchars((string)($br['booth_content'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"></td>
+                                                <td><input type="text" name="sales_booth_manager[]" class="form-control" placeholder="姓名" value="<?php echo htmlspecialchars((string)($br['manager'] ?? $br['booth_manager'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"></td>
+                                                <td><input type="text" name="sales_booth_phone[]" class="form-control" placeholder="電話" value="<?php echo htmlspecialchars((string)($br['phone'] ?? $br['booth_phone'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"></td>
+                                                <td><input type="text" name="sales_booth_content[]" class="form-control" placeholder="販售內容" value="<?php echo htmlspecialchars((string)($br['content'] ?? $br['booth_content'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"></td>
                                                 <td style="text-align:center;"><button type="button" class="btn-del-row" onclick="delBoothRow(this)">刪除</button></td>
                                             </tr>
                                         <?php endforeach; ?>

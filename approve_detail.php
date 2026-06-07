@@ -394,11 +394,6 @@ if ($spStmt) {
                     <input type="text" value="<?php echo safe_html($row['coordinator_phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" disabled>
                 </div>
 
-                <div style="grid-column:1/3;">
-                    <label>活動用途 / 備註</label>
-                    <textarea rows="3" style="width:100%;" disabled><?php echo safe_html($row['purpose'] ?? '', ENT_QUOTES, 'UTF-8'); ?></textarea>
-                </div>
-
                 <?php
                 $bs = $row['borrow_start_at'] ? strtotime($row['borrow_start_at']) : null;
                 $be = $row['borrow_end_at'] ? strtotime($row['borrow_end_at']) : null;

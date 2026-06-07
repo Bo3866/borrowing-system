@@ -453,7 +453,7 @@ if ($dbError === '') {
             FROM reservations r
             JOIN users u ON u.user_id COLLATE utf8mb4_unicode_ci = r.`{$applicantColumn}` COLLATE utf8mb4_unicode_ci
             WHERE {$listWhere}
-            ORDER BY r.`{$borrowEndColumn}` DESC
+            ORDER BY r.reservation_id DESC
             LIMIT 300
         ";
 
@@ -897,6 +897,7 @@ if ($dbError === '' && count($rows) > 0) {
                             <thead>
                                 <tr class="bg-slate-50 text-slate-600 text-sm">
                                     <th style="width: 50px; text-align: center;">進度</th>
+                                    <th style="width: 80px; text-align: center;">單號</th>
                                     <th>申請人</th>
                                     <th>活動名稱</th>
                                     <th>借用時段</th>
@@ -908,7 +909,7 @@ if ($dbError === '' && count($rows) > 0) {
                             </thead>
                             <tbody>
                                 <?php if (count($rows) === 0) { ?>
-                                    <tr><td colspan="8" class="text-center py-8 text-slate-400">目前沒有可顯示的申請資料。</td></tr>
+                                    <tr><td colspan="9" class="text-center py-8 text-slate-400">目前沒有可顯示的申請資料。</td></tr>
                                 <?php } else { ?>
                                     <?php foreach ($rows as $row) { 
                                         $resourceParts = [];
@@ -968,6 +969,9 @@ if ($dbError === '' && count($rows) > 0) {
                                             
                                             <td class="left-trigger-zone text-center text-indigo-600 font-bold" style="cursor: pointer;" onclick="event.stopPropagation(); toggleAccordion(this.closest('tr'), <?php echo (int)$row['reservation_id']; ?>)">
                             <span class="accordion-icon">▶</span>
+                        </td>
+                        <td style="text-align: center;">
+                            <span class="font-mono text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded">#<?php echo (int)$row['reservation_id']; ?></span>
                         </td>
                         <td>
                             <span class="font-semibold text-slate-800"><?php echo htmlspecialchars($row['full_name'] . ' (' . $row['applicant_user_id'] . ')', ENT_QUOTES, 'UTF-8'); ?></span><br>
@@ -1031,7 +1035,7 @@ if ($dbError === '' && count($rows) > 0) {
                     </tr>
                     
                     <tr class="accordion-content bg-slate-50/50" id="accordion-<?php echo (int)$row['reservation_id']; ?>" style="display: none;">
-                        <td colspan="8" class="p-4">
+                        <td colspan="9" class="p-4">
                             <?php
                                 $approvedStages = []; $needRevisionStages = []; $rejectedStages = []; $stageTimes = [];
                                 if (!empty($row['_stage_results'])) {

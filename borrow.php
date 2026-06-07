@@ -2486,7 +2486,7 @@ SQL;
                                         }
                                     </style>
 
-                                    <div style="font-weight: bold; font-size: 25px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; background-color: #f8fafc; color: #1e293b;">
+                                    <div style="font-weight: bold; font-size: 28px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; background-color: #f8fafc; color: #1e293b;">
                                         旗幟插立申請表
                                     </div>
 
@@ -2543,7 +2543,7 @@ SQL;
 
                                 <!-- 👇 這裡幫你把遺失的【酒精申請表 HTML】補回來了 👇 -->
                                 <div id="alcoholDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:8px;">
-                                    <div style="font-weight: bold; font-size: 24px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
+                                    <div style="font-weight: bold; font-size: 28px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
                                         輔仁大學學生自治組織暨社團辦理提供酒精飲品活動須知
                                     </div>
                                     <div style="padding: 20px;">
@@ -2593,7 +2593,7 @@ SQL;
                                         </div>
 
                                       </div>
-                                    <div style="font-weight: bold; font-size: 24px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
+                                    <div style="font-weight: bold; font-size: 28px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
                                         輔仁大學學生活動明火申請表 (僅限火舞活動)
                                     </div>
                                     <div style="padding: 20px;">
@@ -2658,7 +2658,7 @@ SQL;
 
                                         <!-- 👇 這裡新增各種人員的表格 👇 -->
                                         <hr style="margin: 30px 0; border: 0; border-top: 1px solid #e2e8f0;">
-                                        <h4 style="margin: 0 0 15px 0; color: #1e40af; font-size: 16px; font-weight: bold;">活動相關人員名單</h4>
+                                        <h4 style="margin: 0 0 15px 0; color: #1e40af; font-size: 16px; font-weight: bold;">活動相關人員名單<span style="color:red">*</span></h4>
                                         <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">請點擊「＋新增」按鈕來增加列數，您也可以點擊「刪除」移除列。</p>
 
 <style>
@@ -2683,7 +2683,7 @@ SQL;
                                         </style>
 
                                         <div class="fire-staff-wrapper">
-                                            <h5 class="fire-staff-title">表演人員</h5>
+                                            <h5 class="fire-staff-title">表演人員<span style="color:red">*</span></h5>
                                             <table class="fire-staff-table" id="table_staff_performer">
                                                 <thead><tr><th>姓名</th><th style="width: 70px; text-align: center;">操作</th></tr></thead>
                                                 <tbody>
@@ -2697,7 +2697,7 @@ SQL;
                                         </div>
 
                                         <div class="fire-staff-wrapper">
-                                            <h5 class="fire-staff-title">上油人員 <span style="color: #ef4444; font-weight: normal; font-size: 13px;">(至少一人)</span></h5>
+                                            <h5 class="fire-staff-title">上油人員 <span style="color: #ef4444; font-weight: normal; font-size: 13px;">(至少一人)</span><span style="color:red">*</span></h5>
                                             <table class="fire-staff-table" id="table_staff_oiler">
                                                 <thead><tr><th>姓名</th><th style="width: 70px; text-align: center;">操作</th></tr></thead>
                                                 <tbody>
@@ -2711,7 +2711,7 @@ SQL;
                                         </div>
 
                                         <div class="fire-staff-wrapper">
-                                            <h5 class="fire-staff-title">滅火人員 <span style="color: #ef4444; font-weight: normal; font-size: 13px;">(至少一人)</span></h5>
+                                            <h5 class="fire-staff-title">滅火人員 <span style="color: #ef4444; font-weight: normal; font-size: 13px;">(至少一人)</span><span style="color:red">*</span></h5>
                                             <table class="fire-staff-table" id="table_staff_extinguisher">
                                                 <thead><tr><th>姓名</th><th style="width: 70px; text-align: center;">操作</th></tr></thead>
                                                 <tbody>
@@ -2725,7 +2725,7 @@ SQL;
                                         </div>
 
                                         <div class="fire-staff-wrapper">
-                                            <h5 class="fire-staff-title">維安人員 <span style="color: #ef4444; font-weight: normal; font-size: 13px;">(至少三人)</span></h5>
+                                            <h5 class="fire-staff-title">維安人員 <span style="color: #ef4444; font-weight: normal; font-size: 13px;">(至少三人)</span><span style="color:red">*</span></h5>
                                             <table class="fire-staff-table" id="table_staff_security">
                                                 <thead><tr><th>姓名</th><th style="width: 70px; text-align: center;">操作</th></tr></thead>
                                                 <tbody>
@@ -2747,7 +2747,7 @@ SQL;
                                         </div>
 
                                         <div class="fire-staff-wrapper">
-                                            <h5 class="fire-staff-title">緊急狀況處理人員 <span style="color: #ef4444; font-weight: normal; font-size: 13px;">(至少一人)</span></h5>
+                                            <h5 class="fire-staff-title">緊急狀況處理人員 <span style="color: #ef4444; font-weight: normal; font-size: 13px;">(至少一人)</span><span style="color:red">*</span></h5>
                                             <table class="fire-staff-table" id="table_staff_emergency">
                                                 <thead><tr><th>姓名</th><th style="width: 70px; text-align: center;">操作</th></tr></thead>
                                                 <tbody>
@@ -2761,7 +2761,7 @@ SQL;
                                         </div>
 
                                         <div class="fire-staff-wrapper">
-                                            <h5 class="fire-staff-title">醫療人員 <span style="color: #ef4444; font-weight: normal; font-size: 13px;">(至少一人)</span></h5>
+                                            <h5 class="fire-staff-title">醫療人員 <span style="color: #ef4444; font-weight: normal; font-size: 13px;">(至少一人)</span><span style="color:red">*</span></h5>
                                             <table class="fire-staff-table" id="table_staff_medical">
                                                 <thead><tr><th>姓名</th><th style="width: 70px; text-align: center;">操作</th></tr></thead>
                                                 <tbody>
@@ -2779,7 +2779,7 @@ SQL;
                                 </div>
                                 <!-- 👆 明火申請表 HTML 結束 👆 -->
 <div id="salesDetailsSection" style="display:none; margin-top:20px; background:#fff; border:1px solid #cbd5e1; border-radius:8px;">
-    <div style="font-weight: bold; font-size: 16px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
+    <div style="font-weight: bold; font-size: 28px; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">
         一般臨時攤位申請
     </div>
     <div style="padding: 20px;">
@@ -2886,7 +2886,7 @@ SQL;
         <hr style="margin: 25px 0; border: 0; border-top: 1px solid #e2e8f0;">
         
 <div class="form-group" style="margin-bottom: 25px;">
-            <h4 style="margin: 0 0 10px 0; color: #1e40af; font-size: 16px; font-weight: bold;">上傳攤位圖冊</h4>
+            <h4 style="margin: 0 0 10px 0; color: #1e40af; font-size: 16px; font-weight: bold;">上傳攤位圖冊<span style="color:red">*</span></h4>
             <p style="color: #64748b; font-size: 14px; margin-bottom: 10px;">請上傳您的攤位配置圖 (接受 JPG, PNG 格式)。</p>
             
             <input type="hidden" name="draft_sales_layout_map" id="draft_sales_layout_map" value="">
@@ -2896,7 +2896,7 @@ SQL;
         </div>
 
         <div class="sales-roster-wrapper" style="margin-bottom: 15px; padding: 20px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
-            <h4 style="margin: 0 0 10px 0; color: #1e40af; font-size: 16px; font-weight: bold;">攤位清冊</h4>
+            <h4 style="margin: 0 0 10px 0; color: #1e40af; font-size: 16px; font-weight: bold;">攤位清冊<span style="color:red">*</span></h4>
             <p style="color: #64748b; font-size: 14px; margin-bottom: 15px;">請列出各攤位名冊。可點擊「＋新增攤位」增加列數。</p>
             
             <style>

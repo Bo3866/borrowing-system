@@ -840,11 +840,10 @@ if ($dbError === '' && count($rows) > 0) {
                         <div style="font-size: 0.75rem; color: #991b1b;">
                             <span style="font-weight: 700;">租借權限受限！</span> 您目前已累計違規達 <span style="font-weight: 900; color: #dc2626; font-size: 0.875rem;"><?php echo $violationPoints; ?></span> 點，系統已自動暫停您的器材預約權限。
                         </div>
-            <?php else: ?>
-                
+                    </div>
+                </div>                
             <?php endif; ?>
         <?php endif; ?>
-        
     </div>
 <?php endif; ?>
 

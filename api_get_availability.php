@@ -39,15 +39,17 @@ if ($type === 'equipment' && $id !== '') {
     }
     
     $resSql = "
-        SELECT r.borrow_start_at, r.borrow_end_at, COUNT(eri.equipment_id) as total_qty
+        SELECT r.actual_pickup_at, r.actual_return_at, COUNT(eri.equipment_id) as total_qty
         FROM reservations r
         JOIN equipment_reservation_items eri ON r.reservation_id = eri.reservation_id
         JOIN equipments e ON eri.equipment_id = e.equipment_id
         WHERE e.equipment_code = ?
           AND r.approval_status IN ('pending', 'approved')
-          AND r.borrow_start_at <= ?
-          AND r.borrow_end_at >= ?
-        GROUP BY r.reservation_id, r.borrow_start_at, r.borrow_end_at
+          AND r.actual_pickup_at IS NOT NULL
+          AND r.actual_return_at IS NOT NULL
+          AND r.actual_pickup_at <= ?
+          AND r.actual_return_at >= ?
+        GROUP BY r.reservation_id, r.actual_pickup_at, r.actual_return_at
     ";
     $stmt = mysqli_prepare($link, $resSql);
     if ($stmt) {
@@ -56,8 +58,8 @@ if ($type === 'equipment' && $id !== '') {
         $res = mysqli_stmt_get_result($stmt);
         while ($row = mysqli_fetch_assoc($res)) {
             $response['reservations'][] = [
-                'actual_pickup_at' => $row['borrow_start_at'],
-                'actual_return_at' => $row['borrow_end_at'],
+                'actual_pickup_at' => $row['actual_pickup_at'],
+                'actual_return_at' => $row['actual_return_at'],
                 'qty' => (int)$row['total_qty']
             ];
         }
@@ -68,13 +70,15 @@ if ($type === 'equipment' && $id !== '') {
     $response['total_capacity'] = 1;
     
     $resSql = "
-        SELECT r.borrow_start_at, r.borrow_end_at, 1 as total_qty
+        SELECT r.actual_pickup_at, r.actual_return_at, 1 as total_qty
         FROM reservations r
         JOIN space_reservation_items sri ON r.reservation_id = sri.reservation_id
         WHERE sri.space_id = ?
           AND r.approval_status IN ('pending', 'approved')
-          AND r.borrow_start_at <= ?
-          AND r.borrow_end_at >= ?
+          AND r.actual_pickup_at IS NOT NULL
+          AND r.actual_return_at IS NOT NULL
+          AND r.actual_pickup_at <= ?
+          AND r.actual_return_at >= ?
     ";
     $stmt = mysqli_prepare($link, $resSql);
     if ($stmt) {
@@ -83,8 +87,8 @@ if ($type === 'equipment' && $id !== '') {
         $res = mysqli_stmt_get_result($stmt);
         while ($row = mysqli_fetch_assoc($res)) {
             $response['reservations'][] = [
-                'actual_pickup_at' => $row['borrow_start_at'],
-                'actual_return_at' => $row['borrow_end_at'],
+                'actual_pickup_at' => $row['actual_pickup_at'],
+                'actual_return_at' => $row['actual_return_at'],
                 'qty' => 1
             ];
         }

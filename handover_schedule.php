@@ -425,7 +425,7 @@ if ($pageError === '' && $link) {
                 GROUP BY reservation_id
             ) latest ON latest.max_handover_id = hs1.handover_id
         ) hs ON hs.reservation_id = r.reservation_id
-        WHERE r.approval_status = 'approved'
+        WHERE r.approval_stage = 'd' -- 🎯 修正這裡：篩選最終審核通過的項目
           AND EXISTS (
               SELECT 1 FROM equipment_reservation_items eri WHERE eri.reservation_id = r.reservation_id
           )
@@ -664,18 +664,77 @@ if ($link) {
                                 <option value="returned" <?php echo ($_GET['status'] ?? '') === 'returned' ? 'selected' : ''; ?>>已歸還</option>
                             </select>
                         </div>
-                        <div class="flex gap-2 items-end pb-0.5">
-                            <button type="submit" class="action-btn action-btn-primary">
-                                <i class="fa-solid fa-magnifying-glass text-xs"></i> 搜尋
-                            </button>
-                            <?php if (!empty($_GET['keyword']) || !empty($_GET['status'])): ?>
-                                <a href="handover_schedule.php" class="action-btn action-btn-secondary">
-                                    <i class="fa-solid fa-xmark text-xs"></i> 清除
-                                </a>
-                            <?php endif; ?>
-                        </div>
+                        <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition">
+                            <i class="fa-solid fa-magnifying-glass mr-1"></i>搜尋
+                        </button>
                     </form>
                 </div>
+
+                <div class="mt-6 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="list-header bg-slate-800 text-white p-4 font-bold flex justify-between items-center">
+                        <span>📋 已通過最終審核的申請清單 (approval_stage = d)</span>
+                        <span class="text-xs bg-indigo-500 text-white px-2.5 py-1 rounded-full">共 <?php echo count($approvedRows); ?> 筆</span>
+                    </div>
+
+                    <div class="p-4 space-y-4">
+                        <?php if (!empty($approvedRows)): ?>
+                            <?php foreach ($approvedRows as $row): ?>
+                                <div class="handover-row flex flex-wrap md:flex-nowrap justify-between items-center gap-4 p-4 border border-slate-100 rounded-xl bg-white hover:shadow-md transition">
+                                    <div class="space-y-2 flex-1">
+                                        <div class="flex items-center gap-3">
+                                            <span class="record-id-pill"># <?php echo htmlspecialchars((string)$row['reservation_id'], ENT_QUOTES, 'UTF-8'); ?></span>
+                                            <span class="font-bold text-slate-800 text-base"><?php echo htmlspecialchars((string)$row['full_name'], ENT_QUOTES, 'UTF-8'); ?> (<?php echo htmlspecialchars((string)$row['user_id'], ENT_QUOTES, 'UTF-8'); ?>)</span>
+                                            
+                                            <?php if ($row['handover_state'] === 'pending'): ?>
+                                                <span class="status-pill pill-pending"><i class="fa-regular fa-clock"></i> 待交接</span>
+                                            <?php elseif ($row['handover_state'] === 'handover'): ?>
+                                                <span class="status-pill pill-handover"><i class="fa-solid fa-box-open"></i> 使用中/已交接</span>
+                                            <?php else: ?>
+                                                <span class="status-pill pill-done"><i class="fa-regular fa-circle-check"></i> 已歸還</span>
+                                            <?php endif; ?>
+                                        </div>
+
+                                        <div class="text-sm text-slate-600 space-y-1">
+                                            <p><i class="fa-solid fa-box text-slate-400 mr-1.5 w-4"></i><strong>借用器材：</strong> <?php echo htmlspecialchars((string)($row['equipment_names'] ?? '無器材'), ENT_QUOTES, 'UTF-8'); ?></p>
+                                            <p><i class="fa-regular fa-calendar text-slate-400 mr-1.5 w-4"></i><strong>使用時間：</strong> <?php echo htmlspecialchars((string)$row['borrow_start_at'], ENT_QUOTES, 'UTF-8'); ?> ～ <?php echo htmlspecialchars((string)$row['borrow_end_at'], ENT_QUOTES, 'UTF-8'); ?></p>
+                                            <?php if (!empty($row['latest_note'])): ?>
+                                                <p class="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded mt-1 inline-block"><i class="fa-solid fa-comment-dots mr-1"></i>備註：<?php echo htmlspecialchars((string)$row['latest_note'], ENT_QUOTES, 'UTF-8'); ?></p>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-center gap-2">
+                                        <form method="POST" action="handover_schedule.php" class="inline-block">
+                                            <input type="hidden" name="reservation_id" value="<?php echo $row['reservation_id']; ?>">
+                                            
+                                            <?php if ($row['handover_state'] === 'pending'): ?>
+                                                <input type="hidden" name="action" value="mark_handover">
+                                                <button type="submit" class="action-btn action-btn-primary bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-4 rounded-lg text-sm">
+                                                    <i class="fa-solid fa-handshake mr-1"></i> 辦理交接
+                                                </button>
+                                            <?php elseif ($row['handover_state'] === 'handover'): ?>
+                                                <input type="hidden" name="action" value="mark_return">
+                                                <button type="submit" class="action-btn bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg text-sm">
+                                                    <i class="fa-solid fa-rotate-left mr-1"></i> 確認歸還
+                                                </button>
+                                            <?php else: ?>
+                                                <button type="button" disabled class="action-btn bg-slate-200 text-slate-400 font-bold py-2 px-4 rounded-lg text-sm">
+                                                    <i class="fa-solid fa-check mr-1"></i> 流程已結束
+                                                </button>
+                                            <?php endif; ?>
+                                        </form>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <div class="text-center py-12 text-slate-400">
+                                <i class="fa-regular fa-folder-open text-4xl mb-3 block"></i>
+                                目前沒有符合最終審核通過（approval_stage = d）的申請資料。
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
             </section>
         </main>
     </div>

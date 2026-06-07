@@ -29,7 +29,6 @@ $handoverMenuLabel = in_array($currentRole, ['8','9'], true)
         <?php if ($isManager) { ?>
             <button class="nav-btn" onclick="location.href='approve.php'">審核面板</button>
             <?php if (in_array($currentRole, ['2','3'], true)) { ?>
-                <button class="nav-btn" id="btnManualRemind" type="button" onclick="handleManualRemindClick(event)">檢查逾期並催繳</button>
                 <button class="nav-btn" onclick="location.href='equipment_inventory.php'">庫存管理</button>
             <?php } ?>
         <?php if (in_array($currentRole, ['3'], true)) { ?>

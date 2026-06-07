@@ -729,7 +729,7 @@ if ($link) {
                         <?php else: ?>
                             <div class="text-center py-12 text-slate-400">
                                 <i class="fa-regular fa-folder-open text-4xl mb-3 block"></i>
-                                目前沒有符合最終審核通過（approval_stage = d）的申請資料。
+                                目前沒有符合最終審核通過的申請資料。
                             </div>
                         <?php endif; ?>
                     </div>

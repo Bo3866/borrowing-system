@@ -56,8 +56,8 @@ if ($type === 'equipment' && $id !== '') {
         $res = mysqli_stmt_get_result($stmt);
         while ($row = mysqli_fetch_assoc($res)) {
             $response['reservations'][] = [
-                'start' => $row['borrow_start_at'],
-                'end' => $row['borrow_end_at'],
+                'actual_pickup_at' => $row['borrow_start_at'],
+                'actual_return_at' => $row['borrow_end_at'],
                 'qty' => (int)$row['total_qty']
             ];
         }
@@ -83,8 +83,8 @@ if ($type === 'equipment' && $id !== '') {
         $res = mysqli_stmt_get_result($stmt);
         while ($row = mysqli_fetch_assoc($res)) {
             $response['reservations'][] = [
-                'start' => $row['borrow_start_at'],
-                'end' => $row['borrow_end_at'],
+                'actual_pickup_at' => $row['borrow_start_at'],
+                'actual_return_at' => $row['borrow_end_at'],
                 'qty' => 1
             ];
         }

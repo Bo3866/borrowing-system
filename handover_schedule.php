@@ -382,57 +382,57 @@ if ($pageError === '' && $link) {
     $keyword = trim((string)($_GET['keyword'] ?? ''));
     $statusFilter = trim((string)($_GET['status'] ?? ''));
 
+    $approvedRows = []; // 統一用這個變數儲存等等要給前端印出的資料
+    $mainSql = "";
+
     if ($canViewEquipment) {
-        $approvedRows = [];
-    $approvedSql = "
-        SELECT
-            r.reservation_id,
-            r.user_id,
-            u.full_name,
-            u.email,
-            r.actual_pickup_at AS borrow_start_at,
-            r.actual_return_at AS borrow_end_at,
-            hs.handover_id,
-            hs.handover_at AS latest_handover_at,
-            hs.returned_at AS latest_returned_at,
-            hs.note AS latest_note,
-            CASE
-                WHEN hs.handover_at IS NULL THEN 'pending'
-                WHEN hs.returned_at IS NULL THEN 'handover'
-                ELSE 'returned'
-            END AS handover_state,
-            (
-                SELECT GROUP_CONCAT(DISTINCT ec.equipment_name ORDER BY ec.equipment_name SEPARATOR '、')
-                FROM equipment_reservation_items eri
-                JOIN equipments e ON e.equipment_id = eri.equipment_id
-                JOIN equipment_categories ec ON ec.equipment_code = e.equipment_code
-                WHERE eri.reservation_id = r.reservation_id
-            ) AS equipment_names,
-            (
-                SELECT GROUP_CONCAT(DISTINCT s.space_name ORDER BY s.space_name SEPARATOR '、')
-                FROM space_reservation_items sri
-                JOIN spaces s ON s.space_id = sri.space_id
-                WHERE sri.reservation_id = r.reservation_id
-            ) AS space_names
-        FROM reservations r
-        JOIN users u ON u.user_id = r.user_id
-        LEFT JOIN (
-            SELECT hs1.*
-            FROM handover_schedules hs1
-            INNER JOIN (
-                SELECT reservation_id, MAX(handover_id) AS max_handover_id
-                FROM handover_schedules
-                GROUP BY reservation_id
-            ) latest ON latest.max_handover_id = hs1.handover_id
-        ) hs ON hs.reservation_id = r.reservation_id
-        WHERE r.approval_stage = 'd' -- 🎯 修正這裡：篩選最終審核通過的項目
-          AND EXISTS (
-              SELECT 1 FROM equipment_reservation_items eri WHERE eri.reservation_id = r.reservation_id
-          )
-    ";
-    if ($keyword !== '') {
+        // 【器材排程專屬 SQL】
+        $mainSql = "
+            SELECT
+                r.reservation_id,
+                r.user_id,
+                u.full_name,
+                u.email,
+                r.actual_pickup_at AS borrow_start_at,
+                r.actual_return_at AS borrow_end_at,
+                hs.handover_id,
+                hs.handover_at AS latest_handover_at,
+                hs.returned_at AS latest_returned_at,
+                hs.note AS latest_note,
+                CASE
+                    WHEN hs.handover_at IS NULL THEN 'pending'
+                    WHEN hs.returned_at IS NULL THEN 'handover'
+                    ELSE 'returned'
+                END AS handover_state,
+                (
+                    SELECT GROUP_CONCAT(DISTINCT ec.equipment_name ORDER BY ec.equipment_name SEPARATOR '、')
+                    FROM equipment_reservation_items eri
+                    JOIN equipments e ON e.equipment_id = eri.equipment_id
+                    JOIN equipment_categories ec ON ec.equipment_code = e.equipment_code
+                    WHERE eri.reservation_id = r.reservation_id
+                ) AS equipment_names,
+                NULL AS space_names -- 器材模式下補空欄位，確保結構一致
+            FROM reservations r
+            JOIN users u ON u.user_id = r.user_id
+            LEFT JOIN (
+                SELECT hs1.*
+                FROM handover_schedules hs1
+                INNER JOIN (
+                    SELECT reservation_id, MAX(handover_id) AS max_handover_id
+                    FROM handover_schedules
+                    GROUP BY reservation_id
+                ) latest ON latest.max_handover_id = hs1.handover_id
+            ) hs ON hs.reservation_id = r.reservation_id
+            WHERE r.approval_stage = 'd'
+              AND EXISTS (
+                  SELECT 1 FROM equipment_reservation_items eri WHERE eri.reservation_id = r.reservation_id
+              )
+        ";
+
+        // 動態加入關鍵字搜尋
+        if ($keyword !== '') {
             $escapedKeyword = mysqli_real_escape_string($link, $keyword);
-            $approvedSql .= " AND (
+            $mainSql .= " AND (
                 u.full_name LIKE '%{$escapedKeyword}%' 
                 OR r.user_id LIKE '%{$escapedKeyword}%'
                 OR EXISTS (
@@ -444,34 +444,100 @@ if ($pageError === '' && $link) {
             )";
         }
 
-    // 4. 動態加入狀態篩選條件
+        // 動態加入狀態篩選
         if ($statusFilter !== '') {
             if ($statusFilter === 'pending') {
-                $approvedSql .= " AND hs.handover_at IS NULL";
+                $mainSql .= " AND hs.handover_at IS NULL";
             } elseif ($statusFilter === 'handover') {
-                $approvedSql .= " AND hs.handover_at IS NOT NULL AND hs.returned_at IS NULL";
+                $mainSql .= " AND hs.handover_at IS NOT NULL AND hs.returned_at IS NULL";
             } elseif ($statusFilter === 'returned') {
-                $approvedSql .= " AND hs.returned_at IS NOT NULL";
+                $mainSql .= " AND hs.returned_at IS NOT NULL";
             }
         }
 
-    // 5. 補上最後的排序與限制
-    $approvedSql .= " ORDER BY r.actual_pickup_at ASC LIMIT 300";
-    // 6. 執行查詢與資料綁定
-    $approvedResult = mysqli_query($link, $approvedSql);
-    if ($approvedResult) {
-        while ($row = mysqli_fetch_assoc($approvedResult)) {
-            $approvedRows[] = $row;
+    } elseif ($canViewSpace) {
+        // 【空間排程專屬 SQL】
+        $mainSql = "
+            SELECT
+                r.reservation_id,
+                r.user_id,
+                u.full_name,
+                u.email,
+                r.actual_pickup_at AS borrow_start_at,
+                r.actual_return_at AS borrow_end_at,
+                hs.handover_id,
+                hs.opened_at AS latest_opened_at,
+                hs.note AS latest_note,
+                CASE
+                    WHEN hs.opened_at IS NULL THEN 'pending'
+                    ELSE 'opened'
+                END AS handover_state, -- 統一欄位名稱為 handover_state 方便前端讀取
+                NULL AS equipment_names, -- 空間模式下補空欄位
+                (
+                    SELECT GROUP_CONCAT(DISTINCT s.space_name ORDER BY s.space_name SEPARATOR '、')
+                    FROM space_reservation_items sri
+                    JOIN spaces s ON s.space_id = sri.space_id
+                    WHERE sri.reservation_id = r.reservation_id
+                ) AS space_names
+            FROM reservations r
+            JOIN users u ON u.user_id = r.user_id
+            LEFT JOIN (
+                SELECT hs1.*
+                FROM handover_schedules hs1
+                INNER JOIN (
+                    SELECT reservation_id, MAX(handover_id) AS max_handover_id
+                    FROM handover_schedules
+                    GROUP BY reservation_id
+                ) latest ON latest.max_handover_id = hs1.handover_id
+            ) hs ON hs.reservation_id = r.reservation_id
+            WHERE r.approval_stage = 'd'
+              AND EXISTS (
+                  SELECT 1 FROM space_reservation_items sri WHERE sri.reservation_id = r.reservation_id
+              )
+        ";
+
+        // 空間關鍵字搜尋
+        if ($keyword !== '') {
+            $escapedKeyword = mysqli_real_escape_string($link, $keyword);
+            $mainSql .= " AND (
+                u.full_name LIKE '%{$escapedKeyword}%' 
+                OR r.user_id LIKE '%{$escapedKeyword}%'
+                OR EXISTS (
+                    SELECT 1 FROM space_reservation_items sri2
+                    JOIN spaces s2 ON s2.space_id = sri2.space_id
+                    WHERE sri2.reservation_id = r.reservation_id AND s2.space_name LIKE '%{$escapedKeyword}%'
+                )
+            )";
         }
-    } else {
-        $pageError = '讀取已核准申請失敗：' . mysqli_error($link);
+
+        // 空間狀態篩選
+        if ($statusFilter !== '') {
+            if ($statusFilter === 'pending') {
+                $mainSql .= " AND hs.opened_at IS NULL";
+            } elseif (in_array($statusFilter, ['opened', 'handover', 'returned'], true)) {
+                $mainSql .= " AND hs.opened_at IS NOT NULL";
+            }
+        }
     }
+
+    // 統一執行查詢並將資料灌入 $approvedRows
+    if ($mainSql !== '') {
+        $mainSql .= " ORDER BY r.actual_pickup_at ASC LIMIT 300";
+        $result = mysqli_query($link, $mainSql);
+        if ($result) {
+            while ($row = mysqli_fetch_assoc($result)) {
+                $approvedRows[] = $row;
+            }
+        } else {
+            $pageError = '讀取排程資料失敗：' . mysqli_error($link);
+        }
     }
+}
 
 // 【部分二：空間排程查詢】
     if ($pageError === '' && $canViewSpace) {
         $spaceRows = [];
-$spaceSql = "
+        $spaceSql = "
             SELECT
                 r.reservation_id,
                 r.user_id,
@@ -503,11 +569,11 @@ $spaceSql = "
                     GROUP BY reservation_id
                 ) latest ON latest.max_handover_id = hs1.handover_id
             ) hs ON hs.reservation_id = r.reservation_id
-            WHERE r.approval_status = 'approved'
+            WHERE r.approval_stage = 'd' -- 🎯 修正這裡：與器材排程同步，改為篩選最終審核通過 'd'
               AND EXISTS (
                   SELECT 1 FROM space_reservation_items sri WHERE sri.reservation_id = r.reservation_id
               )
-            ";
+        ";
 
         // 💡 修正：幫空間排程加上「關鍵字搜尋」邏輯（姓名/學號/空間名稱）
         if ($keyword !== '') {
@@ -544,7 +610,7 @@ $spaceSql = "
             $spaceError = '讀取空間排程失敗：' . mysqli_error($link);
         }
     }
-}
+
 
 if ($link) {
     mysqli_close($link);
@@ -695,35 +761,68 @@ if ($link) {
                                         </div>
 
                                         <div class="text-sm text-slate-600 space-y-1">
-                                            <p><i class="fa-solid fa-box text-slate-400 mr-1.5 w-4"></i><strong>借用器材：</strong> <?php echo htmlspecialchars((string)($row['equipment_names'] ?? '無器材'), ENT_QUOTES, 'UTF-8'); ?></p>
-                                            <p><i class="fa-regular fa-calendar text-slate-400 mr-1.5 w-4"></i><strong>使用時間：</strong> <?php echo htmlspecialchars((string)$row['borrow_start_at'], ENT_QUOTES, 'UTF-8'); ?> ～ <?php echo htmlspecialchars((string)$row['borrow_end_at'], ENT_QUOTES, 'UTF-8'); ?></p>
-                                            <?php if (!empty($row['latest_note'])): ?>
-                                                <p class="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded mt-1 inline-block"><i class="fa-solid fa-comment-dots mr-1"></i>備註：<?php echo htmlspecialchars((string)$row['latest_note'], ENT_QUOTES, 'UTF-8'); ?></p>
-                                            <?php endif; ?>
-                                        </div>
+    <?php if ($canViewEquipment): ?>
+        <p>
+            <i class="fa-solid fa-box text-slate-400 mr-1.5 w-4"></i>
+            <strong>借用器材：</strong> 
+            <?php 
+                $eqName = isset($row['equipment_names']) ? trim((string)$row['equipment_names']) : '';
+                echo htmlspecialchars($eqName !== '' ? $eqName : '無器材', ENT_QUOTES, 'UTF-8'); 
+            ?>
+        </p>
+    <?php else: ?>
+        <p>
+            <i class="fa-solid fa-door-open text-slate-400 mr-1.5 w-4"></i>
+            <strong>使用空間：</strong> 
+            <?php 
+                $spName = isset($row['space_names']) ? trim((string)$row['space_names']) : '';
+                echo htmlspecialchars($spName !== '' ? $spName : '無空間', ENT_QUOTES, 'UTF-8'); 
+            ?>
+        </p>
+    <?php endif; ?>
+    
+    <p><i class="fa-regular fa-calendar text-slate-400 mr-1.5 w-4"></i><strong>使用時間：</strong> <?php echo htmlspecialchars((string)$row['borrow_start_at'], ENT_QUOTES, 'UTF-8'); ?> ～ <?php echo htmlspecialchars((string)$row['borrow_end_at'], ENT_QUOTES, 'UTF-8'); ?></p>
+    
+    <?php if (!empty($row['latest_note'])): ?>
+        <p class="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded mt-1 inline-block"><i class="fa-solid fa-comment-dots mr-1"></i>備註：<?php echo htmlspecialchars((string)$row['latest_note'], ENT_QUOTES, 'UTF-8'); ?></p>
+    <?php endif; ?>
+</div>
                                     </div>
 
                                     <div class="flex items-center gap-2">
-                                        <form method="POST" action="handover_schedule.php" class="inline-block">
-                                            <input type="hidden" name="reservation_id" value="<?php echo $row['reservation_id']; ?>">
-                                            
-                                            <?php if ($row['handover_state'] === 'pending'): ?>
-                                                <input type="hidden" name="action" value="mark_handover">
-                                                <button type="submit" class="action-btn action-btn-primary bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-4 rounded-lg text-sm">
-                                                    <i class="fa-solid fa-handshake mr-1"></i> 辦理交接
-                                                </button>
-                                            <?php elseif ($row['handover_state'] === 'handover'): ?>
-                                                <input type="hidden" name="action" value="mark_return">
-                                                <button type="submit" class="action-btn bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg text-sm">
-                                                    <i class="fa-solid fa-rotate-left mr-1"></i> 確認歸還
-                                                </button>
-                                            <?php else: ?>
-                                                <button type="button" disabled class="action-btn bg-slate-200 text-slate-400 font-bold py-2 px-4 rounded-lg text-sm">
-                                                    <i class="fa-solid fa-check mr-1"></i> 流程已結束
-                                                </button>
-                                            <?php endif; ?>
-                                        </form>
-                                    </div>
+    <form method="POST" action="handover_schedule.php" class="inline-block">
+        <input type="hidden" name="reservation_id" value="<?php echo $row['reservation_id']; ?>">
+        
+        <?php if ($canViewEquipment): ?>
+            <?php if ($row['handover_state'] === 'pending'): ?>
+                <input type="hidden" name="action" value="mark_handover">
+                <button type="submit" class="action-btn action-btn-primary bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-4 rounded-lg text-sm">
+                    <i class="fa-solid fa-handshake mr-1"></i> 辦理交接
+                </button>
+            <?php elseif ($row['handover_state'] === 'handover'): ?>
+                <input type="hidden" name="action" value="mark_return">
+                <button type="submit" class="action-btn bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg text-sm">
+                    <i class="fa-solid fa-rotate-left mr-1"></i> 確認歸還
+                </button>
+            <?php else: ?>
+                <button type="button" disabled class="action-btn bg-slate-200 text-slate-400 font-bold py-2 px-4 rounded-lg text-sm">
+                    <i class="fa-solid fa-check mr-1"></i> 流程已結束
+                </button>
+            <?php endif; ?>
+        <?php else: ?>
+            <?php if ($row['handover_state'] === 'pending'): ?>
+                <input type="hidden" name="action" value="mark_open_door">
+                <button type="submit" class="action-btn action-btn-primary bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg text-sm">
+                    <i class="fa-solid fa-key mr-1"></i> 標記已開門
+                </button>
+            <?php else: ?>
+                <button type="button" disabled class="action-btn bg-slate-200 text-slate-400 font-bold py-2 px-4 rounded-lg text-sm">
+                    <i class="fa-solid fa-door-closed mr-1"></i> 空間已啟用
+                </button>
+            <?php endif; ?>
+        <?php endif; ?>
+    </form>
+</div>
                                 </div>
                             <?php endforeach; ?>
                         <?php else: ?>

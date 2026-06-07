@@ -1007,11 +1007,13 @@ if ($dbError === '' && count($rows) > 0) {
                         </td>
                         <td style="text-align: center;">
                             <?php
-                                // 只有在 pending/need_revision 狀態，且尚無任何審核階段通過，才允許修改申請
+                                // 只有在 pending 狀態（且尚無任何審核階段通過）才允許修改申請
                                 $hasAnyApproved = !empty($row['_stage_results']) && in_array('approved', $row['_stage_results'], true);
-                                $canEdit = ($approvalStatus === 'pending' && !$hasAnyApproved) || $approvalStatus === 'need_revision';
+                                $canEdit = $approvalStatus === 'pending' && !$hasAnyApproved;
                                 if ($canEdit) { ?>
                                 <a href="edit_application.php?reservation_id=<?php echo (int)$row['reservation_id']; ?>" class="bg-indigo-600 text-white px-2.5 py-1 rounded text-xs inline-block hover:bg-indigo-700 transition" onclick="event.stopPropagation();">修改申請</a>
+                            <?php } elseif ($approvalStatus === 'need_revision') { ?>
+                                <a href="amend_application.php?reservation_id=<?php echo (int)$row['reservation_id']; ?>" class="bg-yellow-500 text-white px-2.5 py-1 rounded text-xs inline-block hover:bg-yellow-600 transition" onclick="event.stopPropagation();">前往補件</a>
                             <?php } else { echo '-'; } ?>
                             <div style="margin-top:6px;">
                                 <button type="button" class="detail-button px-2 py-1 bg-slate-100 text-slate-700 text-xs rounded hover:bg-slate-200" onclick="event.stopPropagation(); openDrawer(this.closest('tr'))">查看詳情</button>

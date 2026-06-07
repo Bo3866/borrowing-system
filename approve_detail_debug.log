@@ -61,3 +61,4 @@
 >>>>>>> a0107b01055ca79977f524830cacb60caef65658
 2026-06-07T10:19:37+08:00 start GET={"reservation_id":"84"} SESSION={"user_id":"T000000001","full_name":"課指組老師","role_name":"3","email":"teacher@example.com"}
 2026-06-07T11:03:20+08:00 start GET={"reservation_id":"3"} SESSION={"user_id":"B000000001","full_name":"軍訓室教師","role_name":"b","email":"email2@example.com"}
+2026-06-07T13:05:02+08:00 start GET={"reservation_id":"88"} SESSION={"user_id":"C000000001","full_name":"輔導人員","role_name":"a","email":"email3@example.com"}

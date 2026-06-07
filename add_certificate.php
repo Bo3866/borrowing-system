@@ -62,7 +62,7 @@ if ($link && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) &&
         if ($stmt) {
             mysqli_stmt_bind_param($stmt, 'sis', $targetUserId, $reducePoints, $customReason);
             if (mysqli_stmt_execute($stmt)) {
-                $_SESSION['success_msg'] = "✨ 成功為使用者【{$targetUserId}】新增一筆 {$reducePoints} 點的銷點紀錄！";
+                $_SESSION['success_msg'] = "成功為使用者【{$targetUserId}】新增一筆 {$reducePoints} 點的銷點紀錄！";
                 header('Location: ' . $_SERVER['PHP_SELF'] . '?search_id=' . urlencode($searchId));
                 exit;
             } else {

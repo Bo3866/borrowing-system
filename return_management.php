@@ -1008,9 +1008,10 @@ if ($dbError === '' && count($rows) > 0) {
                         </td>
                         <td style="text-align: center;">
                             <?php
-                                // 只有在 pending 狀態，且尚無任何審核階段通過，才允許修改申請
+                                // 只有在 pending/need_revision 狀態，且尚無任何審核階段通過，才允許修改申請
                                 $hasAnyApproved = !empty($row['_stage_results']) && in_array('approved', $row['_stage_results'], true);
-                                if ($approvalStatus === 'pending' && !$hasAnyApproved) { ?>
+                                $canEdit = ($approvalStatus === 'pending' && !$hasAnyApproved) || $approvalStatus === 'need_revision';
+                                if ($canEdit) { ?>
                                 <a href="edit_application.php?reservation_id=<?php echo (int)$row['reservation_id']; ?>" class="bg-indigo-600 text-white px-2.5 py-1 rounded text-xs inline-block hover:bg-indigo-700 transition" onclick="event.stopPropagation();">修改申請</a>
                             <?php } else { echo '-'; } ?>
                             <div style="margin-top:6px;">

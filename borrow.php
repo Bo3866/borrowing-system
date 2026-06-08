@@ -2420,11 +2420,16 @@ SQL;
                                     <label style="font-size: 20px;">車輛進出 <span style="color:red">*</span></label>
                                     <div style="margin-top: 8px; display: flex; align-items: center; gap: 20px; font-size: 18px;">
                                         <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0; font-size: 18px;">
-                                            <input type="radio" name="vehicle_entry" value="no" id="vehicleNo" style="margin: 0; " <?php echo ($formData['vehicle_entry'] === 'no' || empty($formData['vehicle_entry'])) ? 'checked' : ''; ?>> 否
+                                            <input type="radio" name="vehicle_entry" value="no" id="vehicleNo" style="margin: 0; " <?php echo ($formData['vehicle_entry'] === 'no' || empty($formData['vehicle_entry'])) ? 'checked' : ''; ?> onchange="document.getElementById('vehicleNoticeBox').style.display='none'"> 否
                                         </label>
                                         <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; margin: 0; font-size: 18px;">
-                                            <input type="radio" name="vehicle_entry" value="yes" id="vehicleYes" style="margin: 0; " <?php echo ($formData['vehicle_entry'] === 'yes') ? 'checked' : ''; ?>> 是
+                                            <input type="radio" name="vehicle_entry" value="yes" id="vehicleYes" style="margin: 0; " <?php echo ($formData['vehicle_entry'] === 'yes') ? 'checked' : ''; ?> onchange="document.getElementById('vehicleNoticeBox').style.display='block'"> 是
                                         </label>
+                                    </div>
+                                    
+                                    <!-- 修改後-->
+                                    <div id="vehicleNoticeBox" style="display: <?php echo ($formData['vehicle_entry'] === 'yes') ? 'block' : 'none'; ?>; background-color: #fdfaf2; color: black; font-size: 18px; font-weight: bold; border-radius: 10px; padding: 10px; margin-top: 8px; border: 1px solid #e2e8f0; width: 46%;">
+                                    &nbsp;&nbsp;請自行繳交《車輛進出校門知會單》至總務處事務組
                                     </div>
                                 </div>
                                 

@@ -548,10 +548,8 @@ $formData['fire_date'] = !empty($_POST['fire_date']) ? trim((string)$_POST['fire
 
     if ($dbError !== '') {
         $borrowError = $dbError;
-    } elseif (empty($cartEquipments) && empty($formData['space_id'])) {
-        $borrowError = '請選擇至少一項器材或一個場地。';
     } else {
-// 先計算借用時間（用於後續驗證）
+        // 先計算借用時間（用於後續驗證）
         $borrowStartAtSql = '';
         $borrowEndAtSql = '';
         

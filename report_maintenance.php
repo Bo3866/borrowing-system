@@ -272,7 +272,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 fault_description TEXT NOT NULL,
                 photo_path VARCHAR(255) NULL,
                 maintenance_status ENUM('pending','in_progress','completed') NOT NULL DEFAULT 'pending',
-                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 PRIMARY KEY (maintenance_id)
             ) ENGINE=InnoDB");

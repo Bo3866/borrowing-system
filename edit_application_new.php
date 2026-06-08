@@ -38,7 +38,7 @@ if ($dbError === '') {
         mysqli_free_result($colRes);
     }
 
-    $selectCols = ['r.reservation_id', 'r.user_id', 'r.approval_status', 'r.borrow_start_at', 'r.borrow_end_at', 'r.organization_name', 'r.activity_name', 'r.participant_count', 'r.staff_count', 'r.club_president', 'r.activity_coordinator', 'r.coordinator_department', 'r.coordinator_phone', 'r.coordinator_other_contact', 'r.setup_flags', 'r.flag_count', 'r.purpose', 'r.proposal_file', 'r.proposal_uploaded_at', 'r.phone'];
+    $selectCols = ['r.reservation_id', 'r.user_id', 'r.approval_status', 'r.borrow_start_at', 'r.borrow_end_at', 'r.organization_name', 'r.activity_name', 'r.participant_count', 'r.staff_count', 'r.activity_coordinator', 'r.coordinator_department', 'r.coordinator_phone', 'r.coordinator_other_contact', 'r.setup_flags', 'r.flag_count', 'r.purpose', 'r.proposal_file', 'r.proposal_uploaded_at', 'r.phone'];
     // filter by available
     $finalCols = [];
     foreach ($selectCols as $c) {
@@ -180,7 +180,6 @@ if ($dbError === '') {
         $updated['activity_name'] = trim((string)($_POST['activity_name'] ?? ''));
         $updated['participant_count'] = trim((string)($_POST['participant_count'] ?? ''));
         $updated['staff_count'] = (int)($_POST['staff_count'] ?? 0);
-        $updated['club_president'] = trim((string)($_POST['club_president'] ?? ''));
         $updated['activity_coordinator'] = trim((string)($_POST['activity_coordinator'] ?? ''));
         $updated['coordinator_department'] = trim((string)($_POST['coordinator_department'] ?? ''));
         $updated['coordinator_phone'] = trim((string)($_POST['coordinator_phone'] ?? ''));
@@ -278,7 +277,6 @@ if ($dbError === '') {
                     'activity_name' => $updated['activity_name'],
                     'participant_count' => $updated['participant_count'],
                     'staff_count' => $updated['staff_count'],
-                    'club_president' => $updated['club_president'],
                     'activity_coordinator' => $updated['activity_coordinator'],
                     'coordinator_department' => $updated['coordinator_department'],
                     'coordinator_phone' => $updated['coordinator_phone'],

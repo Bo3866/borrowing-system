@@ -80,7 +80,7 @@ $proposalFileHref = '';
 
 $formData = [
     'organization_name' => '', 'activity_name' => '', 'participant_count' => '', 'staff_count' => '',
-    'club_president' => '', 'activity_coordinator' => '', 'coordinator_department' => '',
+    'activity_coordinator' => '', 'coordinator_department' => '',
     'coordinator_phone' => '', 'coordinator_other_contact' => '', 'vehicle_entry' => 'no',
     'has_alcohol' => '', 'has_fire' => '', 'has_sales' => '', 'setup_flags' => 'no',
     'flag_count' => null, 'flag_agreement' => '', 'resource_type' => 'both', 'equipment_code' => '',
@@ -88,7 +88,7 @@ $formData = [
     'borrow_end_date' => '', 'borrow_end_time' => '', 'purpose' => '', 'phone' => '',
     'draft_proposal_file' => '', 'draft_proposal_original_name' => '', 'draft_proposal_uploaded_at' => '', 'alcohol_coordinator' => '',
     'alcohol_president' => '', 'fire_activity_name' => '', 'fire_date' => '', 'fire_location' => '',
-    'fire_start_time' => '', 'fire_end_time' => '', 'fire_staff_json' => '',
+    'fire_start_time' => '', 'fire_end_time' => '', 
     'actual_pickup_date' => '', 'actual_pickup_time' => '', 'actual_pickup_time_h' => '', 'actual_pickup_time_m' => '',
     'actual_return_date' => '', 'actual_return_time' => '', 'actual_return_time_h' => '', 'actual_return_time_m' => '',
     'sales_location' => '', 'sales_count' => '', 'sales_roster_json' => '', 'sales_layout_map' => '', 'draft_sales_layout_map' => '',
@@ -129,7 +129,7 @@ if ($dbError === '' && $reservationId > 0) {
 
     $availableCols = tableColumns($link, 'reservations');
 
-    $selectCols = ['reservation_id','user_id','approval_status','borrow_start_at','borrow_end_at','organization_name','activity_name','participant_count','staff_count','club_president','activity_coordinator','coordinator_department','coordinator_phone','coordinator_other_contact','vehicle_entry','has_alcohol','has_fire','has_sales','setup_flags','flag_count','purpose','proposal_file','proposal_original_name','proposal_uploaded_at','phone','alcohol_coordinator','alcohol_president','fire_activity_name','fire_date','fire_location','fire_start_time','fire_end_time','fire_staff_json','fire_performers','fire_oilers','fire_extinguishers','fire_security','fire_emergency','fire_medical','actual_pickup_at','actual_return_at','sales_location','sales_count','sales_roster_json','sales_layout_map','holiday_fee_count','holiday_fee'];
+    $selectCols = ['reservation_id','user_id','approval_status','borrow_start_at','borrow_end_at','organization_name','activity_name','participant_count','staff_count','activity_coordinator','coordinator_department','coordinator_phone','coordinator_other_contact','vehicle_entry','has_alcohol','has_fire','has_sales','setup_flags','flag_count','purpose','proposal_file','proposal_original_name','proposal_uploaded_at','phone','alcohol_coordinator','alcohol_president','fire_activity_name','fire_date','fire_location','fire_start_time','fire_end_time','fire_staff_json','fire_performers','fire_oilers','fire_extinguishers','fire_security','fire_emergency','fire_medical','actual_pickup_at','actual_return_at','sales_location','sales_count','sales_roster_json','sales_layout_map','holiday_fee_count','holiday_fee'];
     $existingSelect = [];
     foreach ($selectCols as $c) { if (colExists($availableCols, $c)) $existingSelect[] = 'r.`' . $c . '`'; }
     if (empty($existingSelect)) {
@@ -213,24 +213,7 @@ if ($dbError === '' && $reservationId > 0) {
             $formData['sales_layout_map'] = (string)$reservationRow['sales_layout_map'];
             $formData['draft_sales_layout_map'] = (string)$reservationRow['sales_layout_map'];
         }
-        if (!empty($reservationRow['fire_staff_json'])) {
-            $decodedFireStaff = json_decode((string)$reservationRow['fire_staff_json'], true);
-            if (is_array($decodedFireStaff)) {
-                foreach ([
-                    'fire_performers' => 'fire_performers',
-                    'fire_oilers' => 'fire_oilers',
-                    'fire_extinguishers' => 'fire_extinguishers',
-                    'fire_security' => 'fire_security',
-                    'fire_emergency' => 'fire_emergency',
-                    'fire_medical' => 'fire_medical',
-                ] as $jsonKey => $formKey) {
-                    if (isset($decodedFireStaff[$jsonKey]) && is_array($decodedFireStaff[$jsonKey])) {
-                        $formData[$formKey] = implode("
-", array_map('strval', $decodedFireStaff[$jsonKey]));
-                    }
-                }
-            }
-        }
+
     }
 
     $equipmentSql = "
@@ -306,7 +289,7 @@ if ($dbError === '' && $reservationId > 0) {
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && $borrowError === '') {
-        foreach (['organization_name','activity_name','participant_count','staff_count','club_president','activity_coordinator','coordinator_department','coordinator_phone','coordinator_other_contact','vehicle_entry','setup_flags','purpose','alcohol_coordinator','alcohol_president','sales_location','sales_count','fire_activity_name','fire_location'] as $k) {
+        foreach (['organization_name','activity_name','participant_count','staff_count','activity_coordinator','coordinator_department','coordinator_phone','coordinator_other_contact','vehicle_entry','setup_flags','purpose','alcohol_coordinator','alcohol_president','sales_location','sales_count','fire_activity_name','fire_location'] as $k) {
             $formData[$k] = trim((string)($_POST[$k] ?? $formData[$k] ?? ''));
         }
         $formData['flag_count'] = ($formData['setup_flags'] === 'yes' && isset($_POST['flag_count']) && $_POST['flag_count'] !== '')
@@ -372,7 +355,6 @@ if ($dbError === '' && $reservationId > 0) {
             'fire_emergency' => $parseStaffField($_POST['fire_staff_emergency'] ?? []),
             'fire_medical' => $parseStaffField($_POST['fire_staff_medical'] ?? []),
         ];
-        $formData['fire_staff_json'] = json_encode($staffData, JSON_UNESCAPED_UNICODE);
         $formData['fire_performers'] = !empty($staffData['fire_performers']) ? implode("\n", $staffData['fire_performers']) : null;
         $formData['fire_oilers'] = !empty($staffData['fire_oilers']) ? implode("\n", $staffData['fire_oilers']) : null;
         $formData['fire_extinguishers'] = !empty($staffData['fire_extinguishers']) ? implode("\n", $staffData['fire_extinguishers']) : null;
@@ -556,7 +538,6 @@ if ($dbError === '' && $reservationId > 0) {
                     'activity_name' => $formData['activity_name'],
                     'participant_count' => $formData['participant_count'],
                     'staff_count' => (int)$formData['staff_count'],
-                    'club_president' => $formData['club_president'],
                     'activity_coordinator' => $formData['activity_coordinator'],
                     'coordinator_department' => $formData['coordinator_department'],
                     'coordinator_phone' => $formData['coordinator_phone'],
@@ -575,7 +556,6 @@ if ($dbError === '' && $reservationId > 0) {
                     'fire_start_time' => $formData['fire_start_time'],
                     'fire_end_time' => $formData['fire_end_time'],
                     'fire_location' => $formData['fire_location'] !== '' ? $formData['fire_location'] : null,
-                    'fire_staff_json' => $formData['fire_staff_json'],
                     'fire_performers' => $formData['fire_performers'],
                     'fire_oilers' => $formData['fire_oilers'],
                     'fire_extinguishers' => $formData['fire_extinguishers'],
@@ -5637,7 +5617,21 @@ window.initialApplicationCartItems = <?php echo $initialCartItemsJson ?: '[]'; ?
 <script>
 // 修改申請頁：把原申請的特殊表單明細完整帶回畫面。
 window.__EDIT_INITIAL_SALES_ROSTER__ = <?php echo json_encode(json_decode((string)($formData['sales_roster_json'] ?? '[]'), true) ?: [], JSON_UNESCAPED_UNICODE); ?>;
-window.__EDIT_INITIAL_FIRE_STAFF__ = <?php echo json_encode(json_decode((string)($formData['fire_staff_json'] ?? '[]'), true) ?: [], JSON_UNESCAPED_UNICODE); ?>;
+// 修改後：
+<?php
+$_fsplit = function(string $s) {
+    return array_values(array_filter(array_map('trim', preg_split('/[\r\n]+/', $s)), 'strlen'));
+};
+$_fireInit = [
+    'fire_performers'    => $_fsplit((string)($formData['fire_performers']    ?? '')),
+    'fire_oilers'        => $_fsplit((string)($formData['fire_oilers']        ?? '')),
+    'fire_extinguishers' => $_fsplit((string)($formData['fire_extinguishers'] ?? '')),
+    'fire_security'      => $_fsplit((string)($formData['fire_security']      ?? '')),
+    'fire_emergency'     => $_fsplit((string)($formData['fire_emergency']     ?? '')),
+    'fire_medical'       => $_fsplit((string)($formData['fire_medical']       ?? '')),
+];
+?>
+window.__EDIT_INITIAL_FIRE_STAFF__ = <?php echo json_encode($_fireInit, JSON_UNESCAPED_UNICODE); ?>;
 window.__EDIT_INITIAL_SALES_MAP__ = <?php echo json_encode((string)($formData['draft_sales_layout_map'] ?? $formData['sales_layout_map'] ?? ''), JSON_UNESCAPED_UNICODE); ?>;
 
 function fillEditApplicationArrayInputs(inputName, values, addRowCallback) {

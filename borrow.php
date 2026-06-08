@@ -289,7 +289,6 @@ $formData = [
     'activity_name' => '',
     'participant_count' => '',
     'staff_count' => '',
-    'club_president' => '',
     'activity_coordinator' => '',
     'coordinator_phone' => '',
     'coordinator_other_contact' => '',
@@ -329,7 +328,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['activity_name'] = trim((string)($_POST['activity_name'] ?? ''));
     $formData['participant_count'] = trim((string)($_POST['participant_count'] ?? ''));
     $formData['staff_count'] = trim((string)($_POST['staff_count'] ?? ''));
-    $formData['club_president'] = trim((string)($_POST['club_president'] ?? ''));
     $formData['activity_coordinator'] = trim((string)($_POST['activity_coordinator'] ?? ''));
     $formData['coordinator_phone'] = trim((string)($_POST['coordinator_phone'] ?? ''));
     $formData['coordinator_other_contact'] = trim((string)($_POST['coordinator_other_contact'] ?? ''));
@@ -526,7 +524,6 @@ $formData['fire_date'] = !empty($_POST['fire_date']) ? trim((string)$_POST['fire
         }
         $staffData[$key] = $parseStaffField($value);
     }
-    $formData['fire_staff_json'] = json_encode($staffData, JSON_UNESCAPED_UNICODE);
 
     // Also populate individual longtext columns from the staff arrays
     $formData['fire_performers'] = !empty($staffData['fire_performers']) ? implode("\n", $staffData['fire_performers']) : null;
@@ -1034,7 +1031,6 @@ SQL;
                     'activity_name' => "VARCHAR(100) NULL COMMENT '活動名稱'",
                     'participant_count' => "VARCHAR(50) NULL COMMENT '活動對象人數'",
                     'staff_count' => "INT NULL DEFAULT 0 COMMENT '工作人員人數'",
-                    'club_president' => "VARCHAR(100) NULL COMMENT '社/會長'",
                     'activity_coordinator' => "VARCHAR(100) NULL COMMENT '活動負責人'",
                     'coordinator_phone' => "VARCHAR(30) NULL COMMENT '聯絡電話'",
                     'coordinator_other_contact' => "VARCHAR(255) NULL COMMENT '其他聯絡方式'",
@@ -1054,7 +1050,6 @@ SQL;
                     'fire_start_time' => "TIME NULL COMMENT '明火開始時間'",
                     'fire_end_time' => "TIME NULL COMMENT '明火結束時間'",
                     'fire_location' => "VARCHAR(255) NULL COMMENT '明火地點'",
-                    'fire_staff_json' => "JSON NULL COMMENT '明火工作人員清單'",
                     'sales_location' => "VARCHAR(50) NULL COMMENT '攤位地點'",
                     'sales_count' => "INT NULL DEFAULT 0 COMMENT '攤位數量'",
                     'actual_pickup_at' => "DATETIME NULL COMMENT '實際領取器材與進入場地時間'",
@@ -1168,7 +1163,6 @@ SQL;
                     'activity_name' => ['type' => 's', 'value' => $formData['activity_name']],
                     'participant_count' => ['type' => 's', 'value' => $formData['participant_count']],
                     'staff_count' => ['type' => 'i', 'value' => (int)$formData['staff_count']],
-                    'club_president' => ['type' => 's', 'value' => $formData['club_president']],
                     'activity_coordinator' => ['type' => 's', 'value' => $formData['activity_coordinator']],
                     'coordinator_phone' => ['type' => 's', 'value' => $formData['coordinator_phone']],
                     'coordinator_other_contact' => ['type' => 's', 'value' => $formData['coordinator_other_contact']],
@@ -1194,7 +1188,6 @@ SQL;
                     'fire_security' => ['type' => 's', 'value' => $formData['fire_security']],
                     'fire_emergency' => ['type' => 's', 'value' => $formData['fire_emergency']],
                     'fire_medical' => ['type' => 's', 'value' => $formData['fire_medical']],
-                    'fire_staff_json' => ['type' => 's', 'value' => $formData['fire_staff_json']],
                     'sales_location' => ['type' => 's', 'value' => $formData['sales_location'] !== '' ? $formData['sales_location'] : null],
                     'sales_count' => ['type' => 'i', 'value' => $formData['sales_count'] !== '' ? (int)$formData['sales_count'] : null],
                     'sales_roster_json' => ['type' => 's', 'value' => $formData['sales_roster_json'] ?? null],
@@ -1628,7 +1621,6 @@ SQL;
                     'activity_name' => '',
                     'participant_count' => '',
                     'staff_count' => '',
-                    'club_president' => '',
                     'activity_coordinator' => '',
                     'coordinator_phone' => '',
                     'coordinator_other_contact' => '',
@@ -1683,7 +1675,6 @@ SQL;
                     'fire_security' => null,
                     'fire_emergency' => null,
                     'fire_medical' => null,
-                    'fire_staff_json' => null,
                 ];
             } catch (Throwable $exception) {
                 mysqli_rollback($link);

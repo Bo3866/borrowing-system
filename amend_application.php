@@ -45,7 +45,7 @@ if ($dbError === '') {
         'setup_flags',
         // 明火
         'fire_activity_name', 'fire_date', 'fire_start_time', 'fire_end_time', 'fire_location',
-        'fire_staff_json', 'fire_performers', 'fire_oilers', 'fire_extinguishers',
+        'fire_performers', 'fire_oilers', 'fire_extinguishers',
         'fire_security', 'fire_emergency', 'fire_medical',
         // 攤位
         'sales_location', 'sales_count', 'sales_roster_json', 'sales_layout_map',
@@ -150,7 +150,6 @@ if ($dbError === '') {
             'fire_start_time'           => $reservationRow['fire_start_time'] ?? '',
             'fire_end_time'             => $reservationRow['fire_end_time'] ?? '',
             'fire_location'             => $reservationRow['fire_location'] ?? '',
-            'fire_staff_json'           => $reservationRow['fire_staff_json'] ?? null,
             'fire_performers'           => $reservationRow['fire_performers'] ?? null,
             'fire_oilers'               => $reservationRow['fire_oilers'] ?? null,
             'fire_extinguishers'        => $reservationRow['fire_extinguishers'] ?? null,
@@ -199,7 +198,6 @@ if ($dbError === '') {
             if ($originalHasSales   !== '1') { $updatedFields['has_sales']   = '0'; }
 
             // ── 明火人員名單（只有原本有明火才開放）
-            $updatedFireStaffJson = $revisionData['fire_staff_json']; // 預設保留原值
             $updatedFirePerformers = $revisionData['fire_performers'];
             $updatedFireOilers     = $revisionData['fire_oilers'];
             $updatedFireExtinguishers = $revisionData['fire_extinguishers'];
@@ -227,7 +225,6 @@ if ($dbError === '') {
                     }
                     $staffData[$jsonKey] = $names;
                 }
-                $updatedFireStaffJson      = json_encode($staffData, JSON_UNESCAPED_UNICODE);
                 $updatedFirePerformers     = !empty($staffData['fire_performers'])    ? implode("\n", $staffData['fire_performers'])    : null;
                 $updatedFireOilers         = !empty($staffData['fire_oilers'])        ? implode("\n", $staffData['fire_oilers'])        : null;
                 $updatedFireExtinguishers  = !empty($staffData['fire_extinguishers']) ? implode("\n", $staffData['fire_extinguishers']) : null;
@@ -380,7 +377,6 @@ if ($dbError === '') {
                     $baseUpdateTypes = '';
 
                     $fieldsToWrite = array_merge($updatedFields, [
-                        'fire_staff_json'    => $updatedFireStaffJson,
                         'fire_performers'    => $updatedFirePerformers,
                         'fire_oilers'        => $updatedFireOilers,
                         'fire_extinguishers' => $updatedFireExtinguishers,
@@ -438,7 +434,6 @@ if ($dbError === '') {
 
                     // 更新 revisionData 顯示用
                     $revisionData = array_merge($revisionData, $updatedFields, [
-                        'fire_staff_json'   => $updatedFireStaffJson,
                         'sales_location'    => $updatedSalesLocation,
                         'sales_count'       => $updatedSalesCount,
                         'sales_roster_json' => $updatedSalesRosterJson,
@@ -503,12 +498,25 @@ if ($dbError === '') {
     }
 }
 
-// 解析明火人員 JSON 供回填（已有資料時）
-$fireStaffDecoded = [];
-if (!empty($revisionData['fire_staff_json'])) {
-    $tmp = json_decode((string)$revisionData['fire_staff_json'], true);
-    if (is_array($tmp)) { $fireStaffDecoded = $tmp; }
-}
+// 修改後
+
+$_fsplit = function($s) {
+    return array_values(array_filter(array_map('trim', preg_split('/[\r\n]+/', $s)), 'strlen'));
+};
+
+$_fireInit = [
+'fire_performers' => $_fsplit((string)($formData['fire_performers'] ?? '')),
+'fire_oilers' => $_fsplit((string)($formData['fire_oilers'] ?? '')),
+'fire_extinguishers' => $_fsplit((string)($formData['fire_extinguishers'] ?? '')),
+'fire_security' => $_fsplit((string)($formData['fire_security'] ?? '')),
+'fire_emergency' => $_fsplit((string)($formData['fire_emergency'] ?? '')),
+'fire_medical' => $_fsplit((string)($formData['fire_medical'] ?? '')),
+];
+?>
+
+<script>
+window.__EDIT_INITIAL_FIRE_STAFF__ = <?php echo json_encode($_fireInit, JSON_UNESCAPED_UNICODE); ?>;
+</script>
 
 // 解析攤位清冊 JSON 供回填
 $salesRosterDecoded = [];

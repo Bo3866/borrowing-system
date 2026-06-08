@@ -7,7 +7,6 @@ try {
     ADD COLUMN activity_name VARCHAR(100) NULL,
     ADD COLUMN participant_count VARCHAR(20) NULL,
     ADD COLUMN staff_count INT NULL,
-    ADD COLUMN club_president VARCHAR(50) NULL,
     ADD COLUMN activity_coordinator VARCHAR(50) NULL,
     ADD COLUMN coordinator_department VARCHAR(50) NULL,
     ADD COLUMN coordinator_phone VARCHAR(50) NULL,

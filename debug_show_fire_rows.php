@@ -8,7 +8,7 @@ if (!$link) {
     exit(1);
 }
 
-$sql = "SELECT reservation_id, has_fire, fire_activity_name, fire_activity, fire_date, fire_time_start, fire_time_end, fire_time, fire_start_time, fire_end_time, fire_location, fire_staff_json, fire_performers, fire_oilers, fire_extinguishers, fire_security, fire_emergency, fire_medical FROM reservations WHERE 
+$sql = "SELECT reservation_id, has_fire, fire_activity_name, fire_activity, fire_date, fire_time_start, fire_time_end, fire_time, fire_start_time, fire_end_time, fire_location, fire_performers, fire_oilers, fire_extinguishers, fire_security, fire_emergency, fire_medical FROM reservations WHERE 
     ( (fire_activity_name IS NOT NULL AND TRIM(fire_activity_name) != '') OR
       (fire_activity IS NOT NULL AND TRIM(fire_activity) != '') OR
       (fire_date IS NOT NULL AND TRIM(fire_date) != '') OR
@@ -18,7 +18,6 @@ $sql = "SELECT reservation_id, has_fire, fire_activity_name, fire_activity, fire
       (fire_start_time IS NOT NULL AND TRIM(fire_start_time) != '') OR
       (fire_end_time IS NOT NULL AND TRIM(fire_end_time) != '') OR
       (fire_location IS NOT NULL AND TRIM(fire_location) != '') OR
-      (fire_staff_json IS NOT NULL AND TRIM(fire_staff_json) != '') OR
       (fire_performers IS NOT NULL AND TRIM(fire_performers) != '') OR
       (fire_oilers IS NOT NULL AND TRIM(fire_oilers) != '') OR
       (fire_extinguishers IS NOT NULL AND TRIM(fire_extinguishers) != '') OR

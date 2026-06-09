@@ -37,7 +37,7 @@ if ($dbError === '') {
     }
 
     $wantedCols = [
-        'reservation_id', 'user_id', 'approval_status', 'revision_data_json', 'revision_deadline',
+        'reservation_id', 'user_id', 'approval_status', 'revision_deadline',
         'organization_name', 'activity_name', 'participant_count', 'staff_count',
         'activity_coordinator', 'coordinator_phone', 'coordinator_other_contact',
         'vehicle_entry',
@@ -150,6 +150,7 @@ if ($dbError === '') {
             'fire_start_time'           => $reservationRow['fire_start_time'] ?? '',
             'fire_end_time'             => $reservationRow['fire_end_time'] ?? '',
             'fire_location'             => $reservationRow['fire_location'] ?? '',
+            // 明火人員（直接從各欄位讀取，以換行分隔）
             'fire_performers'           => $reservationRow['fire_performers'] ?? null,
             'fire_oilers'               => $reservationRow['fire_oilers'] ?? null,
             'fire_extinguishers'        => $reservationRow['fire_extinguishers'] ?? null,
@@ -498,25 +499,15 @@ if ($dbError === '') {
     }
 }
 
-// 修改後
-
-$_fsplit = function($s) {
-    return array_values(array_filter(array_map('trim', preg_split('/[\r\n]+/', $s)), 'strlen'));
-};
-
-$_fireInit = [
-'fire_performers' => $_fsplit((string)($formData['fire_performers'] ?? '')),
-'fire_oilers' => $_fsplit((string)($formData['fire_oilers'] ?? '')),
-'fire_extinguishers' => $_fsplit((string)($formData['fire_extinguishers'] ?? '')),
-'fire_security' => $_fsplit((string)($formData['fire_security'] ?? '')),
-'fire_emergency' => $_fsplit((string)($formData['fire_emergency'] ?? '')),
-'fire_medical' => $_fsplit((string)($formData['fire_medical'] ?? '')),
+// 解析明火人員各欄位供回填（從 longtext 欄位，以 \n 分隔）
+$fireStaffDecoded = [
+    'fire_performers'    => array_filter(array_map('trim', explode("\n", (string)($revisionData['fire_performers']    ?? '')))),
+    'fire_oilers'        => array_filter(array_map('trim', explode("\n", (string)($revisionData['fire_oilers']        ?? '')))),
+    'fire_extinguishers' => array_filter(array_map('trim', explode("\n", (string)($revisionData['fire_extinguishers'] ?? '')))),
+    'fire_security'      => array_filter(array_map('trim', explode("\n", (string)($revisionData['fire_security']      ?? '')))),
+    'fire_emergency'     => array_filter(array_map('trim', explode("\n", (string)($revisionData['fire_emergency']     ?? '')))),
+    'fire_medical'       => array_filter(array_map('trim', explode("\n", (string)($revisionData['fire_medical']       ?? '')))),
 ];
-?>
-
-<script>
-window.__EDIT_INITIAL_FIRE_STAFF__ = <?php echo json_encode($_fireInit, JSON_UNESCAPED_UNICODE); ?>;
-</script>
 
 // 解析攤位清冊 JSON 供回填
 $salesRosterDecoded = [];
